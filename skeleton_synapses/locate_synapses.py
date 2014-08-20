@@ -17,12 +17,7 @@ from lazyflow.roi import roiToSlice, getIntersection
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
-
-
-project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
-project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
-
-outdir = "/tmp/"
+from skeleton_synapses.swc_rois import parse_swc, construct_tree, coords_and_rois_for_tree
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
@@ -345,80 +340,51 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
 
 
 
+def main():
+    # FIXME: These shouldn't be hard-coded.
+    X_RES = 4.0
+    Y_RES = 4.0
+    Z_RES = 45.0
+    ROI_RADIUS = 150
 
+    import argparse
+    cwd = os.getcwd()
+
+    parser = argparse.ArgumentParser() 
+    parser.add_argument('skeleton_swc')
+    parser.add_argument('project3d')
+    parser.add_argument('project2d')
+    parser.add_argument('volume_description')
+    parser.add_argument('--output_directory', default=cwd)
+    
+    parsed_args = parser.parse_args()
+    
+    node_infos = parse_swc( parsed_args.skeleton_swc, X_RES, Y_RES, Z_RES )
+    tree = construct_tree( node_infos )
+    tree_coords_and_rois = coords_and_rois_for_tree(tree, radius=ROI_RADIUS)
+
+    locate_synapses( parsed_args.project3d, 
+                     parsed_args.project2d, 
+                     parsed_args.volume_description, 
+                     parsed_args.output_directory,
+                     tree_coords_and_rois, 
+                     debug_images=False, 
+                     order2d='xyt', 
+                     order3d='xyz' )
 
 if __name__=="__main__":
-    #testUpsample()
-    #test_find_synapses()
-    #import sys
-    ##sys.path.append("/groups/flyem/home/kreshuka/workspace/scripts")
+    import sys
+    DEBUGGING = True
+    if DEBUGGING:
+        project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
+        project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
+        skeleton_swc = '/Users/bergs/Documents/workspace/anna_scripts/fruitfly/example_skeleton.swc'
+        volume_description = '/Users/bergs/Documents/workspace/skeleton_synapses/cardona_volume_description.json'
+        #outdir = "/tmp/"
 
-    SMALL_TEST = False
-    if SMALL_TEST:
-        # Generate skeleton points. Here we assume that we get at least one point per slice
-        skeletons = [(50, 50, 0), (150, 150, 1), (100, 100, 10), (100, 100, 5)] 
-        rois = [numpy.array(((0, 0, 0), (100, 100, 1))), \
-                numpy.array(((100, 100, 1), (200, 200, 2))), \
-                numpy.array(((0, 0, 10), (200, 200, 11))), \
-                numpy.array([[0, 0, 5], [200, 200, 6]])]
-        
-        rois = map( lambda a: a.astype(long), rois )
-        
-        branchwise_rois = [zip(skeletons, rois)]
-        
-        input_filepath = "/home/bergs/workspace/anna_scripts/fruitfly/random_raw_stack.h5/data"
-        locate_synapses(project3dname, project2dname, input_filepath, outdir, branchwise_rois, debug_images=True, order2d='xytc', order3d='xyzc')
-    else:
-        X_RES = 4.0
-        Y_RES = 4.0
-        Z_RES = 45.0
-         
-        ROI_RADIUS = 150
-         
-        #import sys
-        #sys.argv.append('/home/anna/scripts/fruitfly/example_skeleton.swc')
-        #sys.argv.append('/Users/bergs/Documents/workspace/anna_scripts/3034133.swc')
-         
-        #swc_path = '/home/bergs/workspace/anna_scripts/fruitfly/example_skeleton.swc'
-        ''''
-        swc_path = "/groups/flyem/home/kreshuka/workspace/scripts/fruitfly/15886416.swc"
-        from swc_rois import *
-        node_infos = parse_swc( swc_path, X_RES, Y_RES, Z_RES )
-        tree = construct_tree( node_infos )
-        tree_coords_and_rois = coords_and_rois_for_tree(tree, radius=ROI_RADIUS)
-        '''
-        #for branch_coords_and_rois in tree_coords_and_rois[:5]:
-        #    print "NEXT BRANCH"
-        #    for coord, roi in branch_coords_and_rois[:5]:
-        #        print "coord = {}, roi = {}".format( coord, roi )
-     
-         
-     
-        #input_filepath = os.path.join( input_dir, "*.tiff" )
-        #volume_from_dir(input_filepath)
-        #input_filepath = os.path.join(input_dir, "random_raw_stack.h5/data")
-        #input_filepath = "/home/akreshuk/scripts/fruitfly/cardona_volume_description.json"
-        input_filepath = "/Users/bergs/Documents/workspace/skeleton_synapses/cardona_volume_description.json"
-        ''''
-        small_branch = [tree_coords_and_rois[0][100:-1]]
-        '''
-        
-        #skeleton_center = numpy.array((12226, 9173, 229))
-        skeleton_center = numpy.array((11949, 17487, 2420))
-        fake_branch = [[skeleton_center+[0,0,0], numpy.array((skeleton_center - [100,100,0], skeleton_center + [100,100,1]))],
-                       [skeleton_center+[0,0,1], numpy.array((skeleton_center - [100,100,-1], skeleton_center + [100,100,2]))],
-                       [skeleton_center+[0,0,2], numpy.array((skeleton_center - [100,100,-2], skeleton_center + [100,100,3]))],
-                       [skeleton_center+[0,0,3], numpy.array((skeleton_center - [100,100,-3], skeleton_center + [100,100,4]))],
-                       [skeleton_center+[0,0,4], numpy.array((skeleton_center - [100,100,-4], skeleton_center + [100,100,5]))],
-                       [skeleton_center+[0,0,5], numpy.array((skeleton_center - [100,100,-5], skeleton_center + [100,100,6]))],
-                       ]
+        sys.argv.append(skeleton_swc)
+        sys.argv.append(project3dname)
+        sys.argv.append(project2dname)
+        sys.argv.append(volume_description)
 
-        #print small_branch
-        #print len(tree_coords_and_rois), len(tree_coords_and_rois[0])
-        locate_synapses(project3dname, project2dname, input_filepath, outdir, [fake_branch], debug_images=False, order2d='xyt', order3d='xyz')
-        
-    
-    
-        
-        
-    
+    sys.exit( main() )
