@@ -136,7 +136,6 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
 
     gridGraphs = []
     graphEdges = []
-    fout = open(output_path, "w")
     opThreshold = OpThresholdTwoLevels(graph=tempGraph)
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
     opThreshold.SingleThreshold.setValue(0.5) #FIXME: solve the mess with uint8/float in predictions
@@ -145,158 +144,160 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
     previous_slice_roi = None
     maxLabelSoFar = 0
 
-    for branch_rois in branchwise_rois:
-        previous_slice_objects = None
-        previous_slice_roi = None
-        for skeletonCoord, roi in branch_rois:
-            with Timer() as timer:
-                logger.debug("skeleton point: {}".format( skeletonCoord ))
-                #Add channel dimension
-                roi_with_channel = numpy.zeros((2, roi.shape[1]+1), dtype=numpy.uint32)
-                roi_with_channel[:, :-1] = roi[:]
-                roi_with_channel[0, -1] = 0
-                roi_with_channel[1, -1] = 1
-                iz = roi[0][2]
-                roi_hessian = (roi_with_channel[0]*2, roi_with_channel[1]*2-1)
-                for x in range(roi.shape[1]):
-                    if roi[0][x] == 0:
-                        roi_hessian[0][x] = 0
-                roi_hessian[0][2] = iz
-                roi_hessian[1][2] = iz+1
-                #we need the second eigenvalue
-                roi_hessian[0][-1] = 1
-                roi_hessian[1][-1] = 2
-                
-                if debug_images:
-                    outdir1 = outdir+"raw/"
-                    try:
-                        os.makedirs(outdir1)
-                    except os.error:
-                        pass
-                    outfile = outdir1+"%.02d"%iz + ".png"
-                    data = opPixelClassification3d.InputImages[-1](roi_with_channel[0], roi_with_channel[1]).wait()
-                    vigra.impex.writeImage(data.squeeze().astype(numpy.uint8), outfile)
-                    '''
-                    outdir2 = outdir + "synapse_pred/"
-                    outfile = outdir2+"%.02d"%iz + ".png"
-                    data = opThreshold.InputImage(roi_with_channel[0], roi_with_channel[1]).wait()
-                    vigra.impex.writeImage(data.squeeze().astype(numpy.uint8), outfile)
-                    '''
-                start_pred = time.time()
-                prediction_roi = numpy.append( roi_with_channel[:,:-1], [[0],[4]], axis=1 )
-                synapse_predictions = opPixelClassification3d.PredictionProbabilities[-1](*prediction_roi).wait()
-                synapse_predictions = vigra.taggedView( synapse_predictions, "xytc" )
-                stop_pred = time.time()
-                timing_logger.debug( "spent in first 3d prediction: {}".format( stop_pred-start_pred ) )
-                opThreshold.InputImage.setValue(synapse_predictions)
-                opThreshold.InputImage.meta.drange = opPixelClassification3d.PredictionProbabilities[-1].meta.drange
-                synapse_cc = opThreshold.Output[:].wait()
-                if debug_images:
-                    outdir1 = outdir+"predictions_roi/"
-                    try:
-                        os.makedirs(outdir1)
-                    except os.error:
-                        pass
-                    outfile = outdir1+"%.02d"%iz + ".tiff"
-                    #norm = numpy.where(synapse_cc[:, :, 0, 0]>0, 255, 0)
-                    vigra.impex.writeImage(synapse_predictions[...,0,SYNAPSE_CHANNEL], outfile)
-    
-    
-                if debug_images:
-                    outdir1 = outdir+"synapses_roi/"
-                    try:
-                        os.makedirs(outdir1)
-                    except os.error:
-                        pass
-                    outfile = outdir1+"%.02d"%iz + ".tiff"
-                    norm = numpy.where(synapse_cc[:, :, 0, 0]>0, 255, 0)
-                    vigra.impex.writeImage(norm.astype(numpy.uint8), outfile)
-                if numpy.sum(synapse_cc)==0:
-                    #print "NO SYNAPSES IN THIS SLICE:", iz
-                    timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
-                    continue
-
-                start_hess = time.time()
-                eigenValues = opFeatures.Output(roi_hessian[0], roi_hessian[1]).wait()
-                eigenValues = numpy.abs(eigenValues[:, :, 0, 0])
-                stop_hess = time.time()
-                timing_logger.debug( "spent for hessian: {}".format( stop_hess-start_hess ) )
-                shape_x = roi[1][0]-roi[0][0]
-                shape_y =  roi[1][1]-roi[0][1]
-                shape_x = long(shape_x)
-                shape_y = long(shape_y)
-                start_gr = time.time()
-                gridGr = graphs.gridGraph((shape_x, shape_y )) # !on original pixels
-                gridGraphEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGr, eigenValues) 
-                gridGraphs.append(gridGr)
-                graphEdges.append(gridGraphEdgeIndicator)
-                stop_gr = time.time()
-                timing_logger.debug( "creating graph: {}".format( stop_gr - start_gr ) )
-                if debug_images:
-                    outdir1 = outdir+"hessianUp/"
-                    try:
-                        os.makedirs(outdir1)
-                    except os.error:
-                        pass
-                    outfile = outdir1+"%.02d"%iz + ".tiff"
-                    logger.debug( "saving hessian to file: {}".format( outfile ) )
-                    vigra.impex.writeImage(eigenValues, outfile )
-                
-        
-            
-                instance = vigra.graphs.ShortestPathPathDijkstra(gridGr)
-                relative_coord = [skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]]
-                relative_coord = map(long, relative_coord)
-                sourceNode = gridGr.coordinateToNode(relative_coord)
-                start_dij = time.time()
-                instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
-                
-                distances = instance.distances()
-                stop_dij = time.time()
-                timing_logger.debug( "spent in dijkstra {}".format( stop_dij - start_dij ) )
-                if debug_images:
-                    outdir1 = outdir+"distances/"
-                    try:
-                        os.makedirs(outdir1)
-                    except os.error:
-                        pass
-                    outfile = outdir1+"%.02d"%iz + ".tiff"
-                    logger.debug( "saving distances to file:".format( outfile ) )
-                    distances[skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]] = numpy.max(distances)
-                    vigra.impex.writeImage(distances, outfile )
-                
-
-                synapse_objects, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
-                                                                              previous_slice_objects, previous_slice_roi,\
-                                                                              maxLabelSoFar)
-                synapse_objects = synapse_objects.squeeze()
-
-                synapseIds = set(synapse_objects.flat)
-                synapseIds.remove(0)
-                for sid in synapseIds:
-                    #find the pixel positions of this synapse
-                    syn_pixel_coords = numpy.where(synapse_objects ==sid)
-                    #syn_pixel_coords = numpy.unravel_index(syn_pixels, distances.shape)
-                    #FIXME: offset by roi
-                    syn_average_x = numpy.average(syn_pixel_coords[0])+roi[0][0]
-                    syn_average_y = numpy.average(syn_pixel_coords[1])+roi[0][1]
-                    syn_distances = distances[syn_pixel_coords]
-                    mindist = numpy.min(syn_distances)
-                    str_to_write = str(int(sid)) + "\t" + str(int(syn_average_x)) + "\t" + str(int(syn_average_y)) + \
-                                   "\t" + str(iz) + "\t" + str(mindist)+"\n"
-                    fout.write(str_to_write)
-                    #add this synapse to the exported list
-                previous_slice_objects = synapse_objects
-                previous_slice_roi = roi
-                maxLabelSoFar = maxLabelCurrent
-        
+    with open(output_path, "w") as fout:
+        for branch_rois in branchwise_rois:
+            previous_slice_objects = None
+            previous_slice_roi = None
+            for skeletonCoord, roi in branch_rois:
+                with Timer() as timer:
+                    logger.debug("skeleton point: {}".format( skeletonCoord ))
+                    #Add channel dimension
+                    roi_with_channel = numpy.zeros((2, roi.shape[1]+1), dtype=numpy.uint32)
+                    roi_with_channel[:, :-1] = roi[:]
+                    roi_with_channel[0, -1] = 0
+                    roi_with_channel[1, -1] = 1
+                    iz = roi[0][2]
+                    roi_hessian = (roi_with_channel[0]*2, roi_with_channel[1]*2-1)
+                    for x in range(roi.shape[1]):
+                        if roi[0][x] == 0:
+                            roi_hessian[0][x] = 0
+                    roi_hessian[0][2] = iz
+                    roi_hessian[1][2] = iz+1
+                    #we need the second eigenvalue
+                    roi_hessian[0][-1] = 1
+                    roi_hessian[1][-1] = 2
                     
-                #Sanity check
-                #outfile = outdir+"hessianUp/"+ "%.02d"%iz + ".tiff"
-                #vigra.impex.writeImage(eigenValues, outfile)
-                #outfile = outdir+"distances/"+ "%.02d"%iz + ".tiff"
-                #vigra.impex.writeImage(distances, outfile)
-            timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
+                    if debug_images:
+                        outdir1 = outdir+"raw/"
+                        try:
+                            os.makedirs(outdir1)
+                        except os.error:
+                            pass
+                        outfile = outdir1+"%.02d"%iz + ".png"
+                        data = opPixelClassification3d.InputImages[-1](roi_with_channel[0], roi_with_channel[1]).wait()
+                        vigra.impex.writeImage(data.squeeze().astype(numpy.uint8), outfile)
+                        '''
+                        outdir2 = outdir + "synapse_pred/"
+                        outfile = outdir2+"%.02d"%iz + ".png"
+                        data = opThreshold.InputImage(roi_with_channel[0], roi_with_channel[1]).wait()
+                        vigra.impex.writeImage(data.squeeze().astype(numpy.uint8), outfile)
+                        '''
+                    start_pred = time.time()
+                    prediction_roi = numpy.append( roi_with_channel[:,:-1], [[0],[4]], axis=1 )
+                    synapse_predictions = opPixelClassification3d.PredictionProbabilities[-1](*prediction_roi).wait()
+                    synapse_predictions = vigra.taggedView( synapse_predictions, "xytc" )
+                    stop_pred = time.time()
+                    timing_logger.debug( "spent in first 3d prediction: {}".format( stop_pred-start_pred ) )
+                    opThreshold.InputImage.setValue(synapse_predictions)
+                    opThreshold.InputImage.meta.drange = opPixelClassification3d.PredictionProbabilities[-1].meta.drange
+                    synapse_cc = opThreshold.Output[:].wait()
+                    if debug_images:
+                        outdir1 = outdir+"predictions_roi/"
+                        try:
+                            os.makedirs(outdir1)
+                        except os.error:
+                            pass
+                        outfile = outdir1+"%.02d"%iz + ".tiff"
+                        #norm = numpy.where(synapse_cc[:, :, 0, 0]>0, 255, 0)
+                        vigra.impex.writeImage(synapse_predictions[...,0,SYNAPSE_CHANNEL], outfile)
+        
+        
+                    if debug_images:
+                        outdir1 = outdir+"synapses_roi/"
+                        try:
+                            os.makedirs(outdir1)
+                        except os.error:
+                            pass
+                        outfile = outdir1+"%.02d"%iz + ".tiff"
+                        norm = numpy.where(synapse_cc[:, :, 0, 0]>0, 255, 0)
+                        vigra.impex.writeImage(norm.astype(numpy.uint8), outfile)
+                    if numpy.sum(synapse_cc)==0:
+                        #print "NO SYNAPSES IN THIS SLICE:", iz
+                        timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
+                        continue
+    
+                    start_hess = time.time()
+                    eigenValues = opFeatures.Output(roi_hessian[0], roi_hessian[1]).wait()
+                    eigenValues = numpy.abs(eigenValues[:, :, 0, 0])
+                    stop_hess = time.time()
+                    timing_logger.debug( "spent for hessian: {}".format( stop_hess-start_hess ) )
+                    shape_x = roi[1][0]-roi[0][0]
+                    shape_y =  roi[1][1]-roi[0][1]
+                    shape_x = long(shape_x)
+                    shape_y = long(shape_y)
+                    start_gr = time.time()
+                    gridGr = graphs.gridGraph((shape_x, shape_y )) # !on original pixels
+                    gridGraphEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGr, eigenValues) 
+                    gridGraphs.append(gridGr)
+                    graphEdges.append(gridGraphEdgeIndicator)
+                    stop_gr = time.time()
+                    timing_logger.debug( "creating graph: {}".format( stop_gr - start_gr ) )
+                    if debug_images:
+                        outdir1 = outdir+"hessianUp/"
+                        try:
+                            os.makedirs(outdir1)
+                        except os.error:
+                            pass
+                        outfile = outdir1+"%.02d"%iz + ".tiff"
+                        logger.debug( "saving hessian to file: {}".format( outfile ) )
+                        vigra.impex.writeImage(eigenValues, outfile )
+                    
+            
+                
+                    instance = vigra.graphs.ShortestPathPathDijkstra(gridGr)
+                    relative_coord = [skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]]
+                    relative_coord = map(long, relative_coord)
+                    sourceNode = gridGr.coordinateToNode(relative_coord)
+                    start_dij = time.time()
+                    instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
+                    
+                    distances = instance.distances()
+                    stop_dij = time.time()
+                    timing_logger.debug( "spent in dijkstra {}".format( stop_dij - start_dij ) )
+                    if debug_images:
+                        outdir1 = outdir+"distances/"
+                        try:
+                            os.makedirs(outdir1)
+                        except os.error:
+                            pass
+                        outfile = outdir1+"%.02d"%iz + ".tiff"
+                        logger.debug( "saving distances to file:".format( outfile ) )
+                        distances[skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]] = numpy.max(distances)
+                        vigra.impex.writeImage(distances, outfile )
+                    
+    
+                    synapse_objects, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
+                                                                                  previous_slice_objects, previous_slice_roi,\
+                                                                                  maxLabelSoFar)
+                    synapse_objects = synapse_objects.squeeze()
+    
+                    synapseIds = set(synapse_objects.flat)
+                    synapseIds.remove(0)
+                    for sid in synapseIds:
+                        #find the pixel positions of this synapse
+                        syn_pixel_coords = numpy.where(synapse_objects ==sid)
+                        #syn_pixel_coords = numpy.unravel_index(syn_pixels, distances.shape)
+                        #FIXME: offset by roi
+                        syn_average_x = numpy.average(syn_pixel_coords[0])+roi[0][0]
+                        syn_average_y = numpy.average(syn_pixel_coords[1])+roi[0][1]
+                        syn_distances = distances[syn_pixel_coords]
+                        mindist = numpy.min(syn_distances)
+                        str_to_write = str(int(sid)) + "\t" + str(int(syn_average_x)) + "\t" + str(int(syn_average_y)) + \
+                                       "\t" + str(iz) + "\t" + str(mindist)+"\n"
+                        fout.write(str_to_write)
+                        fout.flush()
+                        #add this synapse to the exported list
+                    previous_slice_objects = synapse_objects
+                    previous_slice_roi = roi
+                    maxLabelSoFar = maxLabelCurrent
+            
+                        
+                    #Sanity check
+                    #outfile = outdir+"hessianUp/"+ "%.02d"%iz + ".tiff"
+                    #vigra.impex.writeImage(eigenValues, outfile)
+                    #outfile = outdir+"distances/"+ "%.02d"%iz + ".tiff"
+                    #vigra.impex.writeImage(distances, outfile)
+                timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
 
 def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_roi, maxLabel):
     current_roi = numpy.array(current_roi)
@@ -387,7 +388,7 @@ if __name__=="__main__":
         project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
         skeleton_swc = '/Users/bergs/Documents/workspace/anna_scripts/fruitfly/example_skeleton.swc'
         volume_description = '/Users/bergs/Documents/workspace/skeleton_synapses/cardona_volume_description.json'
-        output_file = 'synapses.csv'
+        output_file = '/Users/bergs/Documents/workspace/skeleton_synapses/synapses.csv'
 
         sys.argv.append(skeleton_swc)
         sys.argv.append(project3dname)
