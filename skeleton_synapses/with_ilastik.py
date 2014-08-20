@@ -23,8 +23,8 @@ from lazyflow.roi import roiToSlice, sliceToRoi, getIntersection
 #input_dir = '/home/anna/data/connector_archive_2g0y0b/14894406/presynaptic/16592557/'
 input_dir = '/home/anna/data/tmp/'
 
-#project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
-#project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
+project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
+project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
 
 #project3dname = '/groups/flyem/home/kreshuka/workspace/scripts/fruitfly/Synapse_Labels3D.ilp'
 #project2dname = '/groups/flyem/home/kreshuka/workspace/scripts/fruitfly/Synapse_Labels2D.ilp'
@@ -32,8 +32,8 @@ input_dir = '/home/anna/data/tmp/'
 #project3dname = '/home/bergs/workspace/anna_scripts/fruitfly/Synapse_Labels3D.ilp'
 #project2dname = '/home/bergs/workspace/anna_scripts/fruitfly/Synapse_Labels2D.ilp'
 
-project3dname = '/home/akreshuk/scripts/fruitfly/Synapse_Labels3D.ilp'
-project2dname = '/home/akreshuk/scripts/fruitfly/Synapse_Labels2D.ilp'
+#project3dname = '/home/akreshuk/scripts/fruitfly/Synapse_Labels3D.ilp'
+#project2dname = '/home/akreshuk/scripts/fruitfly/Synapse_Labels2D.ilp'
 
 
 #input_dir = '/home/anna/data/connector_archive_2g0y0b/14894406/presynaptic/16592557/'
@@ -54,7 +54,9 @@ import requests
 logging.getLogger("requests").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-logger.addHandler(logging.StreamHandler(sys.stdout))
+#handler = logging.StreamHandler(sys.stdout)
+#handler.setLevel(logging.DEBUG)
+#logger.addHandler(handler)
 
 def open_project( project_path ):
     """
@@ -172,7 +174,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
         previous_slice_roi = None
         for skeletonCoord, roi in branch_rois:
             with Timer() as timer:
-                logging.debug("skeleton point: {}".format( skeletonCoord ))
+                logger.debug("skeleton point: {}".format( skeletonCoord ))
                 #Add channel dimension
                 roi_with_channel = numpy.zeros((2, roi.shape[1]+1), dtype=numpy.uint32)
                 roi_with_channel[:, :-1] = roi[:]
@@ -204,11 +206,11 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                     data = opThreshold.InputImage(roi_with_channel[0], roi_with_channel[1]).wait()
                     vigra.impex.writeImage(data.squeeze().astype(numpy.uint8), outfile)
                     '''
-                start_pred = time.clock()
+                start_pred = time.time()
                 prediction_roi = numpy.append( roi_with_channel[:,:-1], [[0],[4]], axis=1 )
                 synapse_predictions = opPixelClassification3d.PredictionProbabilities[-1](*prediction_roi).wait()
                 synapse_predictions = vigra.taggedView( synapse_predictions, "xytc" )
-                stop_pred = time.clock()
+                stop_pred = time.time()
                 logger.debug( "spent in first 3d prediction: {}".format( stop_pred-start_pred ) )
                 opThreshold.InputImage.setValue(synapse_predictions)
                 opThreshold.InputImage.meta.drange = opPixelClassification3d.PredictionProbabilities[-1].meta.drange
@@ -242,21 +244,21 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                 
                 #roi_list = [slice(None, None, None), slice(None, None, None), slice(iz, iz+1, None), slice(1, 2, None)]
                 #roi = sliceToRoi(roi_list, data_shape_3d+(2,))
-                start_hess = time.clock()
+                start_hess = time.time()
                 eigenValues = opFeatures.Output(roi_hessian[0], roi_hessian[1]).wait()
                 eigenValues = numpy.abs(eigenValues[:, :, 0, 0])
-                stop_hess = time.clock()
+                stop_hess = time.time()
                 logger.debug( "spent for hessian: {}".format( stop_hess-start_hess ) )
                 shape_x = roi[1][0]-roi[0][0]
                 shape_y =  roi[1][1]-roi[0][1]
                 shape_x = long(shape_x)
                 shape_y = long(shape_y)
-                start_gr = time.clock()
+                start_gr = time.time()
                 gridGr = graphs.gridGraph((shape_x, shape_y )) # !on original pixels
                 gridGraphEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGr, eigenValues) 
                 gridGraphs.append(gridGr)
                 graphEdges.append(gridGraphEdgeIndicator)
-                stop_gr = time.clock()
+                stop_gr = time.time()
                 logger.debug( "creating graph: {}".format( stop_gr - start_gr ) )
                 if debug_images:
                     outdir1 = outdir+"hessianUp/"
@@ -274,11 +276,11 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                 relative_coord = [skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]]
                 relative_coord = map(long, relative_coord)
                 sourceNode = gridGr.coordinateToNode(relative_coord)
-                start_dij = time.clock()
+                start_dij = time.time()
                 instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
                 
                 distances = instance.distances()
-                stop_dij = time.clock()
+                stop_dij = time.time()
                 logger.debug( "spent in dijkstra {}".format( stop_dij - start_dij ) )
                 if debug_images:
                     outdir1 = outdir+"distances/"
@@ -497,7 +499,7 @@ class OpCombinePredictions( Operator ):
     
     def execute(self, slot, subindex, roi, result):
         #request the right channel
-        start_combine = time.clock()
+        start_combine = time.time()
         def makeNewChannelRoi(oldroi, channelIndex, channelValue, shape):
             roi_slice = list(roiToSlice(oldroi.start, oldroi.stop))
             roi_slice[channelIndex] = slice(channelValue, channelValue+1, None)
@@ -519,20 +521,20 @@ class OpCombinePredictions( Operator ):
         synapse_predictions = synapse_req.wait()
         
         ''''
-        start_3d = time.clock()
+        start_3d = time.time()
         membrane_predictions = self.MembranePredictions(roi_membranes[0], roi_membranes[1]).wait()
-        stop_3d = time.clock()
+        stop_3d = time.time()
         print "spent in 2d prediction:", stop_3d-start_3d
-        start2d = time.clock()
+        start2d = time.time()
         synapse_predictions = self.SynapsePredictions(roi_synapses[0], roi_synapses[1]).wait()
-        stop2d = time.clock()
+        stop2d = time.time()
         print "spent in 3d prediction:", stop2d - start2d
         '''
         #print "provided synapse and membrane predictions"
         #print numpy.sum(membrane_predictions), numpy.sum(synapse_predictions)
         result[:] = membrane_predictions[...]
         result[:] += synapse_predictions[...]
-        stop_combine = time.clock()
+        stop_combine = time.time()
         logger.debug( "spent for combining predictions:".format( stop_combine-start_combine ) )
         return result
 
@@ -593,7 +595,8 @@ if __name__=="__main__":
         #input_filepath = os.path.join( input_dir, "*.tiff" )
         #volume_from_dir(input_filepath)
         #input_filepath = os.path.join(input_dir, "random_raw_stack.h5/data")
-        input_filepath = "/home/akreshuk/scripts/fruitfly/cardona_volume_description.json"
+        #input_filepath = "/home/akreshuk/scripts/fruitfly/cardona_volume_description.json"
+        input_filepath = "/Users/bergs/Documents/workspace/skeleton_synapses/cardona_volume_description.json"
         ''''
         small_branch = [tree_coords_and_rois[0][100:-1]]
         '''
