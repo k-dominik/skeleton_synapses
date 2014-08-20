@@ -15,7 +15,7 @@ Arguments:
 Example Volume Description JSON file
 -------------------------------------
 
-The description must be in this special JSON format.  Note that the fields are in zyx order, not xyz.
+The description must be in this special JSON format.  Note that the fields are in `zyx` order, not `xyz`!
 
     {
         "_schema_name" : "tiled-volume-description",
