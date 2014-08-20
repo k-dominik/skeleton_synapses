@@ -2,8 +2,8 @@
     "_schema_name" : "tiled-volume-description",
     "_schema_version" : 1.0,
 
-    "## NOTES" : "Volume dimensions: x: 22775 px y: 18326 px z: 462 number of sections",
-    "## NOTES" : "Resolution: 45.0 x 4.0 x 4.0",
+    "## NOTES" : "Volume dimensions: x: 22775 px y: 18326 px z: 462 (number of sections)",
+    "## NOTES" : "Resolution: 4.0 x 4.0 x 45.0",
     "## NOTES" : "Tile size: 256 x 256 px",
 
     "name" : "My Tiled Data",
@@ -28,5 +28,3 @@
                         [348, [349, 350, 351]]
                       ]
 }
-
-
