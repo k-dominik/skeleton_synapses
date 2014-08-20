@@ -1,9 +1,7 @@
 import os
-import sys
 import numpy
 import vigra
 from vigra import graphs
-import glob
 import time
 
 import ilastik_main
@@ -15,8 +13,7 @@ from lazyflow.operators.vigraOperators import OpPixelFeaturesPresmoothed
 from lazyflow.graph import Graph
 from lazyflow.utility import PathComponents, isUrl, Timer
 
-from lazyflow.graph import Operator, InputSlot, OutputSlot
-from lazyflow.roi import roiToSlice, sliceToRoi, getIntersection
+from lazyflow.roi import roiToSlice, getIntersection
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
@@ -43,6 +40,10 @@ import requests
 logging.getLogger("requests").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+timing_logger = logging.getLogger(__name__ + '.timing')
+timing_logger.setLevel(logging.INFO)
+
 
 def open_project( project_path ):
     """
@@ -190,7 +191,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                 synapse_predictions = opPixelClassification3d.PredictionProbabilities[-1](*prediction_roi).wait()
                 synapse_predictions = vigra.taggedView( synapse_predictions, "xytc" )
                 stop_pred = time.time()
-                logger.debug( "spent in first 3d prediction: {}".format( stop_pred-start_pred ) )
+                timing_logger.debug( "spent in first 3d prediction: {}".format( stop_pred-start_pred ) )
                 opThreshold.InputImage.setValue(synapse_predictions)
                 opThreshold.InputImage.meta.drange = opPixelClassification3d.PredictionProbabilities[-1].meta.drange
                 synapse_cc = opThreshold.Output[:].wait()
@@ -216,14 +217,14 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                     vigra.impex.writeImage(norm.astype(numpy.uint8), outfile)
                 if numpy.sum(synapse_cc)==0:
                     #print "NO SYNAPSES IN THIS SLICE:", iz
-                    logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
+                    timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
                     continue
 
                 start_hess = time.time()
                 eigenValues = opFeatures.Output(roi_hessian[0], roi_hessian[1]).wait()
                 eigenValues = numpy.abs(eigenValues[:, :, 0, 0])
                 stop_hess = time.time()
-                logger.debug( "spent for hessian: {}".format( stop_hess-start_hess ) )
+                timing_logger.debug( "spent for hessian: {}".format( stop_hess-start_hess ) )
                 shape_x = roi[1][0]-roi[0][0]
                 shape_y =  roi[1][1]-roi[0][1]
                 shape_x = long(shape_x)
@@ -234,7 +235,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                 gridGraphs.append(gridGr)
                 graphEdges.append(gridGraphEdgeIndicator)
                 stop_gr = time.time()
-                logger.debug( "creating graph: {}".format( stop_gr - start_gr ) )
+                timing_logger.debug( "creating graph: {}".format( stop_gr - start_gr ) )
                 if debug_images:
                     outdir1 = outdir+"hessianUp/"
                     try:
@@ -256,7 +257,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                 
                 distances = instance.distances()
                 stop_dij = time.time()
-                logger.debug( "spent in dijkstra {}".format( stop_dij - start_dij ) )
+                timing_logger.debug( "spent in dijkstra {}".format( stop_dij - start_dij ) )
                 if debug_images:
                     outdir1 = outdir+"distances/"
                     try:
@@ -299,7 +300,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                 #vigra.impex.writeImage(eigenValues, outfile)
                 #outfile = outdir+"distances/"+ "%.02d"%iz + ".tiff"
                 #vigra.impex.writeImage(distances, outfile)
-            logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
+            timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
 
 def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_roi, maxLabel):
     current_roi = numpy.array(current_roi)
