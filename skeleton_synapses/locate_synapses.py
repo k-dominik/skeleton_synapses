@@ -18,26 +18,13 @@ from lazyflow.utility import PathComponents, isUrl, Timer
 from lazyflow.graph import Operator, InputSlot, OutputSlot
 from lazyflow.roi import roiToSlice, sliceToRoi, getIntersection
 
-#project3dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels3D.ilp'
-#project2dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels2D.ilp'
-#input_dir = '/home/anna/data/connector_archive_2g0y0b/14894406/presynaptic/16592557/'
-input_dir = '/home/anna/data/tmp/'
+from skeleton_synapses.opCombinePredictions import OpCombinePredictions
+from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
+
 
 project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
 project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
 
-#project3dname = '/groups/flyem/home/kreshuka/workspace/scripts/fruitfly/Synapse_Labels3D.ilp'
-#project2dname = '/groups/flyem/home/kreshuka/workspace/scripts/fruitfly/Synapse_Labels2D.ilp'
-
-#project3dname = '/home/bergs/workspace/anna_scripts/fruitfly/Synapse_Labels3D.ilp'
-#project2dname = '/home/bergs/workspace/anna_scripts/fruitfly/Synapse_Labels2D.ilp'
-
-#project3dname = '/home/akreshuk/scripts/fruitfly/Synapse_Labels3D.ilp'
-#project2dname = '/home/akreshuk/scripts/fruitfly/Synapse_Labels2D.ilp'
-
-
-#input_dir = '/home/anna/data/connector_archive_2g0y0b/14894406/presynaptic/16592557/'
-#outdir = "/home/anna/data/tmp/"
 outdir = "/tmp/"
 
 THRESHOLD = 5
@@ -50,6 +37,8 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 import tempfile
 TMP_DIR = tempfile.gettempdir()
 import logging
+
+# Import requests in advance so we can silence its log messages.
 import requests
 logging.getLogger("requests").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
@@ -119,7 +108,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
     
     # Combine
     tempGraph = Graph()
-    opCombinePredictions = OpCombinePredictions(graph=tempGraph)
+    opCombinePredictions = OpCombinePredictions(SYNAPSE_CHANNEL, MEMBRANE_CHANNEL, graph=tempGraph)
     opPixelClassification3d.FreezePredictions.setValue(False)
     opCombinePredictions.SynapsePredictions.connect( opPixelClassification3d.PredictionProbabilities[-1], permit_distant_connection=True )
     opCombinePredictions.MembranePredictions.connect( opPixelClassification2d.HeadlessPredictionProbabilities[-1], permit_distant_connection=True )
@@ -280,7 +269,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                     vigra.impex.writeImage(distances, outfile )
                 
 
-                synapse_objects, maxLabelCurrent = find_synapses_consistently(synapse_cc, roi,\
+                synapse_objects, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
                                                                               previous_slice_objects, previous_slice_roi,\
                                                                               maxLabelSoFar)
                 synapse_objects = synapse_objects.squeeze()
@@ -312,9 +301,11 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                 #vigra.impex.writeImage(distances, outfile)
             logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
 
-def find_synapses_consistently(current_slice, current_roi, previous_slice, previous_roi, maxLabel):
+def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_roi, maxLabel):
+    current_roi = numpy.array(current_roi)
     intersection_roi = None
     if previous_roi is not None:
+        previous_roi = numpy.array(previous_roi)
         current_roi_2d = current_roi[:, :-1]
         previous_roi_2d = previous_roi[:, :-1]
         intersection_roi = getIntersection( current_roi_2d, previous_roi_2d, assertIntersect=False )
@@ -334,7 +325,7 @@ def find_synapses_consistently(current_slice, current_roi, previous_slice, previ
     # omit label 0
     previous_slice_objects = numpy.unique(previous_slice)[1:]
     current_slice_objects = numpy.unique(current_slice)[1:]
-    max_current_object = max(current_slice_objects)
+    max_current_object = max(0, *current_slice_objects)
     relabel = numpy.zeros((max_current_object+1,), dtype=numpy.uint32)
     
     for cc in previous_slice_objects:
@@ -353,160 +344,7 @@ def find_synapses_consistently(current_slice, current_roi, previous_slice, previ
     relabeled_slice_objects = relabel[current_slice]
     return relabeled_slice_objects, maxLabel
 
-def test_find_synapses():
-    slice1 = numpy.zeros((20, 20), dtype=numpy.uint8)
-    slice2 = numpy.zeros((20, 20), dtype=numpy.uint8)
-    
-    slice1[0:3, 0:3] = 1
-    slice1[7:9, 2:3] = 3
 
-    slice2[2:5, 2:5] = 2
-    slice2[1:3, 7:9] = 5
-
-    roi1 = [(0,0), (10,10)]
-    roi2 = [(2,2), (12,12)]    
-    
-    extracted_slice1 = slice1[roiToSlice(*roi1)]
-    extracted_slice2 = slice2[roiToSlice(*roi2)]
-    
-    result1, maxLabel = find_synapses_consistently(extracted_slice1, roi1, None, None, 0)
-    assert numpy.all(result1==extracted_slice1)
-    assert maxLabel==3
-    
-    result2, maxLabel2 = find_synapses_consistently(extracted_slice2, roi2, extracted_slice1, roi1, maxLabel)
-    
-    # Copy into the original (big) array for straightforward comparison
-    slice2[roiToSlice(*roi2)] = result2
-
-    # Note the modified slicings for comparison: 
-    #  we don't care what happened outside the intersection region.
-    assert numpy.all(slice2[2:5, 2:5]==1)
-    assert numpy.all(slice2[2:3, 7:9]==maxLabel+1)
-    assert maxLabel2==4
-    
-import h5py
-
-def volume_from_dir(dirpattern, offset=0, nfiles=None):
-    filelist = glob.glob(dirpattern)
-    filelist = sorted(filelist, key=str.lower)
-    begin = offset
-    if nfiles is not None and offset+nfiles<len(filelist):
-        end=offset+nfiles
-    else:
-        end = len(filelist)
-    filelist = filelist[begin:end]
-    nx, ny = vigra.readImage(filelist[0]).squeeze().shape
-    dt = vigra.readImage(filelist[0]).dtype
-    nz = len(filelist)
-    volume = numpy.zeros((nx, ny, nz, 1), dtype=dt)
-    
-    for i in range(len(filelist)):
-        volume[:, :, i, 0] = vigra.readImage(filelist[i]).squeeze()[:]
-        
-    outfile = h5py.File("/home/anna/data/tmp/random_raw_stack.h5", "w")
-    outfile.create_dataset("data", data=volume)
-    outfile.close()
-    return volume
-    
-
-
-class OpUpsampleByTwo( Operator ):
-    Input = InputSlot()
-    Output = OutputSlot()
-    
-    def setupOutputs(self):
-        assert len(self.Input.meta.shape)==4 #we only take 4D data
-        tagged_shape = self.Input.meta.getTaggedShape()
-        shape_x = tagged_shape['x']
-        shape_y = tagged_shape['y']
-        shape_t = tagged_shape['t']
-        new_shape_x = shape_x*2 - 1
-        new_shape_y = shape_y*2 - 1
-        self.Output.meta.assignFrom(self.Input.meta)
-        self.Output.meta.shape = (new_shape_x, new_shape_y, shape_t, 1)
-        self.Output.meta.axistags = vigra.VigraArray.defaultAxistags('xytc')
-        
-    def execute(self, slot, subindex, roi, result):
-        x_index, y_index, t_index = map(self.Input.meta.axistags.index, 'xyt')
-        roi_array = numpy.array([roi.start, roi.stop])
-        roi_array[:, x_index] = (roi_array[:, x_index]+1)/2
-        roi_array[:, y_index] = (roi_array[:, y_index]+1)/2
-        
-        roi_up = 4*[slice(None, None, None)]
-        shape_up_x = roi.stop[x_index] - roi.start[x_index]
-        shape_up_y = roi.stop[y_index] - roi.start[y_index]
-        t_start = roi_array[0, t_index]
-        t_stop = roi_array[1, t_index]
-        for it in range(t_start, t_stop):
-            roi_array[0, t_index] = it
-            roi_array[1, t_index] = it+1
-            
-            roi_up[t_index] = slice(it-t_start, it-t_start+1, None)
-            roi_up = sliceToRoi(roi_up, result.shape)
-            down_image = self.Input(roi_array[0], roi_array[1]).wait().squeeze()
-            assert len(down_image.shape)==2
-            up_image = vigra.resize(down_image, [shape_up_x, shape_up_y])
-            up_image = up_image.reshape(up_image.shape+(1,)+(1,))
-            result[roiToSlice(*roi_up)] = up_image
-        return result
-    
-    def propagateDirty(self, slot, subindex, roi):
-        #FIXME: do the correct roi
-        self.Output.setDirty(roi.start, roi.stop)     
-
-def testUpsample():
-    input_data = numpy.random.randint(0, 255, (256, 256, 10, 1)).astype(numpy.float32)
-    input_data = vigra.taggedView(input_data, 'xytc')
-    graph = Graph()
-    op = OpUpsampleByTwo(graph=graph)
-    op.Input.setValue(input_data)
-    out = op.Output[:].wait()
-    print "Done!"
-
-class OpCombinePredictions( Operator ):
-    MembranePredictions = InputSlot()
-    SynapsePredictions = InputSlot()
-    Output = OutputSlot()
-    
-    def setupOutputs(self):
-        assert self.MembranePredictions.meta.shape == self.SynapsePredictions.meta.shape
-        self.Output.meta.assignFrom( self.MembranePredictions.meta )
-        output_shape = list(self.MembranePredictions.meta.shape)
-        output_shape[self.Output.meta.axistags.channelIndex] = 1
-        self.Output.meta.shape = tuple(output_shape)
-        self.Output.meta.dtype = numpy.float32 #or should we make it uint16?
-    
-    def execute(self, slot, subindex, roi, result):
-        #request the right channel
-        start_combine = time.time()
-        def makeNewChannelRoi(oldroi, channelIndex, channelValue, shape):
-            roi_slice = list(roiToSlice(oldroi.start, oldroi.stop))
-            roi_slice[channelIndex] = slice(channelValue, channelValue+1, None)
-            return sliceToRoi(roi_slice, shape)
-        
-        
-        roi_synapses = makeNewChannelRoi(roi, self.SynapsePredictions.meta.axistags.channelIndex, \
-                                         SYNAPSE_CHANNEL, self.SynapsePredictions.meta.shape)
-        
-        
-        roi_membranes = makeNewChannelRoi(roi, self.MembranePredictions.meta.axistags.channelIndex, \
-                                          MEMBRANE_CHANNEL, self.MembranePredictions.meta.shape)
-        
-        membrane_req = self.MembranePredictions(roi_membranes[0], roi_membranes[1])
-        synapse_req = self.SynapsePredictions(roi_synapses[0], roi_synapses[1])
-        membrane_req.submit()
-        synapse_req.submit()
-        membrane_predictions = membrane_req.wait()
-        synapse_predictions = synapse_req.wait()
-        
-        result[:] = membrane_predictions[...]
-        result[:] += synapse_predictions[...]
-        stop_combine = time.time()
-        logger.debug( "spent for combining predictions:".format( stop_combine-start_combine ) )
-        return result
-
-    def propagateDirty(self, slot, subindex, roi):
-        self.Output.setDirty(roi.start, roi.stop)        
 
 
 
@@ -529,8 +367,6 @@ if __name__=="__main__":
         
         branchwise_rois = [zip(skeletons, rois)]
         
-        #input_filepath = os.path.join( input_dir, "*.tiff" )
-        #volume_from_dir(input_filepath)
         input_filepath = "/home/bergs/workspace/anna_scripts/fruitfly/random_raw_stack.h5/data"
         do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_rois, debug_images=True, order2d='xytc', order3d='xyzc')
     else:
