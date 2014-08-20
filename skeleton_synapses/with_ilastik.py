@@ -54,9 +54,6 @@ import requests
 logging.getLogger("requests").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-#handler = logging.StreamHandler(sys.stdout)
-#handler.setLevel(logging.DEBUG)
-#logger.addHandler(handler)
 
 def open_project( project_path ):
     """
@@ -112,14 +109,9 @@ def append_lane(workflow, input_filepath, axisorder=None):
     return opPixelClassification
 
 def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_rois, debug_images=False, order2d='xyz', order3d='xyt'):
-    #input_data = volume_from_dir(input_path)
-    #print "input data shape:", input_data.shape
     shell3d = open_project(project3dname)
     shell2d = open_project(project2dname)
 
-    #opPixelClassification3d = configure_batch_pipeline(shell3d.workflow, input_data, 'xyzc') # Z
-    #opPixelClassification2d = configure_batch_pipeline(shell2d.workflow, input_data, 'xytc') # T
-    
     opPixelClassification3d = append_lane(shell3d.workflow, input_filepath, order3d) # Z
     logger.debug( "appended 3d lane" )
     opPixelClassification2d = append_lane(shell2d.workflow, input_filepath, order2d) # T
@@ -132,7 +124,6 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
     opCombinePredictions.SynapsePredictions.connect( opPixelClassification3d.PredictionProbabilities[-1], permit_distant_connection=True )
     opCombinePredictions.MembranePredictions.connect( opPixelClassification2d.HeadlessPredictionProbabilities[-1], permit_distant_connection=True )
 
-    data_shape_3d = opPixelClassification3d.InputImages[-1].meta.shape[0:3]
     #data_shape_3d = input_data.shape[0:3]    
     opUpsample = OpUpsampleByTwo(graph = tempGraph)
     opUpsample.Input.connect(opCombinePredictions.Output)
@@ -161,7 +152,6 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
     fout = open(outdir+"synapses.csv", "w")
     opThreshold = OpThresholdTwoLevels(graph=tempGraph)
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
-    #opThreshold.InputImage.connect(opPixelClassification3d.HeadlessUint8PredictionProbabilities[-1], permit_distant_connection=True )
     opThreshold.SingleThreshold.setValue(0.5) #FIXME: solve the mess with uint8/float in predictions
     
     previous_slice_objects = None
@@ -239,11 +229,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                     #print "NO SYNAPSES IN THIS SLICE:", iz
                     logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
                     continue
-                
-                
-                
-                #roi_list = [slice(None, None, None), slice(None, None, None), slice(iz, iz+1, None), slice(1, 2, None)]
-                #roi = sliceToRoi(roi_list, data_shape_3d+(2,))
+
                 start_hess = time.time()
                 eigenValues = opFeatures.Output(roi_hessian[0], roi_hessian[1]).wait()
                 eigenValues = numpy.abs(eigenValues[:, :, 0, 0])
@@ -298,9 +284,7 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
                                                                               previous_slice_objects, previous_slice_roi,\
                                                                               maxLabelSoFar)
                 synapse_objects = synapse_objects.squeeze()
-        
-                    
-                #synapse_objects_slice = synapse_objects[:, :, iz]
+
                 synapseIds = set(synapse_objects.flat)
                 synapseIds.remove(0)
                 for sid in synapseIds:
@@ -329,7 +313,6 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
             logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
 
 def find_synapses_consistently(current_slice, current_roi, previous_slice, previous_roi, maxLabel):
-    # Drop Z
     intersection_roi = None
     if previous_roi is not None:
         current_roi_2d = current_roi[:, :-1]
@@ -340,8 +323,6 @@ def find_synapses_consistently(current_slice, current_roi, previous_slice, previ
         # Relabel from max
         relabeled_current = numpy.where( current_slice, current_slice+maxLabel, 0 )
         return relabeled_current, numpy.max(relabeled_current)
-    
-    
     
     # Extract the intersecting region from the current/prev slices,
     #  so its easy to compare corresponding pixels
@@ -444,8 +425,6 @@ class OpUpsampleByTwo( Operator ):
         self.Output.meta.assignFrom(self.Input.meta)
         self.Output.meta.shape = (new_shape_x, new_shape_y, shape_t, 1)
         self.Output.meta.axistags = vigra.VigraArray.defaultAxistags('xytc')
-        #print "output of upsampling operator:", self.Output.meta
-        
         
     def execute(self, slot, subindex, roi, result):
         x_index, y_index, t_index = map(self.Input.meta.axistags.index, 'xyt')
@@ -520,18 +499,6 @@ class OpCombinePredictions( Operator ):
         membrane_predictions = membrane_req.wait()
         synapse_predictions = synapse_req.wait()
         
-        ''''
-        start_3d = time.time()
-        membrane_predictions = self.MembranePredictions(roi_membranes[0], roi_membranes[1]).wait()
-        stop_3d = time.time()
-        print "spent in 2d prediction:", stop_3d-start_3d
-        start2d = time.time()
-        synapse_predictions = self.SynapsePredictions(roi_synapses[0], roi_synapses[1]).wait()
-        stop2d = time.time()
-        print "spent in 3d prediction:", stop2d - start2d
-        '''
-        #print "provided synapse and membrane predictions"
-        #print numpy.sum(membrane_predictions), numpy.sum(synapse_predictions)
         result[:] = membrane_predictions[...]
         result[:] += synapse_predictions[...]
         stop_combine = time.time()
