@@ -14,6 +14,7 @@ from lazyflow.graph import Graph
 from lazyflow.utility import PathComponents, isUrl, Timer
 
 from lazyflow.roi import roiToSlice, getIntersection
+from lazyflow.utility.io import TiledVolume
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
@@ -92,7 +93,9 @@ def append_lane(workflow, input_filepath, axisorder=None):
     
     return opPixelClassification
 
-def locate_synapses(project3dname, project2dname, input_filepath, outdir, branchwise_rois, debug_images=False, order2d='xyz', order3d='xyt'):
+def locate_synapses(project3dname, project2dname, input_filepath, output_path, branchwise_rois, debug_images=False, order2d='xyz', order3d='xyt'):
+    outdir = os.path.split( output_path )[0]
+    
     shell3d = open_project(project3dname)
     shell2d = open_project(project2dname)
 
@@ -133,7 +136,7 @@ def locate_synapses(project3dname, project2dname, input_filepath, outdir, branch
 
     gridGraphs = []
     graphEdges = []
-    fout = open(os.path.join(outdir, "synapses.csv"), "w")
+    fout = open(output_path, "w")
     opThreshold = OpThresholdTwoLevels(graph=tempGraph)
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
     opThreshold.SingleThreshold.setValue(0.5) #FIXME: solve the mess with uint8/float in predictions
@@ -342,31 +345,35 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
 
 def main():
     # FIXME: These shouldn't be hard-coded.
-    X_RES = 4.0
-    Y_RES = 4.0
-    Z_RES = 45.0
     ROI_RADIUS = 150
 
     import argparse
-    cwd = os.getcwd()
-
     parser = argparse.ArgumentParser() 
     parser.add_argument('skeleton_swc')
     parser.add_argument('project3d')
     parser.add_argument('project2d')
     parser.add_argument('volume_description')
-    parser.add_argument('--output_directory', default=cwd)
+    parser.add_argument('output_file')
     
     parsed_args = parser.parse_args()
     
-    node_infos = parse_swc( parsed_args.skeleton_swc, X_RES, Y_RES, Z_RES )
+    # Read the volume resolution
+    volume_description = TiledVolume.readDescription(parsed_args.volume_description)
+    z_res, y_res, x_res = volume_description.resolution_zyx
+    
+    # Parse the swc into a list of nodes
+    node_infos = parse_swc( parsed_args.skeleton_swc, x_res, y_res, z_res )
+    
+    # Construct a networkx tree
     tree = construct_tree( node_infos )
+    
+    # Get lists of (coord, roi) for each node, grouped into branches
     tree_coords_and_rois = coords_and_rois_for_tree(tree, radius=ROI_RADIUS)
 
     locate_synapses( parsed_args.project3d, 
                      parsed_args.project2d, 
                      parsed_args.volume_description, 
-                     parsed_args.output_directory,
+                     parsed_args.output_file,
                      tree_coords_and_rois, 
                      debug_images=False, 
                      order2d='xyt', 
@@ -380,11 +387,12 @@ if __name__=="__main__":
         project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
         skeleton_swc = '/Users/bergs/Documents/workspace/anna_scripts/fruitfly/example_skeleton.swc'
         volume_description = '/Users/bergs/Documents/workspace/skeleton_synapses/cardona_volume_description.json'
-        #outdir = "/tmp/"
+        output_file = 'synapses.csv'
 
         sys.argv.append(skeleton_swc)
         sys.argv.append(project3dname)
         sys.argv.append(project2dname)
         sys.argv.append(volume_description)
+        sys.argv.append(output_file)
 
     sys.exit( main() )

@@ -21,9 +21,9 @@ def parse_swc(swc_path, x_res, y_res, z_res):
             x_nm, y_nm, z_nm = map(float, (x_nm, y_nm, z_nm))
 
             # Convert to pixels
-            x_px = int(x_nm / x_res)
-            y_px = int(y_nm / y_res)
-            z_px = int(z_nm / z_res)
+            x_px = int(x_nm / float(x_res))
+            y_px = int(y_nm / float(y_res))
+            z_px = int(z_nm / float(z_res))
             
             node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )    
     return node_infos
