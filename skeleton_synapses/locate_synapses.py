@@ -382,7 +382,7 @@ def main():
 
 if __name__=="__main__":
     import sys
-    DEBUGGING = True
+    DEBUGGING = False
     if DEBUGGING:
         project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
         project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
