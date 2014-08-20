@@ -44,7 +44,6 @@ logger.setLevel(logging.DEBUG)
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
-
 def open_project( project_path ):
     """
     Open a project file and return the HeadlessShell instance.
@@ -98,7 +97,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
     
     return opPixelClassification
 
-def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_rois, debug_images=False, order2d='xyz', order3d='xyt'):
+def locate_synapses(project3dname, project2dname, input_filepath, outdir, branchwise_rois, debug_images=False, order2d='xyz', order3d='xyt'):
     shell3d = open_project(project3dname)
     shell2d = open_project(project2dname)
 
@@ -147,7 +146,6 @@ def do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_ro
     previous_slice_objects = None
     previous_slice_roi = None
     maxLabelSoFar = 0
-    
 
     for branch_rois in branchwise_rois:
         previous_slice_objects = None
@@ -369,7 +367,7 @@ if __name__=="__main__":
         branchwise_rois = [zip(skeletons, rois)]
         
         input_filepath = "/home/bergs/workspace/anna_scripts/fruitfly/random_raw_stack.h5/data"
-        do_stuff(project3dname, project2dname, input_filepath, outdir, branchwise_rois, debug_images=True, order2d='xytc', order3d='xyzc')
+        locate_synapses(project3dname, project2dname, input_filepath, outdir, branchwise_rois, debug_images=True, order2d='xytc', order3d='xyzc')
     else:
         X_RES = 4.0
         Y_RES = 4.0
@@ -417,7 +415,7 @@ if __name__=="__main__":
 
         #print small_branch
         #print len(tree_coords_and_rois), len(tree_coords_and_rois[0])
-        do_stuff(project3dname, project2dname, input_filepath, outdir, [fake_branch], debug_images=False, order2d='xyt', order3d='xyz')
+        locate_synapses(project3dname, project2dname, input_filepath, outdir, [fake_branch], debug_images=False, order2d='xyt', order3d='xyz')
         
     
     
