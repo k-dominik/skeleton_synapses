@@ -133,7 +133,7 @@ def locate_synapses(project3dname, project2dname, input_filepath, outdir, branch
 
     gridGraphs = []
     graphEdges = []
-    fout = open(outdir+"synapses.csv", "w")
+    fout = open(os.path.join(outdir, "synapses.csv"), "w")
     opThreshold = OpThresholdTwoLevels(graph=tempGraph)
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
     opThreshold.SingleThreshold.setValue(0.5) #FIXME: solve the mess with uint8/float in predictions
