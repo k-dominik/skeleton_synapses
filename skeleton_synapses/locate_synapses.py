@@ -386,8 +386,8 @@ if __name__=="__main__":
     if DEBUGGING:
         project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
         project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
-        skeleton_swc = '/Users/bergs/Documents/workspace/anna_scripts/fruitfly/example_skeleton.swc'
-        volume_description = '/Users/bergs/Documents/workspace/skeleton_synapses/cardona_volume_description.json'
+        skeleton_swc = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_skeleton.swc'
+        volume_description = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_volume_description_1.json'
         output_file = '/Users/bergs/Documents/workspace/skeleton_synapses/synapses.csv'
 
         sys.argv.append(skeleton_swc)
