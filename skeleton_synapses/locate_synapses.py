@@ -342,8 +342,35 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
     relabeled_slice_objects = relabel[current_slice]
     return relabeled_slice_objects, maxLabel
 
-
-
+def merge_synapse_ids(fin, fout):
+    all_synapses = {}
+    with open(fin) as f:
+        for line in f:
+            #NOTE: this part is fully dependent on the order, in which synapses are written
+            #Be careful, if it changes
+            parts = line.split('\t')
+            syn_id = parts[0]
+            syn_values = [int(x) for x in parts[1:-1]] #coordinates are int
+            syn_values.append(float(parts[-1])) #distance is float
+            if all_synapses.has_key(syn_id):
+                all_synapses[syn_id].extend(syn_values)
+            else:
+                all_synapses[syn_id] = syn_values
+    
+    print len(all_synapses)
+    with open(fout, "w") as f2:        
+        for syn_id, syn_coords in all_synapses.iteritems():
+            syn_coord_array = numpy.asarray(syn_coords)
+            if len(syn_coord_array.shape)>1:
+                syn_coord_array = numpy.average(syn_coord_array, 0)
+            str_to_write = syn_id + "\t" + str(syn_coord_array[0]) + "\t" +str(syn_coord_array[1]) + "\t"+str(syn_coord_array[2]) + "\t"+\
+                            str(syn_coord_array[3]) + "\n"
+            f2.write(str_to_write)
+            f2.flush()
+        
+        
+    
+    
 def main():
     # FIXME: These shouldn't be hard-coded.
     ROI_RADIUS = 150
@@ -383,6 +410,7 @@ def main():
 if __name__=="__main__":
     import sys
     DEBUGGING = False
+    POSTPROCESS = True
     if DEBUGGING:
         project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
         project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
@@ -395,5 +423,10 @@ if __name__=="__main__":
         sys.argv.append(project2dname)
         sys.argv.append(volume_description)
         sys.argv.append(output_file)
+    if POSTPROCESS:
+        fin = '/home/akreshuk/data/abd1.5_output_synapse_1.csv'
+        fout = '/home/akreshuk/data/abd1.5_output_synapse_1_pp.csv'
+        merge_synapse_ids(fin, fout)
+        sys.exit()
 
     sys.exit( main() )
