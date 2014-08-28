@@ -6,9 +6,16 @@ CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 
 def merge_synapse_ids(input_path, output_path):
     """
-    Read the given csv file and merge all rows with identical values in the "synapse_id" column.
+    Read the given csv file and merge all rows with identical synapse ids into a single row for each id.
+
+    The input csv file must contain a header row, and the following fields must be present (in any order):
+    synapse_id, x_px, y_px, z_px, distance
+
     The output row's coordinate columns (x_px, y_px, z_px) will be an average of the coordinates from the merged rows.
-    A new column "slice_count" will be appended to indicate how many rows were merged to create each output row. 
+    The output row's "distance" column will be the minimum entry from the corresponding input rows.
+    A new column "slice_count" will be appended to indicate how many rows were merged to create each output row.
+    
+    All other fields in the output row will be copied from one of the corresponding input rows.
     """
     with open(input_path, "r") as f:
         # Read all rows and group them by synapse id
@@ -34,17 +41,21 @@ def merge_synapse_ids(input_path, output_path):
                 syn_coords = map( lambda row: (row["x_px"], row["y_px"], row["z_px"]), rows )
                 syn_coord_array = numpy.asarray(syn_coords).astype(int)
                 avg_coord = (numpy.average(syn_coord_array, 0) + 0.5).astype(int)
-                
+
                 # Find a row with the same z-index, and use its fields
                 avg_z = avg_coord[2]
                 final_row = filter( lambda row: int(row["z_px"]) == avg_z, rows )[0]
                 
                 # Replace coords with avg
                 final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
+
+                # Replace distance with min distance                
+                distances = map( lambda row: row["distance"], rows )
+                distances = map( float, distances )
+                final_row["distance"] = min( distances )
             
             final_row["slice_count"] = len(rows)
             csv_writer.writerow( final_row )            
-            f2.flush()
 
 if __name__ == "__main__":
     import argparse
