@@ -1,8 +1,10 @@
 import os
 import numpy
+import csv
 import vigra
 from vigra import graphs
 import time
+import collections
 
 import ilastik_main
 from ilastik.workflows.pixelClassification import PixelClassificationWorkflow
@@ -18,7 +20,7 @@ from lazyflow.utility.io import TiledVolume
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
-from skeleton_synapses.swc_rois import parse_swc, construct_tree, coords_and_rois_for_tree
+from skeleton_synapses.swc_rois import parse_swc, construct_tree, nodes_and_rois_for_tree
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
@@ -39,6 +41,8 @@ logger.setLevel(logging.DEBUG)
 
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
+
+OUTPUT_COLUMNS = ["candidate_id", "x_px", "y_px", "z_px", "distance", "node_id", "node_x_px", "node_y_px", "node_z_px"]
 
 def open_project( project_path ):
     """
@@ -145,11 +149,15 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
     maxLabelSoFar = 0
 
     with open(output_path, "w") as fout:
+        csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, delimiter='\t', lineterminator='\n')
+        csv_writer.writeheader()
+        
         for branch_rois in branchwise_rois:
             previous_slice_objects = None
             previous_slice_roi = None
-            for skeletonCoord, roi in branch_rois:
+            for node_info, roi in branch_rois:
                 with Timer() as timer:
+                    skeletonCoord = (node_info.x, node_info.y, node_info.z)
                     logger.debug("skeleton point: {}".format( skeletonCoord ))
                     #Add channel dimension
                     roi_with_channel = numpy.zeros((2, roi.shape[1]+1), dtype=numpy.uint32)
@@ -282,11 +290,22 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
                         syn_average_y = numpy.average(syn_pixel_coords[1])+roi[0][1]
                         syn_distances = distances[syn_pixel_coords]
                         mindist = numpy.min(syn_distances)
-                        str_to_write = str(int(sid)) + "\t" + str(int(syn_average_x)) + "\t" + str(int(syn_average_y)) + \
-                                       "\t" + str(iz) + "\t" + str(mindist)+"\n"
-                        fout.write(str_to_write)
+
+                        fields = {}
+                        fields["candidate_id"] = int(sid)
+                        fields["x_px"] = int(syn_average_x + 0.5)
+                        fields["y_px"] = int(syn_average_y + 0.5)
+                        fields["z_px"] = iz
+                        fields["distance"] = mindist
+                        fields["node_id"] = node_info.id
+                        fields["node_x_px"] = node_info.x
+                        fields["node_y_px"] = node_info.y
+                        fields["node_z_px"] = node_info.z
+
+                        csv_writer.writerow( fields )                                                
                         fout.flush()
-                        #add this synapse to the exported list
+
+                    #add this synapse to the exported list
                     previous_slice_objects = synapse_objects
                     previous_slice_roi = roi
                     maxLabelSoFar = maxLabelCurrent
@@ -396,21 +415,21 @@ def main():
     tree = construct_tree( node_infos )
     
     # Get lists of (coord, roi) for each node, grouped into branches
-    tree_coords_and_rois = coords_and_rois_for_tree(tree, radius=ROI_RADIUS)
+    tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
 
     locate_synapses( parsed_args.project3d, 
                      parsed_args.project2d, 
                      parsed_args.volume_description, 
                      parsed_args.output_file,
-                     tree_coords_and_rois, 
+                     tree_nodes_and_rois, 
                      debug_images=False, 
                      order2d='xyt', 
                      order3d='xyz' )
 
 if __name__=="__main__":
     import sys
-    DEBUGGING = False
-    POSTPROCESS = True
+    DEBUGGING = True
+    POSTPROCESS = False
     if DEBUGGING:
         project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
         project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'

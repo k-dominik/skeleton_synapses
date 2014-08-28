@@ -51,7 +51,7 @@ def roi_around_point(coord_xyz, radius):
     stop = coord_xyz + [radius+1, radius+1, 1]
     return numpy.array((tuple(start), tuple(stop)))
 
-def coords_and_rois_for_tree(tree, radius):
+def nodes_and_rois_for_tree(tree, radius):
     """
     Return a list of (coord, rois) for all nodes in the given skeleton,
     sorted in a reasonable order to increase cache hits
@@ -62,9 +62,9 @@ def coords_and_rois_for_tree(tree, radius):
         branch_coords_and_rois = []
         for node_id in sequence:
             if node_id != -1:
-                info = tree.node[node_id]['info']
-                coord_xyz = (info.x, info.y, info.z)
-                branch_coords_and_rois.append( ( coord_xyz, roi_around_point(coord_xyz, radius) ) )
+                node_info = tree.node[node_id]['info']
+                coord_xyz = (node_info.x, node_info.y, node_info.z)
+                branch_coords_and_rois.append( ( node_info, roi_around_point(coord_xyz, radius) ) )
         tree_coords_and_rois.append(branch_coords_and_rois)
     return tree_coords_and_rois
 
@@ -75,17 +75,17 @@ if __name__ == "__main__":
     
     ROI_RADIUS = 100
     
-    import sys
-    sys.argv.append('/home/anna/scripts/fruitfly/example_skeleton.swc')
-    #sys.argv.append('/Users/bergs/Documents/workspace/anna_scripts/3034133.swc')
-    
-    swc_path = sys.argv[1]
+    import os
+    import skeleton_synapses
+    package_dir = os.path.split(skeleton_synapses.__file__)[0]
+    swc_path = os.path.join( package_dir, '../example/example_skeleton.swc' )
 
     node_infos = parse_swc( swc_path, X_RES, Y_RES, Z_RES )
     tree = construct_tree( node_infos )
-    tree_coords_and_rois = coords_and_rois_for_tree(tree, radius=ROI_RADIUS)
-    for branch_coords_and_rois in tree_coords_and_rois[:5]:
-        print "NEXT BRANCH"
-        for coord, roi in branch_coords_and_rois[:5]:
-            print "coord = {}, roi = {}".format( coord, roi )
+    tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
+    for i, branch_nodes_and_rois in enumerate(tree_nodes_and_rois[:2]):
+        print "BRANCH {}:".format(i)
+        for node, roi in branch_nodes_and_rois[:5]:
+            roi = map(tuple, roi)
+            print "coord = {}, roi = {}".format( node, roi )
 
