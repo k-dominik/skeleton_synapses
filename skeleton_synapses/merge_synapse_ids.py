@@ -13,7 +13,7 @@ def merge_synapse_ids(input_path, output_path):
 
     The output row's coordinate columns (x_px, y_px, z_px) will be an average of the coordinates from the merged rows.
     The output row's "distance" column will be the minimum entry from the corresponding input rows.
-    A new column "slice_count" will be appended to indicate how many rows were merged to create each output row.
+    A new column "node_count" will be appended to indicate how many rows were merged to create each output row.
     
     All other fields in the output row will be copied from one of the corresponding input rows.
     """
@@ -29,7 +29,7 @@ def merge_synapse_ids(input_path, output_path):
                 all_synapses[syn_id] = [row]
             
     with open(output_path, "w") as f2:
-        output_columns = csv_reader.fieldnames + ["slice_count"]
+        output_columns = csv_reader.fieldnames + ["node_count"]
         csv_writer = csv.DictWriter(f2, output_columns, **CSV_FORMAT)
         csv_writer.writeheader()
         for syn_id, rows in all_synapses.iteritems():
@@ -54,7 +54,7 @@ def merge_synapse_ids(input_path, output_path):
                 distances = map( float, distances )
                 final_row["distance"] = min( distances )
             
-            final_row["slice_count"] = len(rows)
+            final_row["node_count"] = len(rows)
             csv_writer.writerow( final_row )            
 
 if __name__ == "__main__":
