@@ -42,7 +42,8 @@ logger.setLevel(logging.DEBUG)
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
-OUTPUT_COLUMNS = ["candidate_id", "x_px", "y_px", "z_px", "distance", "node_id", "node_x_px", "node_y_px", "node_z_px"]
+OUTPUT_COLUMNS = ["synpase_id", "x_px", "y_px", "z_px", "distance", "node_id", "node_x_px", "node_y_px", "node_z_px"]
+CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 
 def open_project( project_path ):
     """
@@ -149,7 +150,7 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
     maxLabelSoFar = 0
 
     with open(output_path, "w") as fout:
-        csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, delimiter='\t', lineterminator='\n')
+        csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
         csv_writer.writeheader()
         
         for branch_rois in branchwise_rois:
@@ -292,7 +293,7 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
                         mindist = numpy.min(syn_distances)
 
                         fields = {}
-                        fields["candidate_id"] = int(sid)
+                        fields["synpase_id"] = int(sid)
                         fields["x_px"] = int(syn_average_x + 0.5)
                         fields["y_px"] = int(syn_average_y + 0.5)
                         fields["z_px"] = iz
@@ -362,36 +363,39 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
     return relabeled_slice_objects, maxLabel
 
 def merge_synapse_ids(fin, fout):
-    all_synapses = {}
-    with open(fin) as f:
-        for line in f:
-            #NOTE: this part is fully dependent on the order, in which synapses are written
-            #Be careful, if it changes
-            parts = line.split('\t')
-            syn_id = parts[0]
-            syn_values = [int(x) for x in parts[1:-1]] #coordinates are int
-            syn_values.append(float(parts[-1])) #distance is float
-            if all_synapses.has_key(syn_id):
-                all_synapses[syn_id].extend(syn_values)
-            else:
-                all_synapses[syn_id] = syn_values
-    
-    print len(all_synapses)
-    with open(fout, "w") as f2:        
-        for syn_id, syn_coords in all_synapses.iteritems():
+    with open(fin, "r") as f:
+        # Read all rows and group them by synapse id
+        all_synapses = collections.OrderedDict()
+        csv_reader = csv.DictReader(f, **CSV_FORMAT)
+        for row in csv_reader:
+            syn_id = row["synpase_id"]
+            try:
+                all_synapses[syn_id].append( row )
+            except KeyError:
+                all_synapses[syn_id] = [row]
+            
+    with open(fout, "w") as f2:
+        csv_writer = csv.DictWriter(f2, csv_reader.fieldnames, **CSV_FORMAT)
+        csv_writer.writeheader()
+        for syn_id, rows in all_synapses.iteritems():
+            # Create list of coord tuples for this synapse
+            syn_coords = map( lambda row: (row["x_px"], row["y_px"], row["z_px"]), rows )
+            syn_coords = map( int, syn_coords )
             syn_coord_array = numpy.asarray(syn_coords)
-            if len(syn_coord_array.shape)>1:
-                syn_coord_array = numpy.average(syn_coord_array, 0)
-            str_to_write = syn_id + "\t" + str(syn_coord_array[0]) + "\t" +str(syn_coord_array[1]) + "\t"+str(syn_coord_array[2]) + "\t"+\
-                            str(syn_coord_array[3]) + "\n"
-            f2.write(str_to_write)
+            avg_coord = (numpy.average(syn_coord_array, 0) + 0.5).astype(int)
+            
+            # Find a row with the same z-index, and use its fields
+            avg_z = avg_coord[2]
+            final_row = filter( lambda row: row["z_px"] == avg_z, rows )[0]
+            
+            # Replace coords with avg
+            final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
+
+            csv_writer.writerow( final_row )            
             f2.flush()
-        
-        
-    
-    
+
 def main():
-    # FIXME: These shouldn't be hard-coded.
+    # FIXME: This shouldn't be hard-coded.
     ROI_RADIUS = 150
 
     import argparse
