@@ -11,11 +11,11 @@ def merge_synapse_ids(input_path, output_path):
     The input csv file must contain a header row, and the following fields must be present (in any order):
     synapse_id, x_px, y_px, z_px, size_px, distance, detection_uncertainty
 
-    Rows with the same synapse_id are merged, and the output rows are merged as follows:
-    x_px, y_px, z_px - averaged across rows
+    Rows with the same synapse_id are merged.  Each column is handled as follows:
+    x_px, y_px, z_px - weighted average across rows (weighted by size_px)
     size_px - sum of all rows
     distance - the minimum of all rows is chosen
-    detection_uncertainty - average across rows, weighted by size_px
+    detection_uncertainty - weighted average across rows (weighted by size_px)
     
     A new column "node_count" will be appended to indicate how many rows were merged to create each output row.
     
@@ -41,35 +41,42 @@ def merge_synapse_ids(input_path, output_path):
                 # Fast path
                 final_row = rows[0]
             else:
-                # Create list of coord tuples for this synapse
-                syn_coords = map( lambda row: (row["x_px"], row["y_px"], row["z_px"]), rows )
-                syn_coord_array = numpy.asarray(syn_coords).astype(int)
-                avg_coord = (numpy.average(syn_coord_array, 0) + 0.5).astype(int)
-
-                # Find a row with the same z-index, and use its fields
-                avg_z = avg_coord[2]
-                final_row = filter( lambda row: int(row["z_px"]) == avg_z, rows )[0]
-                
-                # Replace coords with avg
-                final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
-
-                # Replace distance with min distance
+                # Find min distance
                 distances = map( lambda row: row["distance"], rows )
-                final_row["distance"] = numpy.asarray(distances, dtype=numpy.float32).min()
+                min_distance = numpy.asarray(distances, dtype=numpy.float32).min()
 
-                # Sum sizes                
+                # Sum sizes
                 sizes = map( lambda row: row["size_px"], rows )
                 sizes = numpy.asarray( sizes, dtype=numpy.uint32 )
                 total_size = sizes.sum()
-                final_row["size_px"] = total_size
+                size_weights = sizes/float(total_size)
 
                 # Uncertainty: take weighted average
                 uncertainties = map( lambda row: row["detection_uncertainty"], rows )
                 uncertainties = numpy.asarray(uncertainties, dtype=numpy.float32)
-                avg_uncertainty = numpy.average( uncertainties, weights=sizes/total_size )
-                final_row["detection_uncertainty"] = avg_uncertainty
+                avg_uncertainty = numpy.average( uncertainties, weights=size_weights )
             
+                # Create list of coord tuples for this synapse
+                syn_coords = map( lambda row: (row["x_px"], row["y_px"], row["z_px"]), rows )
+                syn_coord_array = numpy.asarray(syn_coords).astype(int)
+                
+                # Coord: take weighted average
+                avg_coord = (numpy.average(syn_coord_array, axis=0, weights=size_weights) + 0.5).astype(int)
+
+                # At least one row has the same z-coord as the average coord
+                # Find it and use it as the final_row.
+                avg_z = avg_coord[2]
+                final_row = filter( lambda row: int(row["z_px"]) == avg_z, rows )[0]
+                
+                # Replace fields in the final row
+                final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
+                final_row["distance"] = min_distance
+                final_row["size_px"] = total_size
+                final_row["detection_uncertainty"] = avg_uncertainty
+
             final_row["node_count"] = len(rows)
+
+            # Write.
             csv_writer.writerow( final_row )            
 
 if __name__ == "__main__":
