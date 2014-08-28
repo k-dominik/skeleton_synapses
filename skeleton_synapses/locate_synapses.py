@@ -4,7 +4,6 @@ import csv
 import vigra
 from vigra import graphs
 import time
-import collections
 
 import ilastik_main
 from ilastik.workflows.pixelClassification import PixelClassificationWorkflow
@@ -362,38 +361,6 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
     relabeled_slice_objects = relabel[current_slice]
     return relabeled_slice_objects, maxLabel
 
-def merge_synapse_ids(fin, fout):
-    with open(fin, "r") as f:
-        # Read all rows and group them by synapse id
-        all_synapses = collections.OrderedDict()
-        csv_reader = csv.DictReader(f, **CSV_FORMAT)
-        for row in csv_reader:
-            syn_id = row["synpase_id"]
-            try:
-                all_synapses[syn_id].append( row )
-            except KeyError:
-                all_synapses[syn_id] = [row]
-            
-    with open(fout, "w") as f2:
-        csv_writer = csv.DictWriter(f2, csv_reader.fieldnames, **CSV_FORMAT)
-        csv_writer.writeheader()
-        for syn_id, rows in all_synapses.iteritems():
-            # Create list of coord tuples for this synapse
-            syn_coords = map( lambda row: (row["x_px"], row["y_px"], row["z_px"]), rows )
-            syn_coords = map( int, syn_coords )
-            syn_coord_array = numpy.asarray(syn_coords)
-            avg_coord = (numpy.average(syn_coord_array, 0) + 0.5).astype(int)
-            
-            # Find a row with the same z-index, and use its fields
-            avg_z = avg_coord[2]
-            final_row = filter( lambda row: row["z_px"] == avg_z, rows )[0]
-            
-            # Replace coords with avg
-            final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
-
-            csv_writer.writerow( final_row )            
-            f2.flush()
-
 def main():
     # FIXME: This shouldn't be hard-coded.
     ROI_RADIUS = 150
@@ -432,9 +399,9 @@ def main():
 
 if __name__=="__main__":
     import sys
-    DEBUGGING = True
-    POSTPROCESS = False
+    DEBUGGING = False
     if DEBUGGING:
+        print "USING DEBUG ARGUMENTS"
         project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
         project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
         skeleton_swc = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_skeleton.swc'
@@ -446,10 +413,5 @@ if __name__=="__main__":
         sys.argv.append(project2dname)
         sys.argv.append(volume_description)
         sys.argv.append(output_file)
-    if POSTPROCESS:
-        fin = '/home/akreshuk/data/abd1.5_output_synapse_1.csv'
-        fout = '/home/akreshuk/data/abd1.5_output_synapse_1_pp.csv'
-        merge_synapse_ids(fin, fout)
-        sys.exit()
 
     sys.exit( main() )
