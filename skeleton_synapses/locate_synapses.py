@@ -41,7 +41,7 @@ logger.setLevel(logging.DEBUG)
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
-OUTPUT_COLUMNS = ["synpase_id", "x_px", "y_px", "z_px", "distance", "node_id", "node_x_px", "node_y_px", "node_z_px"]
+OUTPUT_COLUMNS = ["synpase_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", "node_x_px", "node_y_px", "node_z_px"]
 CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 
 def open_project( project_path ):
@@ -274,16 +274,17 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
                         vigra.impex.writeImage(distances, outfile )
                     
     
-                    synapse_objects, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
+                    synapse_objects_4d, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
                                                                                   previous_slice_objects, previous_slice_roi,\
                                                                                   maxLabelSoFar)
-                    synapse_objects = synapse_objects.squeeze()
+                    synapse_objects = synapse_objects_4d.squeeze()
     
                     synapseIds = set(synapse_objects.flat)
                     synapseIds.remove(0)
                     for sid in synapseIds:
                         #find the pixel positions of this synapse
-                        syn_pixel_coords = numpy.where(synapse_objects ==sid)
+                        syn_pixel_coords = numpy.where(synapse_objects == sid)
+                        synapse_size = len( syn_pixel_coords[0] )
                         #syn_pixel_coords = numpy.unravel_index(syn_pixels, distances.shape)
                         #FIXME: offset by roi
                         syn_average_x = numpy.average(syn_pixel_coords[0])+roi[0][0]
@@ -291,12 +292,24 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
                         syn_distances = distances[syn_pixel_coords]
                         mindist = numpy.min(syn_distances)
 
+                        # Determine average uncertainty
+                        # Get probabilities for this synapse's pixels
+                        flat_predictions = synapse_predictions.view(numpy.ndarray)[synapse_objects_4d[...,0] == sid]
+                        # Sort along channel axis
+                        flat_predictions.sort(axis=-1)
+                        # What's the difference between the highest and second-highest class?
+                        certainties = flat_predictions[:,-1] - flat_predictions[:,-2]
+                        avg_certainty = numpy.average(certainties)
+                        avg_uncertainty = 1.0 - avg_certainty                        
+
                         fields = {}
                         fields["synpase_id"] = int(sid)
                         fields["x_px"] = int(syn_average_x + 0.5)
                         fields["y_px"] = int(syn_average_y + 0.5)
                         fields["z_px"] = iz
+                        fields["size_px"] = synapse_size
                         fields["distance"] = mindist
+                        fields["detection_uncertainty"] = avg_uncertainty
                         fields["node_id"] = node_info.id
                         fields["node_x_px"] = node_info.x
                         fields["node_y_px"] = node_info.y

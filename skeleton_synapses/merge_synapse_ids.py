@@ -9,10 +9,14 @@ def merge_synapse_ids(input_path, output_path):
     Read the given csv file and merge all rows with identical synapse ids into a single row for each id.
 
     The input csv file must contain a header row, and the following fields must be present (in any order):
-    synapse_id, x_px, y_px, z_px, distance
+    synapse_id, x_px, y_px, z_px, size_px, distance, detection_uncertainty
 
-    The output row's coordinate columns (x_px, y_px, z_px) will be an average of the coordinates from the merged rows.
-    The output row's "distance" column will be the minimum entry from the corresponding input rows.
+    Rows with the same synapse_id are merged, and the output rows are merged as follows:
+    x_px, y_px, z_px - averaged across rows
+    size_px - sum of all rows
+    distance - the minimum of all rows is chosen
+    detection_uncertainty - average across rows, weighted by size_px
+    
     A new column "node_count" will be appended to indicate how many rows were merged to create each output row.
     
     All other fields in the output row will be copied from one of the corresponding input rows.
@@ -49,10 +53,21 @@ def merge_synapse_ids(input_path, output_path):
                 # Replace coords with avg
                 final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
 
-                # Replace distance with min distance                
+                # Replace distance with min distance
                 distances = map( lambda row: row["distance"], rows )
-                distances = map( float, distances )
-                final_row["distance"] = min( distances )
+                final_row["distance"] = numpy.asarray(distances, dtype=numpy.float32).min()
+
+                # Sum sizes                
+                sizes = map( lambda row: row["size_px"], rows )
+                sizes = numpy.asarray( sizes, dtype=numpy.uint32 )
+                total_size = sizes.sum()
+                final_row["size_px"] = total_size
+
+                # Uncertainty: take weighted average
+                uncertainties = map( lambda row: row["detection_uncertainty"], rows )
+                uncertainties = numpy.asarray(uncertainties, dtype=numpy.float32)
+                avg_uncertainty = numpy.average( uncertainties, weights=sizes/total_size )
+                final_row["detection_uncertainty"] = avg_uncertainty
             
             final_row["node_count"] = len(rows)
             csv_writer.writerow( final_row )            
