@@ -143,6 +143,7 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
     opThreshold = OpThresholdTwoLevels(graph=tempGraph)
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
     opThreshold.SingleThreshold.setValue(0.5) #FIXME: solve the mess with uint8/float in predictions
+    opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0}) #NOTE: two-level is much better. Maybe we can afford it?
     
     previous_slice_objects = None
     previous_slice_roi = None
