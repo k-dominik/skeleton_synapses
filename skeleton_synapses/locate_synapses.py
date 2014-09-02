@@ -19,7 +19,7 @@ from lazyflow.utility.io import TiledVolume
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
-from skeleton_synapses.swc_rois import parse_swc, construct_tree, nodes_and_rois_for_tree
+from skeleton_synapses.swc_rois import parse_swc, parse_json, construct_tree, nodes_and_rois_for_tree
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
@@ -381,7 +381,7 @@ def main():
 
     import argparse
     parser = argparse.ArgumentParser() 
-    parser.add_argument('skeleton_swc')
+    parser.add_argument('skeleton_file')
     parser.add_argument('project3d')
     parser.add_argument('project2d')
     parser.add_argument('volume_description')
@@ -394,7 +394,11 @@ def main():
     z_res, y_res, x_res = volume_description.resolution_zyx
     
     # Parse the swc into a list of nodes
-    node_infos = parse_swc( parsed_args.skeleton_swc, x_res, y_res, z_res )
+    skeleton_ext = os.path.splitext(parsed_args.skeleton_file)[1]
+    if skeleton_ext == '.swc':
+        node_infos = parse_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
+    elif skeleton_ext == '.json':
+        node_infos = parse_json( parsed_args.skeleton_file, x_res, y_res, z_res )
     
     # Construct a networkx tree
     tree = construct_tree( node_infos )
@@ -418,11 +422,12 @@ if __name__=="__main__":
         print "USING DEBUG ARGUMENTS"
         project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
         project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
-        skeleton_swc = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_skeleton.swc'
-        volume_description = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_volume_description_1.json'
+        #skeleton_file = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_skeleton.swc'
+        skeleton_file = '/Users/bergs/Documents/workspace/skeleton_synapses/example/skeleton_18689.json'
+        volume_description = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_volume_description_2.json'
         output_file = '/Users/bergs/Documents/workspace/skeleton_synapses/synapses.csv'
 
-        sys.argv.append(skeleton_swc)
+        sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)
         sys.argv.append(project2dname)
         sys.argv.append(volume_description)

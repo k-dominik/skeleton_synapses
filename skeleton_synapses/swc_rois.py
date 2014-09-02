@@ -1,3 +1,4 @@
+import json
 import collections
 import numpy
 import networkx as nx
@@ -8,6 +9,8 @@ def parse_swc(swc_path, x_res, y_res, z_res):
     """
     Parse the given swc file into a list of NodeInfo tuples.
     Coordinates are converted from nm to pixels.
+    
+    Note: In an swc file, a parentless node has parent_id = -1
     """
     node_infos = []
     with open(swc_path, 'r') as swc_file:
@@ -26,6 +29,41 @@ def parse_swc(swc_path, x_res, y_res, z_res):
             z_px = int(z_nm / float(z_res))
             
             node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )    
+    return node_infos
+
+def parse_json(json_path, x_res, y_res, z_res):
+    """
+    Parse the given json file and return a list of NodeInfo tuples.
+    Coordinates are converted from nm to pixels.
+    
+    Note: Mimicking the conventions above for swc files, 
+          a parentless node will be assigned parent_id = -1    
+    """
+    node_infos = []
+    with open(json_path, 'r') as json_file:
+        skeleton_data = json.load(json_file)
+    
+    if len(skeleton_data['skeletons']) == 0:
+        raise Exception("File '{}' does not contain any skeleton data.".format( json_path ))
+    if len(skeleton_data['skeletons']) > 1:
+        raise Exception("File '{}' contains more than one skeleton.  Can't process.".format( json_path ))
+    node_dict = skeleton_data['skeletons'].values()[0]['treenodes']
+
+    for node_id, node_data in node_dict.iteritems():
+        # Convert from string
+        node_id = int( node_id )
+        if node_data['parent_id']:
+            parent_id = int( node_data['parent_id'] )
+        else:
+            parent_id = -1
+        x_nm, y_nm, z_nm = map(float, node_data['location'])
+
+        # Convert to pixels
+        x_px = int(x_nm / float(x_res))
+        y_px = int(y_nm / float(y_res))
+        z_px = int(z_nm / float(z_res))
+        
+        node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )
     return node_infos
 
 #
