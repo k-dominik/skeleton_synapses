@@ -27,7 +27,7 @@ def store_connectors_blockwise( connectors, blockshape_xyz ):
 
 
 SEARCH_RADIUS = 500
-def append_distances( synapse_candidates_csv, connectors, resolution_xyz, output_csv ):
+def output_nearest_connectors( synapse_candidates_csv, connectors, resolution_xyz, output_csv ):
     """
     Read the synapse candidates csv file at the given path and write a copy of it 
     with extra columns appended for the distance to the nearest connector annotation.
@@ -130,5 +130,5 @@ if __name__ == "__main__":
     z_res, y_res, x_res = volume_description.resolution_zyx
 
     connectors = parse_connectors( parsed_args.skeleton_json )
-    append_distances( parsed_args.candidates_csv, connectors, ( x_res, y_res, z_res ), parsed_args.output_csv )
+    output_nearest_connectors( parsed_args.candidates_csv, connectors, ( x_res, y_res, z_res ), parsed_args.output_csv )
  
