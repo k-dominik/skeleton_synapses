@@ -341,7 +341,7 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
         previous_roi_2d = previous_roi[:, :-1]
         intersection_roi = getIntersection( current_roi_2d, previous_roi_2d, assertIntersect=False )
 
-    if intersection_roi is None or previous_slice is None or abs(current_roi[0,2] - previous_roi[0,2]) != 1:
+    if intersection_roi is None or previous_slice is None or abs(current_roi[0,2] - previous_roi[0,2]) <= 1:
         # We want our synapse ids to be consecutive, so we do a proper relabeling.
         # If we could guarantee that the input slice was already consecutive, we could do this:
         # relabeled_current = numpy.where( current_slice, current_slice+maxLabel, 0 )
