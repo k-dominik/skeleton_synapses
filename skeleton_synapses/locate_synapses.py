@@ -19,7 +19,7 @@ from lazyflow.utility.io import TiledVolume
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
-from skeleton_synapses.swc_rois import parse_swc, parse_json, construct_tree, nodes_and_rois_for_tree
+from skeleton_synapses.swc_rois import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
@@ -158,7 +158,7 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
             previous_slice_roi = None
             for node_info, roi in branch_rois:
                 with Timer() as timer:
-                    skeletonCoord = (node_info.x, node_info.y, node_info.z)
+                    skeletonCoord = (node_info.x_px, node_info.y_px, node_info.z_px)
                     logger.debug("skeleton point: {}".format( skeletonCoord ))
                     #Add channel dimension
                     roi_with_channel = numpy.zeros((2, roi.shape[1]+1), dtype=numpy.uint32)
@@ -312,9 +312,9 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
                         fields["distance"] = mindist
                         fields["detection_uncertainty"] = avg_uncertainty
                         fields["node_id"] = node_info.id
-                        fields["node_x_px"] = node_info.x
-                        fields["node_y_px"] = node_info.y
-                        fields["node_z_px"] = node_info.z
+                        fields["node_x_px"] = node_info.x_px
+                        fields["node_y_px"] = node_info.y_px
+                        fields["node_z_px"] = node_info.z_px
 
                         csv_writer.writerow( fields )                                                
                         fout.flush()
@@ -396,9 +396,9 @@ def main():
     # Parse the swc into a list of nodes
     skeleton_ext = os.path.splitext(parsed_args.skeleton_file)[1]
     if skeleton_ext == '.swc':
-        node_infos = parse_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
+        node_infos = parse_skeleton_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
     elif skeleton_ext == '.json':
-        node_infos = parse_json( parsed_args.skeleton_file, x_res, y_res, z_res )
+        node_infos = parse_skeleton_json( parsed_args.skeleton_file, x_res, y_res, z_res )
     
     # Construct a networkx tree
     tree = construct_tree( node_infos )

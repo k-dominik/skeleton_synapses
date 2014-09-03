@@ -1,11 +1,12 @@
+import os
 import json
 import collections
 import numpy
 import networkx as nx
 from tree_util import partition
 
-NodeInfo = collections.namedtuple('NodeInfo', 'id x y z parent_id')
-def parse_swc(swc_path, x_res, y_res, z_res):
+NodeInfo = collections.namedtuple('NodeInfo', 'id x_px y_px z_px parent_id')
+def parse_skeleton_swc(swc_path, x_res, y_res, z_res):
     """
     Parse the given swc file into a list of NodeInfo tuples.
     Coordinates are converted from nm to pixels.
@@ -31,7 +32,7 @@ def parse_swc(swc_path, x_res, y_res, z_res):
             node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )    
     return node_infos
 
-def parse_json(json_path, x_res, y_res, z_res):
+def parse_skeleton_json(json_path, x_res, y_res, z_res):
     """
     Parse the given json file and return a list of NodeInfo tuples.
     Coordinates are converted from nm to pixels.
@@ -39,15 +40,17 @@ def parse_json(json_path, x_res, y_res, z_res):
     Note: Mimicking the conventions above for swc files, 
           a parentless node will be assigned parent_id = -1    
     """
+    assert os.path.splitext(json_path)[1] == '.json'
+    
     node_infos = []
     with open(json_path, 'r') as json_file:
-        skeleton_data = json.load(json_file)
+        json_data = json.load(json_file)
     
-    if len(skeleton_data['skeletons']) == 0:
+    if len(json_data['skeletons']) == 0:
         raise Exception("File '{}' does not contain any skeleton data.".format( json_path ))
-    if len(skeleton_data['skeletons']) > 1:
+    if len(json_data['skeletons']) > 1:
         raise Exception("File '{}' contains more than one skeleton.  Can't process.".format( json_path ))
-    node_dict = skeleton_data['skeletons'].values()[0]['treenodes']
+    node_dict = json_data['skeletons'].values()[0]['treenodes']
 
     for node_id, node_data in node_dict.iteritems():
         # Convert from string
@@ -65,6 +68,33 @@ def parse_json(json_path, x_res, y_res, z_res):
         
         node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )
     return node_infos
+
+# Note that in ConnectorInfos, we keep the coordinates in nanometers!
+ConnectorInfo = collections.namedtuple('ConnectorInfo', 'id x_nm y_nm z_nm incoming_nodes outgoing_nodes')
+def parse_connectors( json_path ):
+    connector_infos = []
+    with open(json_path, 'r') as json_file:
+        json_data = json.load(json_file)
+
+    if len(json_data['skeletons']) == 0:
+        raise Exception("File '{}' does not contain any skeleton data.".format( json_path ))
+    if len(json_data['skeletons']) > 1:
+        raise Exception("File '{}' contains more than one skeleton.  Can't process.".format( json_path ))
+
+    connection_dict = json_data['skeletons'].values()[0]['connectors']
+    for connector_id, connector_data in connection_dict.iteritems():
+        connector_id = int(connector_id)
+        x_nm, y_nm, z_nm = map(float, connector_data['location'])
+
+        # Note the strange terminology of the json file:
+        # The 'presynaptic_to' list means "all nodes in this list are presynaptic to the connector"
+        #  (not "the connector is presynaptic to the following nodes")
+        incoming = map(int, connector_data['presynaptic_to'] )
+        outgoing = map(int, connector_data['postsynaptic_to'] )
+
+        connector_infos.append( ConnectorInfo(connector_id, x_nm, y_nm, z_nm, incoming, outgoing) )
+
+    return connector_infos
 
 #
 # A 'tree' is a networkx.DiGraph with a single root node (a node without parents)
@@ -101,7 +131,7 @@ def nodes_and_rois_for_tree(tree, radius):
         for node_id in sequence:
             if node_id != -1:
                 node_info = tree.node[node_id]['info']
-                coord_xyz = (node_info.x, node_info.y, node_info.z)
+                coord_xyz = (node_info.x_px, node_info.y_px, node_info.z_px)
                 branch_coords_and_rois.append( ( node_info, roi_around_point(coord_xyz, radius) ) )
         tree_coords_and_rois.append(branch_coords_and_rois)
     return tree_coords_and_rois
