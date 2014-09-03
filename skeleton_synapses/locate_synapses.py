@@ -341,10 +341,22 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
         previous_roi_2d = previous_roi[:, :-1]
         intersection_roi = getIntersection( current_roi_2d, previous_roi_2d, assertIntersect=False )
 
-    if intersection_roi is None or previous_slice is None or current_roi[0,2]!=previous_roi[0,2]+1:
-        # Relabel from max
-        relabeled_current = numpy.where( current_slice, current_slice+maxLabel, 0 )
-        return relabeled_current, numpy.max(relabeled_current)
+    if intersection_roi is None or previous_slice is None or abs(current_roi[0,2] - previous_roi[0,2]) != 1:
+        # We want our synapse ids to be consecutive, so we do a proper relabeling.
+        # If we could guarantee that the input slice was already consecutive, we could do this:
+        # relabeled_current = numpy.where( current_slice, current_slice+maxLabel, 0 )
+        # ... but that's not the case.
+
+        current_unique_labels = numpy.unique(current_slice)
+        assert current_unique_labels[0] == 0, "This function assumes that not all pixels belong to detections."
+        if len(current_unique_labels) == 1:
+            # No objects in this slice.
+            return current_slice, maxLabel
+        max_current_label = current_unique_labels[-1]
+        relabel = numpy.zeros( (max_current_label+1,), dtype=numpy.uint32 )
+        new_max = maxLabel + len(current_unique_labels)-1
+        relabel[(current_unique_labels[1:],)] = numpy.arange( maxLabel+1, new_max+1, dtype=numpy.uint32 )
+        return relabel[current_slice], new_max
     
     # Extract the intersecting region from the current/prev slices,
     #  so its easy to compare corresponding pixels
@@ -422,10 +434,10 @@ if __name__=="__main__":
         print "USING DEBUG ARGUMENTS"
         project3dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels3D.ilp'
         project2dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels2D.ilp'
-        #skeleton_file = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_skeleton.swc'
-        skeleton_file = '/magnetic/workspace/skeleton_synapses/example/skeleton_18689.json'
+        skeleton_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeletons/abd1.5_skeleton_2.swc'
+        #skeleton_file = '/magnetic/workspace/skeleton_synapses/example/skeleton_18689.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/magnetic/workspace/skeleton_synapses/synapses.csv'
+        output_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeleton_2_detections.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)
