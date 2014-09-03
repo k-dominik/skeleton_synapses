@@ -19,7 +19,7 @@ from lazyflow.utility.io import TiledVolume
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
-from skeleton_synapses.swc_rois import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
+from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
