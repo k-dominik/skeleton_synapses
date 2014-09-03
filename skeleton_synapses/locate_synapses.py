@@ -420,12 +420,12 @@ if __name__=="__main__":
     DEBUGGING = False
     if DEBUGGING:
         print "USING DEBUG ARGUMENTS"
-        project3dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels3D.ilp'
-        project2dname = '/Users/bergs/Desktop/forStuart/Synapse_Labels2D.ilp'
+        project3dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels3D.ilp'
+        project2dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels2D.ilp'
         #skeleton_file = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_skeleton.swc'
-        skeleton_file = '/Users/bergs/Documents/workspace/skeleton_synapses/example/skeleton_18689.json'
-        volume_description = '/Users/bergs/Documents/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/Users/bergs/Documents/workspace/skeleton_synapses/synapses.csv'
+        skeleton_file = '/magnetic/workspace/skeleton_synapses/example/skeleton_18689.json'
+        volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
+        output_file = '/magnetic/workspace/skeleton_synapses/synapses.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)
