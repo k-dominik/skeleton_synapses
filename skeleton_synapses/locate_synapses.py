@@ -341,7 +341,7 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
         previous_roi_2d = previous_roi[:, :-1]
         intersection_roi = getIntersection( current_roi_2d, previous_roi_2d, assertIntersect=False )
 
-    if intersection_roi is None or previous_slice is None or abs(current_roi[0,2] - previous_roi[0,2]) <= 1:
+    if intersection_roi is None or previous_slice is None or abs(int(current_roi[0,2]) - int(previous_roi[0,2])) > 1:
         # We want our synapse ids to be consecutive, so we do a proper relabeling.
         # If we could guarantee that the input slice was already consecutive, we could do this:
         # relabeled_current = numpy.where( current_slice, current_slice+maxLabel, 0 )
@@ -411,6 +411,8 @@ def main():
         node_infos = parse_skeleton_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
     elif skeleton_ext == '.json':
         node_infos = parse_skeleton_json( parsed_args.skeleton_file, x_res, y_res, z_res )
+    else:
+        raise Exception("Unknown skeleton file format: " + skeleton_ext)
     
     # Construct a networkx tree
     tree = construct_tree( node_infos )
@@ -432,12 +434,19 @@ if __name__=="__main__":
     DEBUGGING = False
     if DEBUGGING:
         print "USING DEBUG ARGUMENTS"
+
+#         project3dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels3D.ilp'
+#         project2dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels2D.ilp'
+#         skeleton_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeletons/abd1.5_skeleton_2.swc'
+#         #skeleton_file = '/magnetic/workspace/skeleton_synapses/example/skeleton_18689.json'
+#         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
+#         output_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeleton_2_detections.csv'
+
         project3dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels3D.ilp'
         project2dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels2D.ilp'
-        skeleton_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeletons/abd1.5_skeleton_2.swc'
-        #skeleton_file = '/magnetic/workspace/skeleton_synapses/example/skeleton_18689.json'
+        skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_163751.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeleton_2_detections.csv'
+        output_file = '/magnetic/workspace/skeleton_synapses/DEBUG2.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)
