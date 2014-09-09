@@ -96,7 +96,7 @@ def output_nearest_connectors( synapse_detections_csv, connectors, resolution_xy
     """
     # Avoid searching the whole list every time:
     # store the connectors in buckets by block.
-    connector_store = ConnectorStore( connectors, blockshape=(1000,1000,1000) )
+    connector_store = ConnectorStore( connectors, blockshape_xyz=(1000,1000,1000) )
     
     with open(synapse_detections_csv, 'r') as detections_file,\
          open(output_csv, 'w') as output_file:
