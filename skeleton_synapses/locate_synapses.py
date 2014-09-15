@@ -1,4 +1,5 @@
 import os
+import collections
 import numpy
 import csv
 import vigra
@@ -20,6 +21,7 @@ from lazyflow.utility.io import TiledVolume
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
 from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
+from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
@@ -97,7 +99,16 @@ def append_lane(workflow, input_filepath, axisorder=None):
     
     return opPixelClassification
 
-def locate_synapses(project3dname, project2dname, input_filepath, output_path, branchwise_rois, debug_images=False, order2d='xyz', order3d='xyt'):
+
+def locate_synapses(project3dname, 
+                    project2dname, 
+                    input_filepath, 
+                    output_path, 
+                    branchwise_rois, 
+                    debug_images=False, 
+                    order2d='xyz', 
+                    order3d='xyt', 
+                    progress_callback=lambda p: None):
     outdir = os.path.split( output_path )[0]
     
     shell3d = open_project(project3dname)
@@ -152,11 +163,17 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
     with open(output_path, "w") as fout:
         csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
         csv_writer.writeheader()
-        
-        for branch_rois in branchwise_rois:
+
+        skeleton_branch_count = len(branchwise_rois)
+        skeleton_node_count = sum( map(len, branchwise_rois) )
+
+        node_overall_index = -1
+        for branch_index, branch_rois in enumerate(branchwise_rois):
             previous_slice_objects = None
             previous_slice_roi = None
-            for node_info, roi in branch_rois:
+            branch_node_count = len(branch_rois)
+            for node_index_in_branch, (node_info, roi) in enumerate(branch_rois):
+                node_overall_index += 1
                 with Timer() as timer:
                     skeletonCoord = (node_info.x_px, node_info.y_px, node_info.z_px)
                     logger.debug("skeleton point: {}".format( skeletonCoord ))
@@ -319,6 +336,14 @@ def locate_synapses(project3dname, project2dname, input_filepath, output_path, b
                         csv_writer.writerow( fields )                                                
                         fout.flush()
 
+                    progress_callback( ProgressInfo( node_overall_index, 
+                                                     skeleton_node_count, 
+                                                     branch_index, 
+                                                     skeleton_branch_count, 
+                                                     node_index_in_branch, 
+                                                     branch_node_count,
+                                                     maxLabelCurrent ) )
+
                     #add this synapse to the exported list
                     previous_slice_objects = synapse_objects
                     previous_slice_roi = roi
@@ -398,6 +423,7 @@ def main():
     parser.add_argument('project2d')
     parser.add_argument('volume_description')
     parser.add_argument('output_file')
+    parser.add_argument('progress_port', nargs='?', default=8000)
     
     parsed_args = parser.parse_args()
     
@@ -420,14 +446,21 @@ def main():
     # Get lists of (coord, roi) for each node, grouped into branches
     tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
 
-    locate_synapses( parsed_args.project3d, 
-                     parsed_args.project2d, 
-                     parsed_args.volume_description, 
-                     parsed_args.output_file,
-                     tree_nodes_and_rois, 
-                     debug_images=False, 
-                     order2d='xyt', 
-                     order3d='xyz' )
+    # Start a server for others to poll progress.
+    progress_server = ProgressServer.create_and_start( "localhost", int(parsed_args.progress_port) )
+
+    try:
+        locate_synapses( parsed_args.project3d, 
+                         parsed_args.project2d, 
+                         parsed_args.volume_description, 
+                         parsed_args.output_file,
+                         tree_nodes_and_rois, 
+                         debug_images=False, 
+                         order2d='xyt', 
+                         order3d='xyz',
+                         progress_callback=progress_server.update_progress )
+    finally:
+        progress_server.shutdown()
 
 if __name__=="__main__":
     import sys
