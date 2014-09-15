@@ -15,6 +15,12 @@ ProgressInfo = collections.namedtuple("ProgressInfo", ["node_overall_index", # o
 class ProgressRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
+        if self.path == "/detector_progress":
+            self._do_get_progress()
+        else:
+            self.send_error( httplib.BAD_REQUEST, "Bad query syntax: {}".format( self.path ) )
+    
+    def _do_get_progress(self):
         with self.server._lock:
             progress = self.server.progress
         json_text = json.dumps( progress._asdict() )
@@ -86,3 +92,12 @@ class ProgressServer(HTTPServer):
 
     def _set_thread(self, thread):
         self.thread = thread
+
+# quick test
+if __name__ == "__main__":
+    import time
+    try:
+        progress_server = ProgressServer.create_and_start( "localhost", 8000 )
+        time.sleep(60)
+    finally:
+        progress_server.shutdown()
