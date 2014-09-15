@@ -12,33 +12,12 @@ ProgressInfo = collections.namedtuple("ProgressInfo", ["node_overall_index", # o
                                                        "branch_node_count",
                                                        "total_detections"] )
 
-class ProgressRequestHandler(BaseHTTPRequestHandler):
-
-    def do_GET(self):
-        if self.path == "/detector_progress":
-            self._do_get_progress()
-        else:
-            self.send_error( httplib.BAD_REQUEST, "Bad query syntax: {}".format( self.path ) )
-    
-    def _do_get_progress(self):
-        with self.server._lock:
-            progress = self.server.progress
-        json_text = json.dumps( progress._asdict() )
-        self.send_response(httplib.OK)
-        self.send_header("Content-type", "text/json")
-        self.send_header("Content-length", str(len(json_text)))
-        self.end_headers()
-        self.wfile.write( json_text )
-
-    def log_request(self, *args, **kwargs):
-        """
-        Override from BaseHTTPRequestHandler, so we can respect 
-          the ProgressServer's disable_logging setting.
-        """
-        if not self.server.disable_logging:
-            BaseHTTPRequestHandler.log_request(self, *args, **kwargs )
-    
 class ProgressServer(HTTPServer):
+    """
+    Simple http server that can be polled to get the current progress of the synapse detector tool.
+    This server is passive -- the synapse detector tool must periodically 
+    update the progress state by calling update_progress().
+    """
 
     @classmethod
     def create_and_start(cls, hostname, port, disable_server_logging=True):
@@ -92,6 +71,36 @@ class ProgressServer(HTTPServer):
 
     def _set_thread(self, thread):
         self.thread = thread
+
+class ProgressRequestHandler(BaseHTTPRequestHandler):
+    """
+    Request handler for the ProgressServer.  (See above for details.)
+    """
+    
+    def do_GET(self):
+        if self.path == "/detector_progress":
+            self._do_get_progress()
+        else:
+            self.send_error( httplib.BAD_REQUEST, "Bad query syntax: {}".format( self.path ) )
+    
+    def _do_get_progress(self):
+        with self.server._lock:
+            progress = self.server.progress
+        json_text = json.dumps( progress._asdict() )
+        self.send_response(httplib.OK)
+        self.send_header("Content-type", "text/json")
+        self.send_header("Content-length", str(len(json_text)))
+        self.end_headers()
+        self.wfile.write( json_text )
+
+    def log_request(self, *args, **kwargs):
+        """
+        Override from BaseHTTPRequestHandler, so we can respect 
+          the ProgressServer's disable_logging setting.
+        """
+        if not self.server.disable_logging:
+            BaseHTTPRequestHandler.log_request(self, *args, **kwargs )
+    
 
 # quick test
 if __name__ == "__main__":
