@@ -19,7 +19,62 @@ def connected_node_distances( skeleton_json_path,
     """
     connector_infos = parse_connectors( skeleton_json_path )
 
-    # Read raw detections, index by node_id
+    raw_detections, output_columns = _load_raw_detections( raw_detection_csv_path )
+    merged_detections = _load_merged_detections( merged_detection_csv_path )
+
+    nodes_without_detections = []
+    with open( output_csv_path, 'w' ) as output_csv:
+        csv_writer = csv.DictWriter(output_csv, output_columns, **CSV_FORMAT)
+        csv_writer.writeheader()
+
+        for connector_info in connector_infos:
+            output_row = _get_row_dict( raw_detections, merged_detections, connector_info )
+            if output_row["synapse_id"] == -1:
+                nodes_without_detections.append( ( output_row["node_id"], output_row["connector_id"] ) )
+            csv_writer.writerow( output_row )
+
+    return len(connector_infos), nodes_without_detections
+
+def _get_row_dict( raw_detections, merged_detections, connector_info ):
+    """
+    Locate the row from raw_detections that corresponds to the given connector info, 
+    along with the appropriate synapse detection from merged_detections.
+    """
+    assert not connector_info.incoming_nodes or not connector_info.outgoing_nodes, \
+        "We assume the given skeleton file does not reference any nodes outside the skeleton. \n"\
+        "Therefore, there should be either exactly 1 incoming or 1 outgoing node, not more. \n"\
+        "We assume no autapses exist in the skeleton..."
+
+    connected_node_id = None
+    if connector_info.incoming_nodes:
+        connected_node_id = connector_info.incoming_nodes[0]
+    if connector_info.outgoing_nodes:
+        connected_node_id = connector_info.outgoing_nodes[0]
+
+    try:
+        raw_row = raw_detections[connected_node_id]
+    except KeyError:
+        output_row = { "node_id" : connected_node_id, 
+                       "synapse_id" : -1, 
+                       "distance" : -1.0,
+                       "connector_id" : connector_info.id }
+    else:
+        synapse_id = int(raw_row["synapse_id"])
+
+        merged_row = merged_detections[synapse_id]
+        min_distance = float(merged_row["distance"])
+
+        output_row = dict( raw_row )
+        output_row["distance"] = min_distance
+        output_row["connector_id"] = connector_info.id
+
+    return output_row
+
+def _load_raw_detections( raw_detection_csv_path ):
+    """
+    Read raw detections into a dict, indexed by node_id.
+    Returns: raw_detections dict and output_columns from the csv file
+    """
     raw_detections = {}
     with open( raw_detection_csv_path, 'r' ) as raw_detection_file:
         raw_csv_reader = csv.DictReader(raw_detection_file, **CSV_FORMAT)
@@ -28,63 +83,26 @@ def connected_node_distances( skeleton_json_path,
             if node_id not in raw_detections:
                 raw_detections[node_id] = row
             else:
+                # More than one synapse, keep the "closest" one.
                 old_distance = float(raw_detections[node_id]["distance"])
                 new_distance = float(row["distance"])
                 if new_distance < old_distance:
-                    # replace, keep min distance
                     raw_detections[node_id] = row
 
-    # Read merged detections, index by synapse_id
+    output_columns = raw_csv_reader.fieldnames + ["connector_id"]
+    return raw_detections, output_columns
+
+def _load_merged_detections( merged_detection_csv_path ):
+    """
+    Read merged detections into a dict, indexed by synapse_id.
+    """
     merged_detections = {}
     with open( merged_detection_csv_path, 'r' ) as merged_detection_file:
         merged_csv_reader = csv.DictReader(merged_detection_file, **CSV_FORMAT)
         for row in merged_csv_reader:
             synapse_id = int(row["synapse_id"])
             merged_detections[synapse_id] = row
-
-    nodes_without_detections = []
-    with open( output_csv_path, 'w' ) as output_csv:
-        output_columns = raw_csv_reader.fieldnames + ["connector_id"]
-        csv_writer = csv.DictWriter(output_csv, output_columns, **CSV_FORMAT)
-        csv_writer.writeheader()
-
-        for connector_info in connector_infos:
-            assert not connector_info.incoming_nodes or not connector_info.outgoing_nodes, \
-                "We assume the given skeleton file does not reference any nodes outside the skeleton. \n"\
-                "Therefore, there should be either exactly 1 incoming or 1 outgoing node, not more. \n"\
-                "We assume no autapses exist in the skeleton..."
-        
-            connected_node_id = None
-            if connector_info.incoming_nodes:
-                connected_node_id = connector_info.incoming_nodes[0]
-            if connector_info.outgoing_nodes:
-                connected_node_id = connector_info.outgoing_nodes[0]
-    
-            try:
-                raw_row = raw_detections[connected_node_id]
-            except KeyError:
-                nodes_without_detections.append( (connected_node_id, connector_info.id) )
-                output_row = { "node_id" : connected_node_id, 
-                               "synapse_id" : -1, 
-                               "distance" : -1.0,
-                               "connector_id" : connector_info.id }
-            else:
-                synapse_id = int(raw_row["synapse_id"])
-
-                merged_row = merged_detections[synapse_id]
-                min_distance = float(merged_row["distance"])
-
-                output_row = dict( raw_row )
-                output_row["distance"] = min_distance
-                output_row["connector_id"] = connector_info.id
-            
-            csv_writer.writerow( output_row )
-
-    print "DONE."
-    print "Processed {} connectors".format( len(connector_infos) )
-    if nodes_without_detections:
-        print "Warning: Found no synapses for {} synapses:".format( len(nodes_without_detections) )
-        print nodes_without_detections
+    return merged_detections
 
 if __name__ == "__main__":
     import sys
@@ -109,8 +127,13 @@ if __name__ == "__main__":
     
     parsed_args = parser.parse_args()
     
-    sys.exit( connected_node_distances( parsed_args.skeleton_json_path,
-                                        parsed_args.raw_detection_csv_path,
-                                        parsed_args.merged_detection_csv_path,
-                                        parsed_args.output_csv_path ) )
+    num_connectors, nodes_without_detections = connected_node_distances( parsed_args.skeleton_json_path,
+                                                                         parsed_args.raw_detection_csv_path,
+                                                                         parsed_args.merged_detection_csv_path,
+                                                                         parsed_args.output_csv_path )
     
+    print "DONE."
+    print "Processed {} connectors".format( num_connectors )
+    if nodes_without_detections:
+        print "Warning: Found no synapses for {} synapses:".format( len(nodes_without_detections) )
+        print nodes_without_detections
