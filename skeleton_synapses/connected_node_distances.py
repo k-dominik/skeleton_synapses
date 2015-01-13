@@ -90,7 +90,7 @@ if __name__ == "__main__":
     import sys
     import argparse
 
-    DEBUG_ARGS = True    
+    DEBUG_ARGS = False    
     if DEBUG_ARGS:
         skeleton_id = 18689
         #skeleton_id = 133465

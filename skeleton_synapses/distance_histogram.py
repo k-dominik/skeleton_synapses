@@ -26,7 +26,7 @@ if __name__ == "__main__":
     import sys
     import argparse
 
-    DEBUG_ARGS = True
+    DEBUG_ARGS = False
     if DEBUG_ARGS:
         sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_18689.csv" )
     
