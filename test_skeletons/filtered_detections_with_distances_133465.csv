@@ -1,4 +1,4 @@
-synpase_id	x_px	y_px	z_px	size_px	distance	detection_uncertainty	node_id	node_x_px	node_y_px	node_z_px	node_count	nearest_connector_id	nearest_connector_distance_nm	nearest_connector_x_nm	nearest_connector_y_nm	nearest_connector_z_nm
+synapse_id	x_px	y_px	z_px	size_px	distance	detection_uncertainty	node_id	node_x_px	node_y_px	node_z_px	node_count	nearest_connector_id	nearest_connector_distance_nm	nearest_connector_x_nm	nearest_connector_y_nm	nearest_connector_z_nm
 6	7505	6142	220	5973	0.00611861	0.333164	141126	7531	6214	220	8	141021	358.43130443642895	29988.0	24736.0	9585.0
 9	7469	6182	216	3489	0.00345749	0.423657	141122	7522	6183	216	6	141021	175.59328005365126	29988.0	24736.0	9585.0
 15	7393	6089	198	910	0.0122275	0.376725	141004	7486	6106	198	3	112564	86.83317338436964	29658.0	24368.0	8910.0

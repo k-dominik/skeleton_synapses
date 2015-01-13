@@ -1,4 +1,4 @@
-synpase_id	x_px	y_px	z_px	size_px	distance	detection_uncertainty	node_id	node_x_px	node_y_px	node_z_px	node_count
+synapse_id	x_px	y_px	z_px	size_px	distance	detection_uncertainty	node_id	node_x_px	node_y_px	node_z_px	node_count
 1	8159	5921	425	1631	0.0107384	0.270527	182635	8194	5873	425	4
 2	8114	5902	424	190	0.0185894	0.425105	182634	8183	5882	424	2
 3	8056	5923	420	3534	0.00894956	0.345492	182629	8112	5904	420	9

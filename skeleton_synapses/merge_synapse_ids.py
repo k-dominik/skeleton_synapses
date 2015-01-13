@@ -26,7 +26,7 @@ def merge_synapse_ids(input_path, output_path):
         all_synapses = collections.OrderedDict()
         csv_reader = csv.DictReader(f, **CSV_FORMAT)
         for row in csv_reader:
-            syn_id = row["synpase_id"]
+            syn_id = row["synapse_id"]
             try:
                 all_synapses[syn_id].append( row )
             except KeyError:

@@ -43,7 +43,7 @@ logger.setLevel(logging.DEBUG)
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
-OUTPUT_COLUMNS = ["synpase_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", "node_x_px", "node_y_px", "node_z_px"]
+OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", "node_x_px", "node_y_px", "node_z_px"]
 CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 
 def open_project( project_path ):
@@ -321,7 +321,7 @@ def locate_synapses(project3dname,
                         avg_uncertainty = 1.0 - avg_certainty                        
 
                         fields = {}
-                        fields["synpase_id"] = int(sid)
+                        fields["synapse_id"] = int(sid)
                         fields["x_px"] = int(syn_average_x + 0.5)
                         fields["y_px"] = int(syn_average_y + 0.5)
                         fields["z_px"] = iz
@@ -475,8 +475,8 @@ if __name__=="__main__":
 #         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
 #         output_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeleton_2_detections.csv'
 
-        project3dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels3D.ilp'
-        project2dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels2D.ilp'
+        project3dname = '/magnetic/workspace/skeleton_synapses/projects/Synapse_Labels3D.ilp'
+        project2dname = '/magnetic/workspace/skeleton_synapses/projects/Synapse_Labels2D.ilp'
         skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_163751.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
         output_file = '/magnetic/workspace/skeleton_synapses/DEBUG2.csv'

@@ -39,7 +39,7 @@ def connected_node_distances( skeleton_json_path,
     with open( merged_detection_csv_path, 'r' ) as merged_detection_file:
         merged_csv_reader = csv.DictReader(merged_detection_file, **CSV_FORMAT)
         for row in merged_csv_reader:
-            synapse_id = int(row["synpase_id"])
+            synapse_id = int(row["synapse_id"])
             merged_detections[synapse_id] = row
 
     nodes_without_detections = []
@@ -65,11 +65,11 @@ def connected_node_distances( skeleton_json_path,
             except KeyError:
                 nodes_without_detections.append( (connected_node_id, connector_info.id) )
                 output_row = { "node_id" : connected_node_id, 
-                               "synpase_id" : -1, 
+                               "synapse_id" : -1, 
                                "distance" : -1.0,
                                "connector_id" : connector_info.id }
             else:
-                synapse_id = int(raw_row["synpase_id"])
+                synapse_id = int(raw_row["synapse_id"])
 
                 merged_row = merged_detections[synapse_id]
                 min_distance = float(merged_row["distance"])
