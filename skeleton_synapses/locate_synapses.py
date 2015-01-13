@@ -22,6 +22,7 @@ from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
 from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
 from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
+from skeleton_utils import CSV_FORMAT
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
@@ -44,7 +45,6 @@ timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
 OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", "node_x_px", "node_y_px", "node_z_px"]
-CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 
 def open_project( project_path ):
     """

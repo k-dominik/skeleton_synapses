@@ -4,7 +4,7 @@ import scipy.spatial.distance
 
 from lazyflow.roi import getIntersectingBlocks
 from lazyflow.utility.io import TiledVolume
-from skeleton_utils import parse_connectors, ConnectorInfo
+from skeleton_utils import parse_connectors, ConnectorInfo, CSV_FORMAT
 
 class ConnectorStore(object):
     """
@@ -70,7 +70,6 @@ class ConnectorStore(object):
         return nearest_connector, min_distance
     
 
-CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 def output_nearest_connectors( synapse_detections_csv, connectors, resolution_xyz, output_csv ):
     """
     Read the synapse detections csv file at the given path and write a copy of it 

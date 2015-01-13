@@ -2,8 +2,8 @@ import os
 import csv
 import numpy
 import matplotlib.pyplot as plt
+from skeleton_utils import CSV_FORMAT
 
-CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 def distance_histogram( detection_csv_path ):
     distances = []
     with open( detection_csv_path, 'r' ) as detection_file:

@@ -1,8 +1,7 @@
 import csv
 import collections
 import numpy
-
-CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
+from skeleton_utils import CSV_FORMAT
 
 def merge_synapse_ids(input_path, output_path):
     """

@@ -1,6 +1,5 @@
 import csv
-
-CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
+from skeleton_utils import CSV_FORMAT
 
 def filter_by_distance( synapse_detections_csv, output_csv, max_distance ):
     with open(synapse_detections_csv, 'r') as detections_file, \

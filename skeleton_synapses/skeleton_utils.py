@@ -5,6 +5,9 @@ import numpy
 import networkx as nx
 from tree_util import partition
 
+# Not  used in this file, but defined for cmd-line utilities to use.
+CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
+
 NodeInfo = collections.namedtuple('NodeInfo', 'id x_px y_px z_px parent_id')
 def parse_skeleton_swc(swc_path, x_res, y_res, z_res):
     """

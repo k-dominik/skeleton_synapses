@@ -1,8 +1,6 @@
 import csv
-import numpy
-from skeleton_utils import parse_connectors, ConnectorInfo
+from skeleton_utils import parse_connectors, CSV_FORMAT
 
-CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 def connected_node_distances( skeleton_json_path,
                               raw_detection_csv_path,
                               merged_detection_csv_path,
