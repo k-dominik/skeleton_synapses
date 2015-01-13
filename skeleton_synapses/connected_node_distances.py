@@ -12,6 +12,8 @@ def connected_node_distances( skeleton_json_path,
         (i.e. nodes which are either ingoing to or outgoing from a connector in the skeleton).
     For each "connected node", determine the synapse_id it 
         is associated with (if any) using the given raw detections file.
+        If there is more than one synapse associated with it, choose the one with 
+        the smallest "membrane distance" to the node.
     For the synapse, extract the final "membrane distance" from the 
         given merged detections file, which lists the minimum "membrane distance" for each synapse.    
     """
