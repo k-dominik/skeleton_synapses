@@ -19,8 +19,8 @@ def connected_node_distances( skeleton_json_path,
     """
     connector_infos = parse_connectors( skeleton_json_path )
 
-    raw_detections, output_columns = _load_raw_detections( raw_detection_csv_path )
-    merged_detections = _load_merged_detections( merged_detection_csv_path )
+    raw_detections, _ = _load_raw_detections( raw_detection_csv_path )
+    merged_detections, output_columns = _load_merged_detections( merged_detection_csv_path )
 
     nodes_without_detections = []
     with open( output_csv_path, 'w' ) as output_csv:
@@ -28,14 +28,14 @@ def connected_node_distances( skeleton_json_path,
         csv_writer.writeheader()
 
         for connector_info in connector_infos:
-            output_row = _get_row_dict( raw_detections, merged_detections, connector_info )
+            output_row = _get_row_dict( raw_detections, merged_detections, output_columns, connector_info )
             if output_row["synapse_id"] == -1:
-                nodes_without_detections.append( ( output_row["node_id"], output_row["connector_id"] ) )
+                nodes_without_detections.append( ( output_row["node_id"], output_row["nearest_connector_id"] ) )
             csv_writer.writerow( output_row )
 
     return len(connector_infos), nodes_without_detections
 
-def _get_row_dict( raw_detections, merged_detections, connector_info ):
+def _get_row_dict( raw_detections, merged_detections, output_columns, connector_info ):
     """
     Locate the row from raw_detections that corresponds to the given connector info, 
     along with the appropriate synapse detection from merged_detections.
@@ -51,23 +51,24 @@ def _get_row_dict( raw_detections, merged_detections, connector_info ):
     if connector_info.outgoing_nodes:
         connected_node_id = connector_info.outgoing_nodes[0]
 
+    output_row = { k : -1 for k in output_columns }
     try:
         raw_row = raw_detections[connected_node_id]
     except KeyError:
-        output_row = { "node_id" : connected_node_id, 
-                       "synapse_id" : -1, 
-                       "distance" : -1.0,
-                       "connector_id" : connector_info.id }
+        output_row["node_id"] = connected_node_id
     else:
         synapse_id = int(raw_row["synapse_id"])
-
         merged_row = merged_detections[synapse_id]
-        min_distance = float(merged_row["distance"])
+        output_row.update(merged_row)
+        output_row.update(raw_row)
+        output_row["distance"] = merged_row["distance"]
 
-        output_row = dict( raw_row )
-        output_row["distance"] = min_distance
-        output_row["connector_id"] = connector_info.id
-
+    # Replace connector info with the "true" connector for this node.
+    output_row["nearest_connector_id"] = connector_info.id
+    output_row["nearest_connector_distance_nm"] = -1
+    output_row["nearest_connector_x_nm"] = connector_info.x_nm
+    output_row["nearest_connector_y_nm"] = connector_info.y_nm
+    output_row["nearest_connector_z_nm"] = connector_info.z_nm
     return output_row
 
 def _load_raw_detections( raw_detection_csv_path ):
@@ -89,8 +90,7 @@ def _load_raw_detections( raw_detection_csv_path ):
                 if new_distance < old_distance:
                     raw_detections[node_id] = row
 
-    output_columns = raw_csv_reader.fieldnames + ["connector_id"]
-    return raw_detections, output_columns
+    return raw_detections, raw_csv_reader.fieldnames
 
 def _load_merged_detections( merged_detection_csv_path ):
     """
@@ -102,13 +102,13 @@ def _load_merged_detections( merged_detection_csv_path ):
         for row in merged_csv_reader:
             synapse_id = int(row["synapse_id"])
             merged_detections[synapse_id] = row
-    return merged_detections
+    return merged_detections, merged_csv_reader.fieldnames
 
 if __name__ == "__main__":
     import sys
     import argparse
 
-    DEBUG_ARGS = False    
+    DEBUG_ARGS = False
     if DEBUG_ARGS:
         skeleton_id = 18689
         #skeleton_id = 133465
@@ -116,7 +116,7 @@ if __name__ == "__main__":
         #skeleton_id = 94835
         sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/skeleton_{}.json".format( skeleton_id ) )
         sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/raw_detections_{}.csv".format( skeleton_id ) )
-        sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/merged_detections_{}.csv".format( skeleton_id ) )
+        sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/detections_with_distances_{}.csv".format( skeleton_id ) )
         sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_{}.csv".format( skeleton_id ) )
     
     parser = argparse.ArgumentParser()
