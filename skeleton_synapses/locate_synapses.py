@@ -5,6 +5,7 @@ import csv
 import vigra
 from vigra import graphs
 import time
+import scipy
 
 import ilastik_main
 from ilastik.workflows.pixelClassification import PixelClassificationWorkflow
@@ -20,7 +21,10 @@ from lazyflow.utility.io import TiledVolume
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
-from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
+from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, \
+                                             construct_tree, nodes_and_rois_for_tree, \
+                                             parse_connectors, X_RES, Y_RES, Z_RES
+                                             
 from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
 
 THRESHOLD = 5
@@ -105,6 +109,8 @@ def locate_synapses(project3dname,
                     input_filepath, 
                     output_path, 
                     branchwise_rois, 
+                    node_to_connector,
+                    connector_infos,
                     debug_images=False, 
                     order2d='xyz', 
                     order3d='xyt', 
@@ -160,13 +166,16 @@ def locate_synapses(project3dname,
     previous_slice_roi = None
     maxLabelSoFar = 0
 
+    conn_ids = [x.id for x in connector_infos]
+    connector_infos_dict = dict(zip(conn_ids, connector_infos))
+
     with open(output_path, "w") as fout:
         csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
         csv_writer.writeheader()
 
         skeleton_branch_count = len(branchwise_rois)
         skeleton_node_count = sum( map(len, branchwise_rois) )
-
+        print "processing ", skeleton_branch_count, " branches and ", skeleton_node_count, " rois"
         node_overall_index = -1
         for branch_index, branch_rois in enumerate(branchwise_rois):
             previous_slice_objects = None
@@ -192,6 +201,10 @@ def locate_synapses(project3dname,
                     #we need the second eigenvalue
                     roi_hessian[0][-1] = 1
                     roi_hessian[1][-1] = 2
+                    
+                    #REMOVE ME, DEBUG CONDITION
+                    if not node_info.id in node_to_connector.keys():
+                        continue
                     
                     if debug_images:
                         outdir1 = outdir+"raw/"
@@ -291,6 +304,43 @@ def locate_synapses(project3dname,
                         distances[skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]] = numpy.max(distances)
                         vigra.impex.writeImage(distances, outfile )
                     
+                    connector_distances = None
+                    if node_info.id in node_to_connector.keys():
+                        connectors = node_to_connector[node_info.id]
+                        connector_info = connector_infos_dict[connectors[0]]
+                        #Convert to pixels
+                        con_x_px = int(connector_info.x_nm / float(X_RES))
+                        con_y_px = int(connector_info.y_nm / float(Y_RES))
+                        con_z_px = int(connector_info.z_nm / float(Z_RES))
+                        if con_x_px>roi[0][0] and con_x_px<roi[1][0] and con_y_px>roi[0][1] and con_y_px<roi[1][1]:
+                            #this connector is inside our prediction roi, compute the distance field                                                                                                        "
+                            con_relative = [con_x_px[0]-roi[0][0], con_y_px[1]-roi[0][1]]
+                            relative_coord = map(long, con_relative)
+                            sourceNode = gridGr.coordinateToNode(con_relative)
+                            instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
+                            connector_distances = instance.distances()
+                        else:
+                            print "connector outside of roi"
+                            print roi, con_x_px, con_y_px
+                            connector_distances = None
+                        
+                        
+                        eu_dist = scipy.spatial.distance.euclidean( (node_info.x_px, node_info.y_px, node_info.z_px), \
+                                                                 (con_x_px, con_y_px, con_z_px) )
+                        if connector_distances is not None:
+                            mem_dist = connector_distances(relative_coord)
+                        else:
+                            mem_dist = -1
+                        
+                        print "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA, for node {} found connectors {} at euclidean distance {}, mem distance {}".format(node_info.id, \
+                                                                                                                               connectors, \
+                                                                                                                               eu_dist,\
+                                                                                                                               mem_dist)
+                    else:
+                        #print "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB, no connectors anywhere close"
+                        continue
+
+
     
                     synapse_objects_4d, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
                                                                                   previous_slice_objects, previous_slice_roi,\
@@ -414,7 +464,7 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
 
 def main():
     # FIXME: This shouldn't be hard-coded.
-    ROI_RADIUS = 150
+    ROI_RADIUS = 300
 
     import argparse
     parser = argparse.ArgumentParser() 
@@ -432,11 +482,13 @@ def main():
     z_res, y_res, x_res = volume_description.resolution_zyx
     
     # Parse the swc into a list of nodes
+    node_to_connector = None
     skeleton_ext = os.path.splitext(parsed_args.skeleton_file)[1]
     if skeleton_ext == '.swc':
         node_infos = parse_skeleton_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
     elif skeleton_ext == '.json':
         node_infos = parse_skeleton_json( parsed_args.skeleton_file, x_res, y_res, z_res )
+        connector_infos, node_to_connector = parse_connectors(parsed_args.skeleton_file)
     else:
         raise Exception("Unknown skeleton file format: " + skeleton_ext)
     
@@ -455,6 +507,8 @@ def main():
                          parsed_args.volume_description, 
                          parsed_args.output_file,
                          tree_nodes_and_rois, 
+                         node_to_connector,
+                         connector_infos,
                          debug_images=False, 
                          order2d='xyt', 
                          order3d='xyz',
@@ -464,7 +518,7 @@ def main():
 
 if __name__=="__main__":
     import sys
-    DEBUGGING = False
+    DEBUGGING = True
     if DEBUGGING:
         print "USING DEBUG ARGUMENTS"
 
@@ -480,6 +534,12 @@ if __name__=="__main__":
         skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_163751.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
         output_file = '/magnetic/workspace/skeleton_synapses/DEBUG2.csv'
+
+        project3dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels3D.ilp'
+        project2dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels2D.ilp'
+        skeleton_file = '/home/anna/catmaid_tools/test_skeletons/skeleton_18689.json'
+        volume_description = '/home/anna/catmaid_tools/example/example_volume_description_2.json'
+        output_file = '/tmp/synapses.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)

@@ -12,7 +12,9 @@
     "bounds_zyx" : [462, 18326, 22775],    
     "resolution_zyx" : [45.0, 4.0, 4.0],
     "tile_shape_2d_yx" : [256, 256],
-    "tile_url_format" : "http://neurocean.int.janelia.org:6081/ssd-3-tiles/abd1.5/{z_index}/{y_index}_{x_index}_0.jpg",
+    "tile_url_format" : "https://neurocean.janelia.org/ssd-3-tiles/abd1.5/{z_index}/{y_index}_{x_index}_0.jpg",
+    "username" : "ilastik",
+    "password" : "kitsali",
     
     "## NOTES" : "Don't touch the output_axes field.  The locate_synapses script requires xyz.",
     "output_axes" : "xyz",
