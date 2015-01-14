@@ -39,7 +39,7 @@ class OpUpsampleByTwo( Operator ):
             roi_up = sliceToRoi(roi_up, result.shape)
             down_image = self.Input(roi_array[0], roi_array[1]).wait().squeeze()
             assert len(down_image.shape)==2
-            up_image = vigra.resize(down_image, [shape_up_x, shape_up_y])
+            up_image = vigra.sampling.resizeImageLinearInterpolation(down_image, [shape_up_x, shape_up_y])
             up_image = up_image.reshape(up_image.shape+(1,)+(1,))
             result[roiToSlice(*roi_up)] = up_image
         return result

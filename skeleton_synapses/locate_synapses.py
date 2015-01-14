@@ -44,7 +44,7 @@ logger.setLevel(logging.DEBUG)
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
-OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", "node_x_px", "node_y_px", "node_z_px"]
+OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance_hessian", "distance_raw_probs", "detection_uncertainty", "node_id", "node_x_px", "node_y_px", "node_z_px"]
 
 def open_project( project_path ):
     """
@@ -252,6 +252,7 @@ def locate_synapses(project3dname,
                         timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
                         #continue
     
+                    # Distances over Hessian
                     start_hess = time.time()
                     eigenValues = opFeatures.Output(roi_hessian[0], roi_hessian[1]).wait()
                     eigenValues = numpy.abs(eigenValues[:, :, 0, 0])
@@ -278,8 +279,6 @@ def locate_synapses(project3dname,
                         logger.debug( "saving hessian to file: {}".format( outfile ) )
                         vigra.impex.writeImage(eigenValues, outfile )
                     
-            
-                
                     instance = vigra.graphs.ShortestPathPathDijkstra(gridGr)
                     relative_coord = [skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]]
                     relative_coord = map(long, relative_coord)
@@ -298,9 +297,39 @@ def locate_synapses(project3dname,
                             pass
                         outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".tiff"
                         logger.debug( "saving distances to file:".format( outfile ) )
+                        # Create a "white" pixel at the source node
                         distances[skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]] = numpy.max(distances)
                         vigra.impex.writeImage(distances, outfile )
+
+                    # Distances over raw membrane probabilities
+                    roi_upsampled_membrane = numpy.asarray( roi_hessian )
+                    roi_upsampled_membrane[:, -1] = [0,1]
+                    roi_upsampled_membrane = (map(long, roi_upsampled_membrane[0]), map(long, roi_upsampled_membrane[1]))
                     
+                    upsampled_membrane_probabilities = opUpsample.Output(*roi_upsampled_membrane).wait()
+                    print "UPSAMPLED MEMBRANE SHAPE: {} MAX: {} MIN: {}".format( upsampled_membrane_probabilities.shape, upsampled_membrane_probabilities.max(), upsampled_membrane_probabilities.min() )
+                    gridGrRaw = graphs.gridGraph((shape_x, shape_y )) # !on original pixels
+                    gridGraphRawEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGrRaw, upsampled_membrane_probabilities.squeeze()) 
+                    gridGraphs.append(gridGrRaw)
+                    graphEdges.append(gridGraphRawEdgeIndicator)
+                    instance_raw = vigra.graphs.ShortestPathPathDijkstra(gridGrRaw)
+                    sourceNode = gridGrRaw.coordinateToNode(relative_coord)
+                    instance_raw.run(gridGraphRawEdgeIndicator, sourceNode, target=None)
+                    distances_raw = instance_raw.distances()
+
+                    stop_dij = time.time()
+                    timing_logger.debug( "spent in dijkstra (raw probs) {}".format( stop_dij - start_dij ) )
+                    if debug_images:
+                        outdir1 = outdir+"distances_raw/"
+                        try:
+                            os.makedirs(outdir1)
+                        except os.error:
+                            pass
+                        outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".tiff"
+                        logger.debug( "saving distances (raw probs) to file:".format( outfile ) )
+                        # Create a "white" pixel at the source node
+                        distances_raw[skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]] = numpy.max(distances_raw)
+                        vigra.impex.writeImage(distances_raw, outfile )
     
                     if numpy.sum(synapse_cc)==0:
                         continue
@@ -320,8 +349,12 @@ def locate_synapses(project3dname,
                         #FIXME: offset by roi
                         syn_average_x = numpy.average(syn_pixel_coords[0])+roi[0][0]
                         syn_average_y = numpy.average(syn_pixel_coords[1])+roi[0][1]
+                        
                         syn_distances = distances[syn_pixel_coords]
                         mindist = numpy.min(syn_distances)
+                        
+                        syn_distances_raw = distances_raw[syn_pixel_coords]
+                        mindist_raw = numpy.min(syn_distances_raw)
 
                         # Determine average uncertainty
                         # Get probabilities for this synapse's pixels
@@ -339,7 +372,8 @@ def locate_synapses(project3dname,
                         fields["y_px"] = int(syn_average_y + 0.5)
                         fields["z_px"] = iz
                         fields["size_px"] = synapse_size
-                        fields["distance"] = mindist
+                        fields["distance_hessian"] = mindist
+                        fields["distance_raw_probs"] = mindist_raw
                         fields["detection_uncertainty"] = avg_uncertainty
                         fields["node_id"] = node_info.id
                         fields["node_x_px"] = node_info.x_px
@@ -487,9 +521,10 @@ def main():
                          order2d='xyt', 
                          order3d='xyz',
                          progress_callback=progress_server.update_progress )
-    finally:
-        pass
-        #progress_server.shutdown()
+    except:
+        raise
+    else:
+        progress_server.shutdown()
 
 if __name__=="__main__":
     import sys
@@ -508,7 +543,7 @@ if __name__=="__main__":
         project2dname = '/magnetic/workspace/skeleton_synapses/projects/Synapse_Labels2D.ilp'
         skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_18689.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/magnetic/workspace/skeleton_synapses/selected_nodes/DEBUG2.csv'
+        output_file = '/magnetic/workspace/skeleton_synapses/selected_nodes/output_18689_with_both_distances.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)

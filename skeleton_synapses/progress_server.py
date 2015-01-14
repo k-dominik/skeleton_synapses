@@ -44,7 +44,7 @@ class ProgressServer(HTTPServer):
         """
         Stop the server and wait for its thread to finish.
         """
-        HTTPServer.shutdown()
+        HTTPServer.shutdown(self)
         self._shutdown_completed_event.wait()
         if self.thread:
             self.thread.join()
