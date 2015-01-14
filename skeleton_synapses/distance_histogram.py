@@ -33,12 +33,12 @@ if __name__ == "__main__":
     import sys
     import argparse
 
-    DEBUG_ARGS = False
+    DEBUG_ARGS = True
     if DEBUG_ARGS:
-        #sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_18689.csv" )
+        sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_18689.csv" )
         #sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_133465.csv" )
         #sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_163751.csv" )
-        sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_94835.csv" )
+        #sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_94835.csv" )
     
     parser = argparse.ArgumentParser()
     parser.add_argument("detection_csv_file")

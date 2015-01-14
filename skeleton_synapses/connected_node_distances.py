@@ -1,5 +1,5 @@
 import csv
-from skeleton_utils import parse_connectors, CSV_FORMAT
+from skeleton_utils import parse_connectors, parse_skeleton_json, CSV_FORMAT
 
 def connected_node_distances( skeleton_json_path,
                               raw_detection_csv_path,
@@ -18,6 +18,8 @@ def connected_node_distances( skeleton_json_path,
         given merged detections file, which lists the minimum "membrane distance" for each synapse.    
     """
     connector_infos = parse_connectors( skeleton_json_path )
+    node_infos = parse_skeleton_json( skeleton_json_path, 4.0, 4.0, 45.0 )
+    node_info_dict = { n.id : n for n in node_infos }
 
     raw_detections, _ = _load_raw_detections( raw_detection_csv_path )
     merged_detections, output_columns = _load_merged_detections( merged_detection_csv_path )
@@ -28,14 +30,15 @@ def connected_node_distances( skeleton_json_path,
         csv_writer.writeheader()
 
         for connector_info in connector_infos:
-            output_row = _get_row_dict( raw_detections, merged_detections, output_columns, connector_info )
+            output_row = _get_row_dict( node_info_dict, raw_detections, merged_detections, output_columns, connector_info )
             if output_row["synapse_id"] == -1:
-                nodes_without_detections.append( ( output_row["node_id"], output_row["nearest_connector_id"] ) )
+                #nodes_without_detections.append( ( output_row["node_id"], output_row["nearest_connector_id"] ) )
+                nodes_without_detections.append( output_row["node_id"] )
             csv_writer.writerow( output_row )
 
     return len(connector_infos), nodes_without_detections
 
-def _get_row_dict( raw_detections, merged_detections, output_columns, connector_info ):
+def _get_row_dict( node_info_dict, raw_detections, merged_detections, output_columns, connector_info ):
     """
     Locate the row from raw_detections that corresponds to the given connector info, 
     along with the appropriate synapse detection from merged_detections.
@@ -56,6 +59,15 @@ def _get_row_dict( raw_detections, merged_detections, output_columns, connector_
         raw_row = raw_detections[connected_node_id]
     except KeyError:
         output_row["node_id"] = connected_node_id
+        output_row["node_x_px"] = node_info_dict[connected_node_id].x_px
+        output_row["node_y_px"] = node_info_dict[connected_node_id].x_px
+        output_row["node_z_px"] = node_info_dict[connected_node_id].x_px
+        # We have no synapse, but as a convenience for navigation in catmaid, 
+        #  replace the synapse coordinates with node coordinates.
+        output_row["x_px"] = node_info_dict[connected_node_id].x_px
+        output_row["y_px"] = node_info_dict[connected_node_id].y_px
+        output_row["z_px"] = node_info_dict[connected_node_id].z_px
+        
     else:
         synapse_id = int(raw_row["synapse_id"])
         merged_row = merged_detections[synapse_id]
@@ -108,7 +120,7 @@ if __name__ == "__main__":
     import sys
     import argparse
 
-    DEBUG_ARGS = False
+    DEBUG_ARGS = True
     if DEBUG_ARGS:
         skeleton_id = 18689
         #skeleton_id = 133465

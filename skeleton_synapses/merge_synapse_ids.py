@@ -64,8 +64,7 @@ def merge_synapse_ids(input_path, output_path):
 
                 # At least one row has the same z-coord as the average coord
                 # Find it and use it as the final_row.
-                avg_z = avg_coord[2]
-                final_row = filter( lambda row: int(row["z_px"]) == avg_z, rows )[0]
+                final_row = filter( lambda row: float(row["distance"]) == min_distance, rows )[0]
                 
                 # Replace fields in the final row
                 final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord

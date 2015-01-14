@@ -199,7 +199,7 @@ def locate_synapses(project3dname,
                             os.makedirs(outdir1)
                         except os.error:
                             pass
-                        outfile = outdir1+"%.02d"%iz + ".png"
+                        outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".png"
                         data = opPixelClassification3d.InputImages[-1](roi_with_channel[0], roi_with_channel[1]).wait()
                         vigra.impex.writeImage(data.squeeze().astype(numpy.uint8), outfile)
                         '''
@@ -212,6 +212,17 @@ def locate_synapses(project3dname,
                     prediction_roi = numpy.append( roi_with_channel[:,:-1], [[0],[4]], axis=1 )
                     synapse_predictions = opPixelClassification3d.PredictionProbabilities[-1](*prediction_roi).wait()
                     synapse_predictions = vigra.taggedView( synapse_predictions, "xytc" )
+
+                    if debug_images:
+                        outdir1 = outdir+"membrane/"
+                        try:
+                            os.makedirs(outdir1)
+                        except os.error:
+                            pass
+                        outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".png"
+                        membrane_predictions = opPixelClassification2d.HeadlessPredictionProbabilities[-1](*prediction_roi).wait()
+                        vigra.impex.writeImage(membrane_predictions[..., MEMBRANE_CHANNEL].squeeze(), outfile)
+                    
                     stop_pred = time.time()
                     timing_logger.debug( "spent in first 3d prediction: {}".format( stop_pred-start_pred ) )
                     opThreshold.InputImage.setValue(synapse_predictions)
@@ -223,10 +234,9 @@ def locate_synapses(project3dname,
                             os.makedirs(outdir1)
                         except os.error:
                             pass
-                        outfile = outdir1+"%.02d"%iz + ".tiff"
+                        outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".tiff"
                         #norm = numpy.where(synapse_cc[:, :, 0, 0]>0, 255, 0)
                         vigra.impex.writeImage(synapse_predictions[...,0,SYNAPSE_CHANNEL], outfile)
-        
         
                     if debug_images:
                         outdir1 = outdir+"synapses_roi/"
@@ -234,13 +244,13 @@ def locate_synapses(project3dname,
                             os.makedirs(outdir1)
                         except os.error:
                             pass
-                        outfile = outdir1+"%.02d"%iz + ".tiff"
+                        outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".tiff"
                         norm = numpy.where(synapse_cc[:, :, 0, 0]>0, 255, 0)
                         vigra.impex.writeImage(norm.astype(numpy.uint8), outfile)
                     if numpy.sum(synapse_cc)==0:
-                        #print "NO SYNAPSES IN THIS SLICE:", iz
+                        print "NO SYNAPSES IN THIS SLICE:", iz
                         timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
-                        continue
+                        #continue
     
                     start_hess = time.time()
                     eigenValues = opFeatures.Output(roi_hessian[0], roi_hessian[1]).wait()
@@ -264,7 +274,7 @@ def locate_synapses(project3dname,
                             os.makedirs(outdir1)
                         except os.error:
                             pass
-                        outfile = outdir1+"%.02d"%iz + ".tiff"
+                        outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".tiff"
                         logger.debug( "saving hessian to file: {}".format( outfile ) )
                         vigra.impex.writeImage(eigenValues, outfile )
                     
@@ -286,12 +296,15 @@ def locate_synapses(project3dname,
                             os.makedirs(outdir1)
                         except os.error:
                             pass
-                        outfile = outdir1+"%.02d"%iz + ".tiff"
+                        outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".tiff"
                         logger.debug( "saving distances to file:".format( outfile ) )
                         distances[skeletonCoord[0]-roi[0][0], skeletonCoord[1]-roi[0][1]] = numpy.max(distances)
                         vigra.impex.writeImage(distances, outfile )
                     
     
+                    if numpy.sum(synapse_cc)==0:
+                        continue
+                    
                     synapse_objects_4d, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
                                                                                   previous_slice_objects, previous_slice_roi,\
                                                                                   maxLabelSoFar)
@@ -446,6 +459,21 @@ def main():
     # Get lists of (coord, roi) for each node, grouped into branches
     tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
 
+    SPECIAL_DEBUG = True
+    if SPECIAL_DEBUG:
+        nodes_of_interest = [37575, 26717, 29219, 28228, 91037, 33173, 31519, 92443, 28010, 91064, 28129, 226935, 90886, 91047, 91063, 94379, 33997, 28626, 36989, 39556, 33870, 91058, 35882, 28260, 36252, 90399, 36892, 21248, 92841, 94203, 29465, 91967, 27937, 28227, 35717, 38656, 19764, 32398, 91026, 90350]
+        nodes_of_interest = [37575]
+        nodes_of_interest = set(nodes_of_interest)
+        new_tree_nodes_and_rois = []
+        for branch_coords_and_rois in tree_nodes_and_rois:
+            new_branch = []
+            for node_info, roi_around_point in branch_coords_and_rois:
+                if node_info.id in nodes_of_interest :
+                    new_branch.append( (node_info, roi_around_point) )
+            if new_branch:
+                new_tree_nodes_and_rois.append( new_branch )
+        tree_nodes_and_rois = new_tree_nodes_and_rois
+
     # Start a server for others to poll progress.
     progress_server = ProgressServer.create_and_start( "localhost", int(parsed_args.progress_port) )
 
@@ -455,16 +483,17 @@ def main():
                          parsed_args.volume_description, 
                          parsed_args.output_file,
                          tree_nodes_and_rois, 
-                         debug_images=False, 
+                         debug_images=True, 
                          order2d='xyt', 
                          order3d='xyz',
                          progress_callback=progress_server.update_progress )
     finally:
-        progress_server.shutdown()
+        pass
+        #progress_server.shutdown()
 
 if __name__=="__main__":
     import sys
-    DEBUGGING = False
+    DEBUGGING = True
     if DEBUGGING:
         print "USING DEBUG ARGUMENTS"
 
@@ -477,9 +506,9 @@ if __name__=="__main__":
 
         project3dname = '/magnetic/workspace/skeleton_synapses/projects/Synapse_Labels3D.ilp'
         project2dname = '/magnetic/workspace/skeleton_synapses/projects/Synapse_Labels2D.ilp'
-        skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_163751.json'
+        skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_18689.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/magnetic/workspace/skeleton_synapses/DEBUG2.csv'
+        output_file = '/magnetic/workspace/skeleton_synapses/selected_nodes/DEBUG2.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)
