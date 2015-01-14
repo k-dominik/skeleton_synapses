@@ -6,6 +6,7 @@ from skeleton_utils import CSV_FORMAT
 
 def distance_histogram( detection_csv_path, include_negative_distances=False ):
     distances = []
+    uncertainties = []
     missing = 0
     with open( detection_csv_path, 'r' ) as detection_file:
         csv_reader = csv.DictReader(detection_file, **CSV_FORMAT)
@@ -15,10 +16,18 @@ def distance_histogram( detection_csv_path, include_negative_distances=False ):
                 distances.append( distance )
             elif not include_negative_distances:
                 missing += 1
+            
+            uncertainty = float( row["detection_uncertainty"] )
+            if uncertainty >= 0.0 or include_negative_distances:
+                uncertainties.append( uncertainty )
 
     distances = numpy.asarray( distances, dtype=numpy.float32 )
     
+    plt.figure(0)
     n, bins, patches = plt.hist(distances, bins=20, normed=1, facecolor='green', alpha=0.5)
+    
+    plt.figure(1)
+    n, bins, patches = plt.hist(uncertainties, bins=20, normed=1, facecolor='red', alpha=0.5)
 
     plt.xlabel('Membrane "Distance"')
     plt.ylabel('Detections')
@@ -33,7 +42,7 @@ if __name__ == "__main__":
     import sys
     import argparse
 
-    DEBUG_ARGS = True
+    DEBUG_ARGS = False
     if DEBUG_ARGS:
         sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_18689.csv" )
         #sys.argv.append( "/Users/bergs/Documents/workspace/skeleton_synapses/test_skeletons/connected_node_distances_133465.csv" )
