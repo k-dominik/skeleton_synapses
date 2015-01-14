@@ -306,10 +306,11 @@ def locate_synapses(project3dname,
                     roi_upsampled_membrane[:, -1] = [0,1]
                     roi_upsampled_membrane = (map(long, roi_upsampled_membrane[0]), map(long, roi_upsampled_membrane[1]))
                     
-                    upsampled_membrane_probabilities = opUpsample.Output(*roi_upsampled_membrane).wait()
+                    upsampled_membrane_probabilities = opUpsample.Output(*roi_upsampled_membrane).wait().squeeze()
+                    upsampled_membrane_probabilities = vigra.filters.gaussianSmoothing(upsampled_membrane_probabilities, sigma=1.0)
                     print "UPSAMPLED MEMBRANE SHAPE: {} MAX: {} MIN: {}".format( upsampled_membrane_probabilities.shape, upsampled_membrane_probabilities.max(), upsampled_membrane_probabilities.min() )
                     gridGrRaw = graphs.gridGraph((shape_x, shape_y )) # !on original pixels
-                    gridGraphRawEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGrRaw, upsampled_membrane_probabilities.squeeze()) 
+                    gridGraphRawEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGrRaw, upsampled_membrane_probabilities) 
                     gridGraphs.append(gridGrRaw)
                     graphEdges.append(gridGraphRawEdgeIndicator)
                     instance_raw = vigra.graphs.ShortestPathPathDijkstra(gridGrRaw)
