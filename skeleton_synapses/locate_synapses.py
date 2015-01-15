@@ -18,6 +18,7 @@ from lazyflow.utility import PathComponents, isUrl, Timer
 
 from lazyflow.roi import roiToSlice, getIntersection
 from lazyflow.utility.io import TiledVolume
+from lazyflow.request import Request, RequestPool, RequestLock
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opNodewiseCache import OpNodewiseCache
@@ -39,7 +40,6 @@ import logging
 
 import lazyflow.request
 lazyflow.request.Request.reset_thread_pool(0)
-
 
 # Import requests in advance so we can silence its log messages.
 import requests
@@ -190,34 +190,7 @@ def locate_synapses(project3dname,
     opUpsample = OpUpsampleByTwo(graph = tempGraph)
     opUpsample.Input.connect(opCombinePredictions.Output)
     
-    opFeatures = OpPixelFeaturesPresmoothed(graph=tempGraph)
-    
-    # Compute the Hessian slicewise and create gridGraphs
-    standard_scales = [0.3, 0.7, 1.0, 1.6, 3.5, 5.0, 10.0]
-    standard_feature_ids = ['GaussianSmoothing', 'LaplacianOfGaussian', \
-                            'GaussianGradientMagnitude', 'DifferenceOfGaussians', \
-                            'StructureTensorEigenvalues', 'HessianOfGaussianEigenvalues']
-
-    opFeatures.Scales.setValue(standard_scales)
-    opFeatures.FeatureIds.setValue(standard_feature_ids)
-    
-    # Select Hessian Eigenvalues at scale 5.0
-    scale_index = standard_scales.index(5.0)
-    feature_index = standard_feature_ids.index('HessianOfGaussianEigenvalues')
-    selection_matrix = numpy.zeros( (6,7), dtype=bool ) # all False
-    selection_matrix[feature_index][scale_index] = True
-    opFeatures.Matrix.setValue(selection_matrix)
-
-    gridGraphs = []
-    graphEdges = []
-    opThreshold = OpThresholdTwoLevels(graph=tempGraph)
-    opThreshold.Channel.setValue(0) # We select SYNAPSE_CHANNEL before the data is given to opThreshold
-    opThreshold.SingleThreshold.setValue(0.4) #FIXME: solve the mess with uint8/float in predictions
-    opThreshold.SmootherSigma.setValue({'x': 2.0, 'y': 2.0, 'z': 1.0}) #NOTE: two-level is much better. Maybe we can afford it?
-    
-    previous_slice_objects = None
-    previous_slice_roi = None
-    maxLabelSoFar = 0
+    maxLabelSoFar = [0]
 
     with open(output_path, "w") as fout:
         csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
@@ -226,13 +199,41 @@ def locate_synapses(project3dname,
         skeleton_branch_count = len(branchwise_rois)
         skeleton_node_count = sum( map(len, branchwise_rois) )
 
-        node_overall_index = -1
-        for branch_index, branch_rois in enumerate(branchwise_rois):
+        node_overall_index = [-1]
+        f_out_lock = RequestLock()
+        max_label_lock = RequestLock()
+        def process_branch( branch_index, branch_rois ):
+            # opFeatures and opThreshold are declared locally so this whole block can be parallelized!
+            # (We use Input.setValue() instead of Input.connect() here.)
+            opFeatures = OpPixelFeaturesPresmoothed(graph=tempGraph)
+            
+            # Compute the Hessian slicewise and create gridGraphs
+            standard_scales = [0.3, 0.7, 1.0, 1.6, 3.5, 5.0, 10.0]
+            standard_feature_ids = ['GaussianSmoothing', 'LaplacianOfGaussian', \
+                                    'GaussianGradientMagnitude', 'DifferenceOfGaussians', \
+                                    'StructureTensorEigenvalues', 'HessianOfGaussianEigenvalues']
+        
+            opFeatures.Scales.setValue(standard_scales)
+            opFeatures.FeatureIds.setValue(standard_feature_ids)
+            
+            # Select Hessian Eigenvalues at scale 5.0
+            scale_index = standard_scales.index(5.0)
+            feature_index = standard_feature_ids.index('HessianOfGaussianEigenvalues')
+            selection_matrix = numpy.zeros( (6,7), dtype=bool ) # all False
+            selection_matrix[feature_index][scale_index] = True
+            opFeatures.Matrix.setValue(selection_matrix)
+        
+            # opFeatures and opThreshold are declared locally so this whole block can be parallelized!
+            # (We use Input.setValue() instead of Input.connect() here.)
+            opThreshold = OpThresholdTwoLevels(graph=tempGraph)
+            opThreshold.Channel.setValue(0) # We select SYNAPSE_CHANNEL before the data is given to opThreshold
+            opThreshold.SingleThreshold.setValue(0.4) #FIXME: solve the mess with uint8/float in predictions
+            opThreshold.SmootherSigma.setValue({'x': 2.0, 'y': 2.0, 'z': 1.0}) #NOTE: two-level is much better. Maybe we can afford it?
+            
             previous_slice_objects = None
             previous_slice_roi = None
             branch_node_count = len(branch_rois)
             for node_index_in_branch, (node_info, roi) in enumerate(branch_rois):
-                node_overall_index += 1
                 with Timer() as timer:
                     skeletonCoord = (node_info.x_px, node_info.y_px, node_info.z_px)
                     logger.debug("skeleton point: {}".format( skeletonCoord ))
@@ -403,10 +404,20 @@ def locate_synapses(project3dname,
                     if numpy.sum(synapse_cc)==0:
                         continue
                     
-                    synapse_objects_4d, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
-                                                                                  previous_slice_objects, previous_slice_roi,\
-                                                                                  maxLabelSoFar)
-                    synapse_objects = synapse_objects_4d.squeeze()
+
+                    with max_label_lock:                    
+                        synapse_objects_4d, maxLabelCurrent = normalize_synapse_ids( synapse_cc, 
+                                                                                     roi,
+                                                                                     previous_slice_objects, 
+                                                                                     previous_slice_roi,
+                                                                                     maxLabelSoFar[0] )
+    
+                        maxLabelSoFar[0] = maxLabelCurrent
+                        synapse_objects = synapse_objects_4d.squeeze()
+
+                        #add this synapse to the exported list
+                        previous_slice_objects = synapse_objects
+                        previous_slice_roi = roi
     
                     synapseIds = set(synapse_objects.flat)
                     synapseIds.remove(0)
@@ -457,21 +468,19 @@ def locate_synapses(project3dname,
                         fields["node_y_px"] = node_info.y_px
                         fields["node_z_px"] = node_info.z_px
 
-                        csv_writer.writerow( fields )                                                
-                        fout.flush()
+                        with f_out_lock:
+                            csv_writer.writerow( fields )                                                
+                            fout.flush()
 
-                    progress_callback( ProgressInfo( node_overall_index, 
-                                                     skeleton_node_count, 
-                                                     branch_index, 
-                                                     skeleton_branch_count, 
-                                                     node_index_in_branch, 
-                                                     branch_node_count,
-                                                     maxLabelCurrent ) )
-
-                    #add this synapse to the exported list
-                    previous_slice_objects = synapse_objects
-                    previous_slice_roi = roi
-                    maxLabelSoFar = maxLabelCurrent
+                    with f_out_lock:
+                        node_overall_index[0] += 1
+                        progress_callback( ProgressInfo( node_overall_index[0], 
+                                                         skeleton_node_count, 
+                                                         branch_index, 
+                                                         skeleton_branch_count, 
+                                                         node_index_in_branch, 
+                                                         branch_node_count,
+                                                         maxLabelCurrent ) )
             
                         
                     #Sanity check
@@ -480,6 +489,12 @@ def locate_synapses(project3dname,
                     #outfile = outdir+"distances/"+ "%.02d"%iz + ".tiff"
                     #vigra.impex.writeImage(distances, outfile)
                 timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
+
+        request_pool = RequestPool()
+        for branch_index, branch_rois in enumerate(branchwise_rois):
+            request_pool.add( Request( partial( process_branch, branch_index, branch_rois ) ) )
+        
+        request_pool.wait()
 
 def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_roi, maxLabel):
     current_roi = numpy.array(current_roi)
