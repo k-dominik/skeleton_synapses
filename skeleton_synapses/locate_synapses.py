@@ -23,13 +23,17 @@ from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
 from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, \
                                              construct_tree, nodes_and_rois_for_tree, \
-                                             parse_connectors, X_RES, Y_RES, Z_RES
+                                             parse_connectors
                                              
 from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
 SYNAPSE_CHANNEL = 2
+
+X_RES = 0
+Y_RES = 0
+Z_RES = 0
 
 import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -47,7 +51,10 @@ logger.setLevel(logging.DEBUG)
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
-OUTPUT_COLUMNS = ["synpase_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", "node_x_px", "node_y_px", "node_z_px"]
+OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", \
+                  "connector_distance", "node_x_px", "node_y_px", "node_z_px", "nearest_connector_id", "nearest_connector_distance_nm", \
+                  "nearest_connector_x_nm", "nearest_connector_y_nm", "nearest_connector_z_nm"]
+
 CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 
 def open_project( project_path ):
@@ -202,9 +209,10 @@ def locate_synapses(project3dname,
                     roi_hessian[0][-1] = 1
                     roi_hessian[1][-1] = 2
                     
-                    #REMOVE ME, DEBUG CONDITION
-                    if not node_info.id in node_to_connector.keys():
-                        continue
+                    WITH_CONNECTORS_ONLY = False
+                    if WITH_CONNECTORS_ONLY:
+                        if not node_info.id in node_to_connector.keys():
+                            continue
                     
                     if debug_images:
                         outdir1 = outdir+"raw/"
@@ -305,6 +313,7 @@ def locate_synapses(project3dname,
                         vigra.impex.writeImage(distances, outfile )
                     
                     connector_distances = None
+                    connector_coords = None
                     if node_info.id in node_to_connector.keys():
                         connectors = node_to_connector[node_info.id]
                         connector_info = connector_infos_dict[connectors[0]]
@@ -312,36 +321,17 @@ def locate_synapses(project3dname,
                         con_x_px = int(connector_info.x_nm / float(X_RES))
                         con_y_px = int(connector_info.y_nm / float(Y_RES))
                         con_z_px = int(connector_info.z_nm / float(Z_RES))
+                        connector_coords = (con_x_px-roi[0][0], con_y_px-roi[0][1])
                         if con_x_px>roi[0][0] and con_x_px<roi[1][0] and con_y_px>roi[0][1] and con_y_px<roi[1][1]:
                             #this connector is inside our prediction roi, compute the distance field                                                                                                        "
-                            con_relative = [con_x_px[0]-roi[0][0], con_y_px[1]-roi[0][1]]
-                            relative_coord = map(long, con_relative)
+                            con_relative = [con_x_px-roi[0][0], con_y_px-roi[0][1]]
+    
                             sourceNode = gridGr.coordinateToNode(con_relative)
                             instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
                             connector_distances = instance.distances()
                         else:
-                            print "connector outside of roi"
-                            print roi, con_x_px, con_y_px
                             connector_distances = None
                         
-                        
-                        eu_dist = scipy.spatial.distance.euclidean( (node_info.x_px, node_info.y_px, node_info.z_px), \
-                                                                 (con_x_px, con_y_px, con_z_px) )
-                        if connector_distances is not None:
-                            mem_dist = connector_distances(relative_coord)
-                        else:
-                            mem_dist = -1
-                        
-                        print "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA, for node {} found connectors {} at euclidean distance {}, mem distance {}".format(node_info.id, \
-                                                                                                                               connectors, \
-                                                                                                                               eu_dist,\
-                                                                                                                               mem_dist)
-                    else:
-                        #print "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB, no connectors anywhere close"
-                        continue
-
-
-    
                     synapse_objects_4d, maxLabelCurrent = normalize_synapse_ids(synapse_cc, roi,\
                                                                                   previous_slice_objects, previous_slice_roi,\
                                                                                   maxLabelSoFar)
@@ -359,7 +349,17 @@ def locate_synapses(project3dname,
                         syn_average_y = numpy.average(syn_pixel_coords[1])+roi[0][1]
                         syn_distances = distances[syn_pixel_coords]
                         mindist = numpy.min(syn_distances)
-
+                        
+                        if connector_distances is not None:
+                            syn_distances_connector = connector_distances[syn_pixel_coords]
+                            min_conn_distance = numpy.min(syn_distances_connector)
+                            
+                        elif connector_coords is not None:
+                            euclidean_dists = [scipy.spatial.distance.euclidean(connector_coords, xy) for xy in zip(syn_pixel_coords[0], syn_pixel_coords[1])]
+                            min_conn_distance = numpy.min(euclidean_dists)
+                        else:
+                            min_conn_distance = 99999.0
+                            
                         # Determine average uncertainty
                         # Get probabilities for this synapse's pixels
                         flat_predictions = synapse_predictions.view(numpy.ndarray)[synapse_objects_4d[...,0] == sid]
@@ -371,7 +371,7 @@ def locate_synapses(project3dname,
                         avg_uncertainty = 1.0 - avg_certainty                        
 
                         fields = {}
-                        fields["synpase_id"] = int(sid)
+                        fields["synapse_id"] = int(sid)
                         fields["x_px"] = int(syn_average_x + 0.5)
                         fields["y_px"] = int(syn_average_y + 0.5)
                         fields["z_px"] = iz
@@ -382,6 +382,22 @@ def locate_synapses(project3dname,
                         fields["node_x_px"] = node_info.x_px
                         fields["node_y_px"] = node_info.y_px
                         fields["node_z_px"] = node_info.z_px
+                        if min_conn_distance!=99999.0:
+                            connectors = node_to_connector[node_info.id]
+                            connector_info = connector_infos_dict[connectors[0]]
+                            fields["nearest_connector_id"] = connector_info.id
+                            fields["nearest_connector_distance_nm"] = min_conn_distance
+                            fields["nearest_connector_x_nm"] = connector_info.x_nm
+                            fields["nearest_connector_y_nm"] = connector_info.y_nm
+                            fields["nearest_connector_z_nm"] = connector_info.z_nm
+                        else:
+                            fields["nearest_connector_id"] = -1
+                            fields["nearest_connector_distance_nm"] = min_conn_distance
+                            fields["nearest_connector_x_nm"] = -1
+                            fields["nearest_connector_y_nm"] = -1
+                            fields["nearest_connector_z_nm"] = -1
+                                        
+                        
 
                         csv_writer.writerow( fields )                                                
                         fout.flush()
@@ -480,6 +496,12 @@ def main():
     # Read the volume resolution
     volume_description = TiledVolume.readDescription(parsed_args.volume_description)
     z_res, y_res, x_res = volume_description.resolution_zyx
+    global Z_RES
+    Z_RES = z_res
+    global Y_RES 
+    Y_RES = y_res
+    global X_RES 
+    X_RES = x_res
     
     # Parse the swc into a list of nodes
     node_to_connector = None

@@ -26,7 +26,7 @@ def merge_synapse_ids(input_path, output_path):
         all_synapses = collections.OrderedDict()
         csv_reader = csv.DictReader(f, **CSV_FORMAT)
         for row in csv_reader:
-            syn_id = row["synpase_id"]
+            syn_id = row["synapse_id"]
             try:
                 all_synapses[syn_id].append( row )
             except KeyError:
@@ -44,6 +44,9 @@ def merge_synapse_ids(input_path, output_path):
                 # Find min distance
                 distances = map( lambda row: row["distance"], rows )
                 min_distance = numpy.asarray(distances, dtype=numpy.float32).min()
+                
+                connector_distances = map( lambda row: row["connector_distance"], rows)
+                min_conn_distance = numpy.asarray(connector_distances, dtype=numpy.float32).min()
 
                 # Sum sizes
                 sizes = map( lambda row: row["size_px"], rows )
@@ -71,6 +74,7 @@ def merge_synapse_ids(input_path, output_path):
                 # Replace fields in the final row
                 final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
                 final_row["distance"] = min_distance
+                final_row["connector_distance"] = min_conn_distance
                 final_row["size_px"] = total_size
                 final_row["detection_uncertainty"] = avg_uncertainty
 
