@@ -72,6 +72,15 @@ def parse_skeleton_json(json_path, x_res, y_res, z_res):
         node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )
     return node_infos
 
+def parse_skeleton_ids( json_path ):
+    """
+    Read the given skeleton json file and return the list of skeleton ids it contains.
+    """
+    assert os.path.splitext(json_path)[1] == '.json'
+    with open(json_path, 'r') as json_file:
+        json_data = json.load(json_file)
+    return json_data['skeletons'].keys()
+
 # Note that in ConnectorInfos, we keep the coordinates in nanometers!
 ConnectorInfo = collections.namedtuple('ConnectorInfo', 'id x_nm y_nm z_nm incoming_nodes outgoing_nodes')
 def parse_connectors( json_path ):

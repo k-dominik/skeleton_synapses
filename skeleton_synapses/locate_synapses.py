@@ -2,6 +2,7 @@ import os
 import collections
 import numpy
 import csv
+from functools import partial
 import vigra
 from vigra import graphs
 import time
@@ -19,6 +20,7 @@ from lazyflow.roi import roiToSlice, getIntersection
 from lazyflow.utility.io import TiledVolume
 
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
+from skeleton_synapses.opNodewiseCache import OpNodewiseCache
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
 from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
 from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
@@ -34,6 +36,10 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 import tempfile
 TMP_DIR = tempfile.gettempdir()
 import logging
+
+import lazyflow.request
+lazyflow.request.Request.reset_thread_pool(0)
+
 
 # Import requests in advance so we can silence its log messages.
 import requests
@@ -100,6 +106,46 @@ def append_lane(workflow, input_filepath, axisorder=None):
     return opPixelClassification
 
 
+MEMBRANE_CACHE_FORMAT = "/groups/flyem/home/bergs/workspace/skeleton_synapses/debuggingmembrane/{z_px}-{node_id}.png"
+SYNAPSE_CACHE_FORMAT = "/groups/flyem/home/bergs/workspace/skeleton_synapses/debuggingsynapses_roi/{z_px}-{node_id}.tiff"
+
+def roi_to_path( skeleton_id, node_coords_to_ids, path_format, axiskeys, start, stop ):
+    """
+    path_format: A format string with any of the following format parameters:
+                 x y z node_id skeleton_id
+    """
+    assert len(axiskeys) == len(start) == len(stop)
+    start = numpy.asarray(start)
+    stop = numpy.asarray(stop)
+    roi_center = (stop + start) / 2
+    
+    tagged_coords = collections.OrderedDict( zip(axiskeys, roi_center) )
+    x_px, y_px = tagged_coords['x'], tagged_coords['y']
+    
+    # Must have either t or z
+    try:
+        z_px = tagged_coords['z']
+        assert 't' not in tagged_coords
+    except KeyError:
+        z_px = tagged_coords['t']        
+    
+    try:
+        node_id = node_coords_to_ids[(x_px,y_px,z_px)]
+    except KeyError:
+        return None
+    
+    format_keys = { "skeleton_id" : skeleton_id,
+                    "node_id" : node_id,
+                    "x_px" : x_px,
+                    "y_px" : y_px,
+                    "z_px" : z_px }
+    
+    tile_path = path_format.format( **format_keys )
+    
+    if os.path.exists( tile_path ):
+        return tile_path
+    return None
+
 def locate_synapses(project3dname, 
                     project2dname, 
                     input_filepath, 
@@ -108,7 +154,8 @@ def locate_synapses(project3dname,
                     debug_images=False, 
                     order2d='xyz', 
                     order3d='xyt', 
-                    progress_callback=lambda p: None):
+                    progress_callback=lambda p: None,
+                    node_infos=None):
     outdir = os.path.split( output_path )[0]
     
     shell3d = open_project(project3dname)
@@ -118,13 +165,26 @@ def locate_synapses(project3dname,
     logger.debug( "appended 3d lane" )
     opPixelClassification2d = append_lane(shell2d.workflow, input_filepath, order2d) # T
     logger.debug( "appended 2d lane" )
+
+    assert node_infos
+    node_coords_to_ids = { (n.x_px, n.y_px, n.z_px) : n.id for n in node_infos }
+    
+    tempGraph = Graph()
+    opMembranePredictionCache = OpNodewiseCache( graph=tempGraph )
+    opMembranePredictionCache.ComputedInput.connect( opPixelClassification2d.HeadlessPredictionProbabilities[-1], permit_distant_connection=True )
+    opMembranePredictionCache.RoiToPathFn.setValue( partial( roi_to_path, "", node_coords_to_ids, MEMBRANE_CACHE_FORMAT ) )
+    opMembranePredictionCache.TransformFn.setValue( lambda a: numpy.asarray(a, dtype=numpy.float32) / 255.0 )
+
+    opSynapsePredictionCache = OpNodewiseCache( graph=tempGraph )
+    opSynapsePredictionCache.ComputedInput.connect( opPixelClassification3d.PredictionProbabilities[-1], permit_distant_connection=True )
+    opSynapsePredictionCache.RoiToPathFn.setValue( partial( roi_to_path, "", node_coords_to_ids, SYNAPSE_CACHE_FORMAT ) )
+    #opSynapsePredictionCache.TransformFn.setValue( lambda a: numpy.asarray(a, dtype=numpy.float32) / 255.0 )
     
     # Combine
-    tempGraph = Graph()
     opCombinePredictions = OpCombinePredictions(SYNAPSE_CHANNEL, MEMBRANE_CHANNEL, graph=tempGraph)
     opPixelClassification3d.FreezePredictions.setValue(False)
-    opCombinePredictions.SynapsePredictions.connect( opPixelClassification3d.PredictionProbabilities[-1], permit_distant_connection=True )
-    opCombinePredictions.MembranePredictions.connect( opPixelClassification2d.HeadlessPredictionProbabilities[-1], permit_distant_connection=True )
+    opCombinePredictions.SynapsePredictions.connect( opSynapsePredictionCache.Output )
+    opCombinePredictions.MembranePredictions.connect( opMembranePredictionCache.Output )
 
     #data_shape_3d = input_data.shape[0:3]    
     opUpsample = OpUpsampleByTwo(graph = tempGraph)
@@ -147,12 +207,11 @@ def locate_synapses(project3dname,
     selection_matrix = numpy.zeros( (6,7), dtype=bool ) # all False
     selection_matrix[feature_index][scale_index] = True
     opFeatures.Matrix.setValue(selection_matrix)
-    opFeatures.Input.connect(opUpsample.Output)
 
     gridGraphs = []
     graphEdges = []
     opThreshold = OpThresholdTwoLevels(graph=tempGraph)
-    opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
+    opThreshold.Channel.setValue(0) # We select SYNAPSE_CHANNEL before the data is given to opThreshold
     opThreshold.SingleThreshold.setValue(0.4) #FIXME: solve the mess with uint8/float in predictions
     opThreshold.SmootherSigma.setValue({'x': 2.0, 'y': 2.0, 'z': 1.0}) #NOTE: two-level is much better. Maybe we can afford it?
     
@@ -210,7 +269,11 @@ def locate_synapses(project3dname,
                         '''
                     start_pred = time.time()
                     prediction_roi = numpy.append( roi_with_channel[:,:-1], [[0],[4]], axis=1 )
-                    synapse_predictions = opPixelClassification3d.PredictionProbabilities[-1](*prediction_roi).wait()
+                    synapse_prediction_roi = numpy.append( prediction_roi[:,:-1], [[SYNAPSE_CHANNEL],[SYNAPSE_CHANNEL+1]], axis=1 )
+                    membrane_prediction_roi = numpy.append( prediction_roi[:,:-1], [[MEMBRANE_CHANNEL],[MEMBRANE_CHANNEL+1]], axis=1 )
+                    
+                    #synapse_predictions = opPixelClassification3d.PredictionProbabilities[-1](*prediction_roi).wait()                    
+                    synapse_predictions = opSynapsePredictionCache.Output(*synapse_prediction_roi).wait()
                     synapse_predictions = vigra.taggedView( synapse_predictions, "xytc" )
 
                     if debug_images:
@@ -220,7 +283,8 @@ def locate_synapses(project3dname,
                         except os.error:
                             pass
                         outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".png"
-                        membrane_predictions = opPixelClassification2d.HeadlessPredictionProbabilities[-1](*prediction_roi).wait()
+                        #membrane_predictions = opPixelClassification2d.HeadlessPredictionProbabilities[-1](*prediction_roi).wait()
+                        membrane_predictions = opMembranePredictionCache.Output(*membrane_prediction_roi).wait()
                         vigra.impex.writeImage(membrane_predictions[..., MEMBRANE_CHANNEL].squeeze(), outfile)
                     
                     stop_pred = time.time()
@@ -254,7 +318,11 @@ def locate_synapses(project3dname,
     
                     # Distances over Hessian
                     start_hess = time.time()
-                    eigenValues = opFeatures.Output(roi_hessian[0], roi_hessian[1]).wait()
+                    roi_hessian = ( tuple(map(long, roi_hessian[0])), tuple(map(long, roi_hessian[1])) )
+                    upsampled_combined_membranes = opUpsample.Output(*roi_hessian).wait()
+                    upsampled_combined_membranes = vigra.taggedView(upsampled_combined_membranes, opUpsample.Output.meta.axistags )
+                    opFeatures.Input.setValue(upsampled_combined_membranes)
+                    eigenValues = opFeatures.Output[:].wait()
                     eigenValues = numpy.abs(eigenValues[:, :, 0, 0])
                     stop_hess = time.time()
                     timing_logger.debug( "spent for hessian: {}".format( stop_hess-start_hess ) )
@@ -360,10 +428,18 @@ def locate_synapses(project3dname,
                         # Determine average uncertainty
                         # Get probabilities for this synapse's pixels
                         flat_predictions = synapse_predictions.view(numpy.ndarray)[synapse_objects_4d[...,0] == sid]
-                        # Sort along channel axis
-                        flat_predictions.sort(axis=-1)
-                        # What's the difference between the highest and second-highest class?
-                        certainties = flat_predictions[:,-1] - flat_predictions[:,-2]
+
+                        # If we pulled the data from cache, there may be only one channel.
+                        # In that case, we can't quite compute a proper uncertainty, 
+                        #  so we'll just pretend there were only two prediction channels to begin with.
+                        if flat_predictions.shape[-1] > 1:
+                            # Sort along channel axis
+                            flat_predictions.sort(axis=-1)
+                            # What's the difference between the highest and second-highest class?
+                            certainties = flat_predictions[:,-1] - flat_predictions[:,-2]
+                        else:
+                            # Pretend there were only two channels
+                            certainties = flat_predictions[:,0] - (1 - flat_predictions[:,0])
                         avg_certainty = numpy.average(certainties)
                         avg_uncertainty = 1.0 - avg_certainty                        
 
@@ -521,7 +597,8 @@ def main():
                          debug_images=False, 
                          order2d='xyt', 
                          order3d='xyz',
-                         progress_callback=progress_server.update_progress )
+                         progress_callback=progress_server.update_progress,
+                         node_infos=node_infos )
     except:
         raise
     else:
@@ -544,7 +621,7 @@ if __name__=="__main__":
         project2dname = '/magnetic/workspace/skeleton_synapses/projects/Synapse_Labels2D.ilp'
         skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_18689.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/magnetic/workspace/skeleton_synapses/debugging/synapses_th_0.4_sigma_2.csv'
+        output_file = '/magnetic/workspace/skeleton_synapses/debugging/TEST_CACHE_OUTPUT.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)
