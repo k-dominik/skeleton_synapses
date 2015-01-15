@@ -6,6 +6,7 @@ from functools import partial
 import vigra
 from vigra import graphs
 import time
+import scipy
 
 import ilastik_main
 from ilastik.workflows.pixelClassification import PixelClassificationWorkflow
@@ -23,13 +24,20 @@ from lazyflow.request import Request, RequestPool, RequestLock
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opNodewiseCache import OpNodewiseCache
 from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
-from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
+from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, \
+                                             construct_tree, nodes_and_rois_for_tree, \
+                                             parse_connectors
+                                             
 from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
 from skeleton_utils import CSV_FORMAT
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
 SYNAPSE_CHANNEL = 2
+
+X_RES = 0
+Y_RES = 0
+Z_RES = 0
 
 import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -50,7 +58,10 @@ logger.setLevel(logging.DEBUG)
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
-OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance_hessian", "distance_raw_probs", "detection_uncertainty", "node_id", "node_x_px", "node_y_px", "node_z_px"]
+OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", \
+                  "connector_distance", "node_x_px", "node_y_px", "node_z_px", "nearest_connector_id", "nearest_connector_distance_nm", \
+                  "nearest_connector_x_nm", "nearest_connector_y_nm", "nearest_connector_z_nm"]
+
 
 def open_project( project_path ):
     """
@@ -151,6 +162,8 @@ def locate_synapses(project3dname,
                     input_filepath, 
                     output_path, 
                     branchwise_rois, 
+                    node_to_connector,
+                    connector_infos,
                     debug_images=False, 
                     order2d='xyz', 
                     order3d='xyt', 
@@ -232,6 +245,9 @@ def locate_synapses(project3dname,
             
             previous_slice_objects = None
             previous_slice_roi = None
+            conn_ids = [x.id for x in connector_infos]
+            connector_infos_dict = dict(zip(conn_ids, connector_infos))
+
             branch_node_count = len(branch_rois)
             for node_index_in_branch, (node_info, roi) in enumerate(branch_rois):
                 with Timer() as timer:
@@ -252,6 +268,11 @@ def locate_synapses(project3dname,
                     #we need the second eigenvalue
                     roi_hessian[0][-1] = 1
                     roi_hessian[1][-1] = 2
+                    
+                    WITH_CONNECTORS_ONLY = False
+                    if WITH_CONNECTORS_ONLY:
+                        if not node_info.id in node_to_connector.keys():
+                            continue
                     
                     if debug_images:
                         outdir1 = outdir+"raw/"
@@ -374,6 +395,25 @@ def locate_synapses(project3dname,
                     roi_upsampled_membrane = numpy.asarray( roi_hessian )
                     roi_upsampled_membrane[:, -1] = [0,1]
                     roi_upsampled_membrane = (map(long, roi_upsampled_membrane[0]), map(long, roi_upsampled_membrane[1]))
+                    connector_distances = None
+                    connector_coords = None
+                    if node_info.id in node_to_connector.keys():
+                        connectors = node_to_connector[node_info.id]
+                        connector_info = connector_infos_dict[connectors[0]]
+                        #Convert to pixels
+                        con_x_px = int(connector_info.x_nm / float(X_RES))
+                        con_y_px = int(connector_info.y_nm / float(Y_RES))
+                        con_z_px = int(connector_info.z_nm / float(Z_RES))
+                        connector_coords = (con_x_px-roi[0][0], con_y_px-roi[0][1])
+                        if con_x_px>roi[0][0] and con_x_px<roi[1][0] and con_y_px>roi[0][1] and con_y_px<roi[1][1]:
+                            #this connector is inside our prediction roi, compute the distance field                                                                                                        "
+                            con_relative = [con_x_px-roi[0][0], con_y_px-roi[0][1]]
+    
+                            sourceNode = gridGr.coordinateToNode(con_relative)
+                            instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
+                            connector_distances = instance.distances()
+                        else:
+                            connector_distances = None
                     
                     upsampled_membrane_probabilities = opUpsample.Output(*roi_upsampled_membrane).wait().squeeze()
                     upsampled_membrane_probabilities = vigra.filters.gaussianSmoothing(upsampled_membrane_probabilities, sigma=1.0)
@@ -436,6 +476,16 @@ def locate_synapses(project3dname,
                         syn_distances_raw = distances_raw[syn_pixel_coords]
                         mindist_raw = numpy.min(syn_distances_raw)
 
+                        if connector_distances is not None:
+                            syn_distances_connector = connector_distances[syn_pixel_coords]
+                            min_conn_distance = numpy.min(syn_distances_connector)
+                            
+                        elif connector_coords is not None:
+                            euclidean_dists = [scipy.spatial.distance.euclidean(connector_coords, xy) for xy in zip(syn_pixel_coords[0], syn_pixel_coords[1])]
+                            min_conn_distance = numpy.min(euclidean_dists)
+                        else:
+                            min_conn_distance = 99999.0
+                            
                         # Determine average uncertainty
                         # Get probabilities for this synapse's pixels
                         flat_predictions = synapse_predictions.view(numpy.ndarray)[synapse_objects_4d[...,0] == sid]
@@ -467,6 +517,22 @@ def locate_synapses(project3dname,
                         fields["node_x_px"] = node_info.x_px
                         fields["node_y_px"] = node_info.y_px
                         fields["node_z_px"] = node_info.z_px
+                        if min_conn_distance!=99999.0:
+                            connectors = node_to_connector[node_info.id]
+                            connector_info = connector_infos_dict[connectors[0]]
+                            fields["nearest_connector_id"] = connector_info.id
+                            fields["nearest_connector_distance_nm"] = min_conn_distance
+                            fields["nearest_connector_x_nm"] = connector_info.x_nm
+                            fields["nearest_connector_y_nm"] = connector_info.y_nm
+                            fields["nearest_connector_z_nm"] = connector_info.z_nm
+                        else:
+                            fields["nearest_connector_id"] = -1
+                            fields["nearest_connector_distance_nm"] = min_conn_distance
+                            fields["nearest_connector_x_nm"] = -1
+                            fields["nearest_connector_y_nm"] = -1
+                            fields["nearest_connector_z_nm"] = -1
+                                        
+                        
 
                         with f_out_lock:
                             csv_writer.writerow( fields )                                                
@@ -553,7 +619,7 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
 
 def main():
     # FIXME: This shouldn't be hard-coded.
-    ROI_RADIUS = 150
+    ROI_RADIUS = 300
 
     import argparse
     parser = argparse.ArgumentParser() 
@@ -569,13 +635,21 @@ def main():
     # Read the volume resolution
     volume_description = TiledVolume.readDescription(parsed_args.volume_description)
     z_res, y_res, x_res = volume_description.resolution_zyx
+    global Z_RES
+    Z_RES = z_res
+    global Y_RES 
+    Y_RES = y_res
+    global X_RES 
+    X_RES = x_res
     
     # Parse the swc into a list of nodes
+    node_to_connector = None
     skeleton_ext = os.path.splitext(parsed_args.skeleton_file)[1]
     if skeleton_ext == '.swc':
         node_infos = parse_skeleton_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
     elif skeleton_ext == '.json':
         node_infos = parse_skeleton_json( parsed_args.skeleton_file, x_res, y_res, z_res )
+        connector_infos, node_to_connector = parse_connectors(parsed_args.skeleton_file)
     else:
         raise Exception("Unknown skeleton file format: " + skeleton_ext)
     
@@ -609,6 +683,8 @@ def main():
                          parsed_args.volume_description, 
                          parsed_args.output_file,
                          tree_nodes_and_rois, 
+                         node_to_connector,
+                         connector_infos,
                          debug_images=False, 
                          order2d='xyt', 
                          order3d='xyz',
@@ -637,6 +713,12 @@ if __name__=="__main__":
         skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_18689.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
         output_file = '/magnetic/workspace/skeleton_synapses/debugging/TEST_CACHE_OUTPUT.csv'
+
+        project3dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels3D.ilp'
+        project2dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels2D.ilp'
+        skeleton_file = '/home/anna/catmaid_tools/test_skeletons/skeleton_18689.json'
+        volume_description = '/home/anna/catmaid_tools/example/example_volume_description_2.json'
+        output_file = '/tmp/synapses.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)

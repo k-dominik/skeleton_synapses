@@ -8,6 +8,7 @@ from tree_util import partition
 # Not  used in this file, but defined for cmd-line utilities to use.
 CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 
+
 NodeInfo = collections.namedtuple('NodeInfo', 'id x_px y_px z_px parent_id')
 def parse_skeleton_swc(swc_path, x_res, y_res, z_res):
     """
@@ -85,6 +86,7 @@ def parse_skeleton_ids( json_path ):
 ConnectorInfo = collections.namedtuple('ConnectorInfo', 'id x_nm y_nm z_nm incoming_nodes outgoing_nodes')
 def parse_connectors( json_path ):
     connector_infos = []
+    node_to_connector = {}
     with open(json_path, 'r') as json_file:
         json_data = json.load(json_file)
 
@@ -97,16 +99,22 @@ def parse_connectors( json_path ):
     for connector_id, connector_data in connection_dict.iteritems():
         connector_id = int(connector_id)
         x_nm, y_nm, z_nm = map(float, connector_data['location'])
+        #x_px = int(x_nm / float(X_RES))
+        #y_px = int(y_nm / float(Y_RES))
+        #z_px = int(z_nm / float(Z_RES))
+
 
         # Note the strange terminology of the json file:
         # The 'presynaptic_to' list means "all nodes in this list are presynaptic to the connector"
         #  (not "the connector is presynaptic to the following nodes")
         incoming = map(int, connector_data['presynaptic_to'] )
         outgoing = map(int, connector_data['postsynaptic_to'] )
-
+        for node in incoming:
+            node_connectors = node_to_connector.setdefault(node, [])
+            node_connectors.append(connector_id)
         connector_infos.append( ConnectorInfo(connector_id, x_nm, y_nm, z_nm, incoming, outgoing) )
 
-    return connector_infos
+    return connector_infos, node_to_connector
 
 #
 # A 'tree' is a networkx.DiGraph with a single root node (a node without parents)

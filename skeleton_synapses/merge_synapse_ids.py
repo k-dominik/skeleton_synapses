@@ -45,6 +45,9 @@ def merge_synapse_ids(input_path, output_path):
                     # Find min distance
                     distances = map( lambda row: row["distance"], rows )
                     min_distance = numpy.asarray(distances, dtype=numpy.float32).min()
+                
+                connector_distances = map( lambda row: row["connector_distance"], rows)
+                min_conn_distance = numpy.asarray(connector_distances, dtype=numpy.float32).min()
 
                 if "distance_hessian" in output_columns:
                     # Find min hessian distance
@@ -85,6 +88,7 @@ def merge_synapse_ids(input_path, output_path):
                 
                 # Replace fields in the final row
                 final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
+                final_row["connector_distance"] = min_conn_distance
                 final_row["size_px"] = total_size
                 final_row["detection_uncertainty"] = avg_uncertainty
 
