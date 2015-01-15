@@ -153,8 +153,8 @@ def locate_synapses(project3dname,
     graphEdges = []
     opThreshold = OpThresholdTwoLevels(graph=tempGraph)
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
-    opThreshold.SingleThreshold.setValue(0.5) #FIXME: solve the mess with uint8/float in predictions
-    opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0}) #NOTE: two-level is much better. Maybe we can afford it?
+    opThreshold.SingleThreshold.setValue(0.4) #FIXME: solve the mess with uint8/float in predictions
+    opThreshold.SmootherSigma.setValue({'x': 2.0, 'y': 2.0, 'z': 1.0}) #NOTE: two-level is much better. Maybe we can afford it?
     
     previous_slice_objects = None
     previous_slice_roi = None
@@ -250,7 +250,7 @@ def locate_synapses(project3dname,
                     if numpy.sum(synapse_cc)==0:
                         print "NO SYNAPSES IN THIS SLICE:", iz
                         timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
-                        #continue
+                        continue
     
                     # Distances over Hessian
                     start_hess = time.time()
@@ -265,8 +265,8 @@ def locate_synapses(project3dname,
                     start_gr = time.time()
                     gridGr = graphs.gridGraph((shape_x, shape_y )) # !on original pixels
                     gridGraphEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGr, eigenValues) 
-                    gridGraphs.append(gridGr)
-                    graphEdges.append(gridGraphEdgeIndicator)
+                    #gridGraphs.append(gridGr)
+                    #graphEdges.append(gridGraphEdgeIndicator)
                     stop_gr = time.time()
                     timing_logger.debug( "creating graph: {}".format( stop_gr - start_gr ) )
                     if debug_images:
@@ -308,11 +308,11 @@ def locate_synapses(project3dname,
                     
                     upsampled_membrane_probabilities = opUpsample.Output(*roi_upsampled_membrane).wait().squeeze()
                     upsampled_membrane_probabilities = vigra.filters.gaussianSmoothing(upsampled_membrane_probabilities, sigma=1.0)
-                    print "UPSAMPLED MEMBRANE SHAPE: {} MAX: {} MIN: {}".format( upsampled_membrane_probabilities.shape, upsampled_membrane_probabilities.max(), upsampled_membrane_probabilities.min() )
+                    #print "UPSAMPLED MEMBRANE SHAPE: {} MAX: {} MIN: {}".format( upsampled_membrane_probabilities.shape, upsampled_membrane_probabilities.max(), upsampled_membrane_probabilities.min() )
                     gridGrRaw = graphs.gridGraph((shape_x, shape_y )) # !on original pixels
                     gridGraphRawEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGrRaw, upsampled_membrane_probabilities) 
-                    gridGraphs.append(gridGrRaw)
-                    graphEdges.append(gridGraphRawEdgeIndicator)
+                    #gridGraphs.append(gridGrRaw)
+                    #graphEdges.append(gridGraphRawEdgeIndicator)
                     instance_raw = vigra.graphs.ShortestPathPathDijkstra(gridGrRaw)
                     sourceNode = gridGrRaw.coordinateToNode(relative_coord)
                     instance_raw.run(gridGraphRawEdgeIndicator, sourceNode, target=None)
@@ -494,10 +494,10 @@ def main():
     # Get lists of (coord, roi) for each node, grouped into branches
     tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
 
-    SPECIAL_DEBUG = True
+    SPECIAL_DEBUG = False
     if SPECIAL_DEBUG:
-        nodes_of_interest = [37575, 26717, 29219, 28228, 91037, 33173, 31519, 92443, 28010, 91064, 28129, 226935, 90886, 91047, 91063, 94379, 33997, 28626, 36989, 39556, 33870, 91058, 35882, 28260, 36252, 90399, 36892, 21248, 92841, 94203, 29465, 91967, 27937, 28227, 35717, 38656, 19764, 32398, 91026, 90350]
-        nodes_of_interest = [37575]
+        nodes_of_interest = [26717, 29219, 28228, 91037, 33173, 31519, 92443, 28010, 91064, 28129, 226935, 90886, 91047, 91063, 94379, 33997, 28626, 36989, 39556, 33870, 91058, 35882, 28260, 36252, 90399, 36892, 21248, 92841, 94203, 29465, 91967, 27937, 28227, 35717, 38656, 19764, 32398, 91026, 90350]
+        #nodes_of_interest = [37575]
         nodes_of_interest = set(nodes_of_interest)
         new_tree_nodes_and_rois = []
         for branch_coords_and_rois in tree_nodes_and_rois:
@@ -518,7 +518,7 @@ def main():
                          parsed_args.volume_description, 
                          parsed_args.output_file,
                          tree_nodes_and_rois, 
-                         debug_images=True, 
+                         debug_images=False, 
                          order2d='xyt', 
                          order3d='xyz',
                          progress_callback=progress_server.update_progress )
@@ -544,7 +544,7 @@ if __name__=="__main__":
         project2dname = '/magnetic/workspace/skeleton_synapses/projects/Synapse_Labels2D.ilp'
         skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_18689.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/magnetic/workspace/skeleton_synapses/selected_nodes/output_18689_with_both_distances.csv'
+        output_file = '/magnetic/workspace/skeleton_synapses/debugging/synapses_th_0.4_sigma_2.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)
