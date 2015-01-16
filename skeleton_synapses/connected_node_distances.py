@@ -17,7 +17,7 @@ def connected_node_distances( skeleton_json_path,
     For the synapse, extract the final "membrane distance" from the 
         given merged detections file, which lists the minimum "membrane distance" for each synapse.    
     """
-    connector_infos = parse_connectors( skeleton_json_path )
+    connector_infos, _ = parse_connectors( skeleton_json_path )
     node_infos = parse_skeleton_json( skeleton_json_path, 4.0, 4.0, 45.0 )
     node_info_dict = { n.id : n for n in node_infos }
 
@@ -32,8 +32,8 @@ def connected_node_distances( skeleton_json_path,
         for connector_info in connector_infos:
             output_row = _get_row_dict( node_info_dict, raw_detections, merged_detections, output_columns, connector_info )
             if output_row["synapse_id"] == -1:
-                #nodes_without_detections.append( ( output_row["node_id"], output_row["nearest_connector_id"] ) )
-                nodes_without_detections.append( output_row["node_id"] )
+                nodes_without_detections.append( ( output_row["node_id"], output_row["nearest_connector_id"] ) )
+                #nodes_without_detections.append( output_row["node_id"] )
             csv_writer.writerow( output_row )
 
     return len(connector_infos), nodes_without_detections
@@ -67,17 +67,19 @@ def _get_row_dict( node_info_dict, raw_detections, merged_detections, output_col
         output_row["x_px"] = node_info_dict[connected_node_id].x_px
         output_row["y_px"] = node_info_dict[connected_node_id].y_px
         output_row["z_px"] = node_info_dict[connected_node_id].z_px
+        output_row["nearest_connector_distance_nm"] = -1
         
     else:
         synapse_id = int(raw_row["synapse_id"])
         merged_row = merged_detections[synapse_id]
         output_row.update(merged_row)
         output_row.update(raw_row)
-        output_row["distance"] = merged_row["distance"]
+        if "distance" in output_row:
+            output_row["distance"] = merged_row["distance"]
+        output_row["nearest_connector_distance_nm"] = merged_row["nearest_connector_distance_nm"]
 
     # Replace connector info with the "true" connector for this node.
     output_row["nearest_connector_id"] = connector_info.id
-    output_row["nearest_connector_distance_nm"] = -1
     output_row["nearest_connector_x_nm"] = connector_info.x_nm
     output_row["nearest_connector_y_nm"] = connector_info.y_nm
     output_row["nearest_connector_z_nm"] = connector_info.z_nm
@@ -97,8 +99,8 @@ def _load_raw_detections( raw_detection_csv_path ):
                 raw_detections[node_id] = row
             else:
                 # More than one synapse, keep the "closest" one.
-                old_distance = float(raw_detections[node_id]["distance"])
-                new_distance = float(row["distance"])
+                old_distance = float(raw_detections[node_id]["nearest_connector_distance_nm"])
+                new_distance = float(row["nearest_connector_distance_nm"])
                 if new_distance < old_distance:
                     raw_detections[node_id] = row
 
@@ -120,7 +122,7 @@ if __name__ == "__main__":
     import sys
     import argparse
 
-    DEBUG_ARGS = True
+    DEBUG_ARGS = False
     if DEBUG_ARGS:
         skeleton_id = 18689
         #skeleton_id = 133465

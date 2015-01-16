@@ -13,7 +13,7 @@ def filter_by_distance( synapse_detections_csv, output_csv, max_distance, column
 
         for row in csv_reader:
             distance = float(row[column_name])
-            if distance <= max_distance:
+            if distance >= max_distance:
                 csv_writer.writerow(row)
 
 if __name__ == "__main__":

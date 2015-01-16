@@ -58,8 +58,8 @@ logger.setLevel(logging.DEBUG)
 timing_logger = logging.getLogger(__name__ + '.timing')
 timing_logger.setLevel(logging.INFO)
 
-OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance", "detection_uncertainty", "node_id", \
-                  "connector_distance", "node_x_px", "node_y_px", "node_z_px", "nearest_connector_id", "nearest_connector_distance_nm", \
+OUTPUT_COLUMNS = ["synapse_id", "x_px", "y_px", "z_px", "size_px", "distance_hessian", "distance_raw_probs", "detection_uncertainty", "node_id", \
+                  "node_x_px", "node_y_px", "node_z_px", "nearest_connector_id", "nearest_connector_distance_nm", \
                   "nearest_connector_x_nm", "nearest_connector_y_nm", "nearest_connector_z_nm"]
 
 
@@ -118,7 +118,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
 
 
 MEMBRANE_CACHE_FORMAT = "/groups/flyem/home/bergs/workspace/skeleton_synapses/debuggingmembrane/{z_px}-{node_id}.png"
-SYNAPSE_CACHE_FORMAT = "/groups/flyem/home/bergs/workspace/skeleton_synapses/debuggingsynapses_roi/{z_px}-{node_id}.tiff"
+SYNAPSE_CACHE_FORMAT = "/groups/flyem/home/bergs/workspace/skeleton_synapses/debuggingpredictions_roi/{z_px}-{node_id}.tiff"
 
 def roi_to_path( skeleton_id, node_coords_to_ids, path_format, axiskeys, start, stop ):
     """
@@ -215,6 +215,7 @@ def locate_synapses(project3dname,
         node_overall_index = [-1]
         f_out_lock = RequestLock()
         max_label_lock = RequestLock()
+        
         def process_branch( branch_index, branch_rois ):
             # opFeatures and opThreshold are declared locally so this whole block can be parallelized!
             # (We use Input.setValue() instead of Input.connect() here.)
@@ -240,8 +241,14 @@ def locate_synapses(project3dname,
             # (We use Input.setValue() instead of Input.connect() here.)
             opThreshold = OpThresholdTwoLevels(graph=tempGraph)
             opThreshold.Channel.setValue(0) # We select SYNAPSE_CHANNEL before the data is given to opThreshold
-            opThreshold.SingleThreshold.setValue(0.4) #FIXME: solve the mess with uint8/float in predictions
             opThreshold.SmootherSigma.setValue({'x': 2.0, 'y': 2.0, 'z': 1.0}) #NOTE: two-level is much better. Maybe we can afford it?
+
+            #opThreshold.CurOperator.setValue(0) # 0==one-level
+            #opThreshold.SingleThreshold.setValue(0.4) #FIXME: solve the mess with uint8/float in predictions
+
+            opThreshold.CurOperator.setValue(1) # 1==two-level
+            opThreshold.HighThreshold.setValue(0.4)
+            opThreshold.LowThreshold.setValue(0.2)
             
             previous_slice_objects = None
             previous_slice_roi = None
@@ -269,7 +276,7 @@ def locate_synapses(project3dname,
                     roi_hessian[0][-1] = 1
                     roi_hessian[1][-1] = 2
                     
-                    WITH_CONNECTORS_ONLY = False
+                    WITH_CONNECTORS_ONLY = True
                     if WITH_CONNECTORS_ONLY:
                         if not node_info.id in node_to_connector.keys():
                             continue
@@ -307,7 +314,7 @@ def locate_synapses(project3dname,
                         outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".png"
                         #membrane_predictions = opPixelClassification2d.HeadlessPredictionProbabilities[-1](*prediction_roi).wait()
                         membrane_predictions = opMembranePredictionCache.Output(*membrane_prediction_roi).wait()
-                        vigra.impex.writeImage(membrane_predictions[..., MEMBRANE_CHANNEL].squeeze(), outfile)
+                        vigra.impex.writeImage(membrane_predictions[..., 0].squeeze(), outfile)
                     
                     stop_pred = time.time()
                     timing_logger.debug( "spent in first 3d prediction: {}".format( stop_pred-start_pred ) )
@@ -322,7 +329,7 @@ def locate_synapses(project3dname,
                             pass
                         outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".tiff"
                         #norm = numpy.where(synapse_cc[:, :, 0, 0]>0, 255, 0)
-                        vigra.impex.writeImage(synapse_predictions[...,0,SYNAPSE_CHANNEL], outfile)
+                        vigra.impex.writeImage(synapse_predictions[...,0,0], outfile)
         
                     if debug_images:
                         outdir1 = outdir+"synapses_roi/"
@@ -333,18 +340,19 @@ def locate_synapses(project3dname,
                         outfile = outdir1+"/{}-{}".format( iz, node_info.id ) + ".tiff"
                         norm = numpy.where(synapse_cc[:, :, 0, 0]>0, 255, 0)
                         vigra.impex.writeImage(norm.astype(numpy.uint8), outfile)
+                    
                     if numpy.sum(synapse_cc)==0:
                         print "NO SYNAPSES IN THIS SLICE:", iz
                         timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
                         continue
-    
+                    
                     # Distances over Hessian
                     start_hess = time.time()
                     roi_hessian = ( tuple(map(long, roi_hessian[0])), tuple(map(long, roi_hessian[1])) )
                     upsampled_combined_membranes = opUpsample.Output(*roi_hessian).wait()
                     upsampled_combined_membranes = vigra.taggedView(upsampled_combined_membranes, opUpsample.Output.meta.axistags )
                     opFeatures.Input.setValue(upsampled_combined_membranes)
-                    eigenValues = opFeatures.Output[:].wait()
+                    eigenValues = opFeatures.Output[...,1:2].wait() #we need the second eigenvalue
                     eigenValues = numpy.abs(eigenValues[:, :, 0, 0])
                     stop_hess = time.time()
                     timing_logger.debug( "spent for hessian: {}".format( stop_hess-start_hess ) )
@@ -407,7 +415,7 @@ def locate_synapses(project3dname,
                         connector_coords = (con_x_px-roi[0][0], con_y_px-roi[0][1])
                         if con_x_px>roi[0][0] and con_x_px<roi[1][0] and con_y_px>roi[0][1] and con_y_px<roi[1][1]:
                             #this connector is inside our prediction roi, compute the distance field                                                                                                        "
-                            con_relative = [con_x_px-roi[0][0], con_y_px-roi[0][1]]
+                            con_relative = [long(con_x_px-roi[0][0]), long(con_y_px-roi[0][1])]
     
                             sourceNode = gridGr.coordinateToNode(con_relative)
                             instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
@@ -458,7 +466,12 @@ def locate_synapses(project3dname,
                         #add this synapse to the exported list
                         previous_slice_objects = synapse_objects
                         previous_slice_roi = roi
-    
+                    '''
+                    if numpy.sum(synapse_cc)==0:
+                        print "NO SYNAPSES IN THIS SLICE:", iz
+                        timing_logger.debug( "ROI TIMER: {}".format( timer.seconds() ) )
+                        continue
+                    '''
                     synapseIds = set(synapse_objects.flat)
                     synapseIds.remove(0)
                     for sid in synapseIds:
@@ -619,7 +632,7 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
 
 def main():
     # FIXME: This shouldn't be hard-coded.
-    ROI_RADIUS = 300
+    ROI_RADIUS = 150
 
     import argparse
     parser = argparse.ArgumentParser() 
@@ -675,7 +688,7 @@ def main():
         tree_nodes_and_rois = new_tree_nodes_and_rois
 
     # Start a server for others to poll progress.
-    progress_server = ProgressServer.create_and_start( "localhost", int(parsed_args.progress_port) )
+    #progress_server = ProgressServer.create_and_start( "localhost", int(parsed_args.progress_port) )
 
     try:
         locate_synapses( parsed_args.project3d, 
@@ -685,15 +698,16 @@ def main():
                          tree_nodes_and_rois, 
                          node_to_connector,
                          connector_infos,
-                         debug_images=False, 
+                         debug_images=False,
                          order2d='xyt', 
                          order3d='xyz',
-                         progress_callback=progress_server.update_progress,
+                         #progress_callback=progress_server.update_progress,
                          node_infos=node_infos )
     except:
         raise
     else:
-        progress_server.shutdown()
+        pass
+        #progress_server.shutdown()
 
 if __name__=="__main__":
     import sys
@@ -712,13 +726,14 @@ if __name__=="__main__":
         project2dname = '/magnetic/workspace/skeleton_synapses/projects/Synapse_Labels2D.ilp'
         skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_18689.json'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/magnetic/workspace/skeleton_synapses/debugging/TEST_CACHE_OUTPUT.csv'
+        output_file = '/magnetic/workspace/skeleton_synapses/debugging/connectors_only.csv'
+        #output_file = '/magnetic/workspace/skeleton_synapses/cachecheck/raw_output.csv'
 
-        project3dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels3D.ilp'
-        project2dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels2D.ilp'
-        skeleton_file = '/home/anna/catmaid_tools/test_skeletons/skeleton_18689.json'
-        volume_description = '/home/anna/catmaid_tools/example/example_volume_description_2.json'
-        output_file = '/tmp/synapses.csv'
+        #project3dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels3D.ilp'
+        #project2dname = '/home/anna/data/albert/Johannes/for_Janelia/Synapse_Labels2D.ilp'
+        #skeleton_file = '/home/anna/catmaid_tools/test_skeletons/skeleton_18689.json'
+        #volume_description = '/home/anna/catmaid_tools/example/example_volume_description_2.json'
+        #output_file = '/tmp/synapses.csv'
 
         sys.argv.append(skeleton_file)
         sys.argv.append(project3dname)
