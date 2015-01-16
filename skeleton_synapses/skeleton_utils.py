@@ -112,6 +112,9 @@ def parse_connectors( json_path ):
         for node in incoming:
             node_connectors = node_to_connector.setdefault(node, [])
             node_connectors.append(connector_id)
+        for node in outgoing:
+            node_connectors = node_to_connector.setdefault(node, [])
+            node_connectors.append(connector_id)
         connector_infos.append( ConnectorInfo(connector_id, x_nm, y_nm, z_nm, incoming, outgoing) )
 
     return connector_infos, node_to_connector
