@@ -7,6 +7,9 @@ import vigra
 from lazyflow.graph import Operator, InputSlot, OutputSlot
 from lazyflow.operators.ioOperators import OpInputDataReader
 
+import logging
+logger = logging.getLogger(__name__)
+
 class OpNodewiseCache(Operator):
     ComputedInput = InputSlot()
     RoiToPathFn = InputSlot()   # Provide a function that produces a path from a given ROI.
@@ -46,17 +49,21 @@ class OpNodewiseCache(Operator):
             if self._opReader.Output.meta.shape[:-1] == result.squeeze().shape:
                 # Read.                
                 # (Can't use writeInto here because dtypes are not guaranteed to match.)
-                cached_data = self._opReader.Output[:].wait()
-                if self.TransformFn.ready():
-                    transform_fn = self.TransformFn.value
-                    cached_data = transform_fn(cached_data)
-
-                # Create a 3D view so we can copy from the reader
-                result_view = vigra.taggedView( result, self.Output.meta.axistags )
-                result_view = result_view.withAxes( *self._opReader.Output.meta.getAxisKeys() )
-                result_view[:] = cached_data
-
-                return result 
+                try:
+                    cached_data = self._opReader.Output[:].wait()
+                except:
+                    logger.warn( "Couldn't read file: {}".format( image_path ) )
+                else:
+                    if self.TransformFn.ready():
+                        transform_fn = self.TransformFn.value
+                        cached_data = transform_fn(cached_data)
+    
+                    # Create a 3D view so we can copy from the reader
+                    result_view = vigra.taggedView( result, self.Output.meta.axistags )
+                    result_view = result_view.withAxes( *self._opReader.Output.meta.getAxisKeys() )
+                    result_view[:] = cached_data
+    
+                    return result
         
         # If we're here, then we couldn't find the data
         self.ComputedInput(roi.start, roi.stop).writeInto( result ).wait()
