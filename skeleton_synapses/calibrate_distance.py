@@ -8,10 +8,14 @@ from lazyflow.graph import Graph
 from opUpsampleByTwo import OpUpsampleByTwo
 from lazyflow.operators.vigraOperators import OpPixelFeaturesPresmoothed
 
-inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
+#inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
+inputdir = "/home/anna/data/distance_tests/"
+debugdir = "/home/anna/data/distance_tests/debug_distance_images/"
 d2_pattern = "*_2d_pred*.h5"
 d3_pattern = "*_3d_pred*.h5"
 marker_pattern = "*_with_markers.*"
+
+debug_images = True
 
 def computeDistanceHessian(upsampledMembraneProbs, sigma):
     tempGraph = Graph()
@@ -37,11 +41,20 @@ def computeDistanceHessian(upsampledMembraneProbs, sigma):
     opFeatures.Input.setValue(upsampledMembraneProbs)
     eigenValues = opFeatures.Output[...,1:2].wait() #we need the second eigenvalue
     eigenValues = numpy.abs(eigenValues[:, :, 0])
+    
+    if debug_images:
+        outfile = debugdir + "/hess.tiff"
+        vigra.impex.writeImage(eigenValues, outfile)
+
+    
     return eigenValues
 
 def computeDistanceRaw(upsampledMembraneProbs, sigma):
     
     smoothed = vigra.filters.gaussianSmoothing(upsampledMembraneProbs, sigma)
+    if debug_images:
+        outfile = debugdir + "rawprobs.tiff"
+        vigra.impex.writeImage(smoothed, outfile)
     return smoothed
     
 
@@ -90,8 +103,8 @@ def calibrate_distance():
     edgeIndicators = []
     instances = []
     
-    for f2name, f3name, mname in zip(files_2d, files_3d, files_markers):
-        print f2name, f3name
+    for f2name, f3name, mname in zip(files_2d[0:1], files_3d[0:1], files_markers[0:1]):
+        print f2name, f3name, mname
         f2 = h5py.File(f2name)
         f3 = h5py.File(f3name)
         
@@ -120,7 +133,7 @@ def calibrate_distance():
         edgeIndicators.append(computeDistanceRaw(upsampledMembraneProbs, 1.6))
         
         gridGr = graphs.gridGraph((d2.shape[0], d2.shape[1] )) # !on original pixels
-        for indicator in edgeIndicators:
+        for iind, indicator in enumerate(edgeIndicators):
             gridGraphEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGr, indicator) 
             instance = vigra.graphs.ShortestPathPathDijkstra(gridGr)
             instances.append(instance)
@@ -132,11 +145,22 @@ def calibrate_distance():
                     sourceNode = gridGr.coordinateToNode(node)
                     instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
                     distances_all = instance.distances()
+                    
                     for j in range(i+1, len(points)):
-                        other_node = points[j]
+                        other_node = map(long, points[j])
                         distances_same.append(distances_all[other_node])
+                        targetNode = gridGr.coordinateToNode(other_node)
+                        path = instance.run(gridGraphEdgeIndicator, sourceNode).path(pathType='coordinates',target=targetNode)
+                        max_on_path = numpy.max(distances_all[path])
+                        min_on_path = numpy.min(distances_all[path])
+                        print max_on_path, min_on_path
+                        print path.shape
                         
-            print distances_same
+                    distances_all[node[0], node[1]] = numpy.max(distances_all)
+                    outfile = debugdir + "/" + str(node[0]) + "_" + str(node[1])+"_"+str(iind)+".png"
+                    vigra.impex.writeImage(distances_all, outfile )
+                        
+            #print distances_same
                 
         
         #vigra.impex.writeImage(combined, f2name+"_combined.tiff")
