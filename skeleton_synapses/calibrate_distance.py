@@ -8,16 +8,18 @@ from lazyflow.graph import Graph
 from opUpsampleByTwo import OpUpsampleByTwo
 from lazyflow.operators.vigraOperators import OpPixelFeaturesPresmoothed
 
-#inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
-inputdir = "/home/anna/data/distance_tests/"
-debugdir = "/home/anna/data/distance_tests/debug_distance_images/"
+inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
+#inputdir = "/home/anna/data/distance_tests/"
+#debugdir = "/home/anna/data/distance_tests/debug_distance_images/"
+debugdir = inputdir + "/debug_distance_images*/"
 d2_pattern = "*_2d_pred*.h5"
 d3_pattern = "*_3d_pred*.h5"
 marker_pattern = "*_with_markers.*"
+raw_pattern = "*_raw.tiff"
 
 debug_images = True
 
-def computeDistanceHessian(upsampledMembraneProbs, sigma):
+def computeDistanceHessian(upsampledMembraneProbs, sigma, ddir):
     tempGraph = Graph()
     opFeatures = OpPixelFeaturesPresmoothed(graph=tempGraph)
         
@@ -43,17 +45,17 @@ def computeDistanceHessian(upsampledMembraneProbs, sigma):
     eigenValues = numpy.abs(eigenValues[:, :, 0])
     
     if debug_images:
-        outfile = debugdir + "/hess.tiff"
+        outfile = ddir + "/hess.tiff"
         vigra.impex.writeImage(eigenValues, outfile)
 
     
     return eigenValues
 
-def computeDistanceRaw(upsampledMembraneProbs, sigma):
+def computeDistanceRaw(upsampledMembraneProbs, sigma, ddir):
     
     smoothed = vigra.filters.gaussianSmoothing(upsampledMembraneProbs, sigma)
     if debug_images:
-        outfile = debugdir + "rawprobs.tiff"
+        outfile = ddir + "rawprobs.tiff"
         vigra.impex.writeImage(smoothed, outfile)
     return smoothed
     
@@ -99,12 +101,26 @@ def calibrate_distance():
     files_markers = glob.glob(inputdir+marker_pattern)
     files_markers = sorted(files_markers, key=str.lower)
     
+    debug_dirs = glob.glob(debugdir)
+    debug_dirs = sorted(debug_dirs, key=str.lower)
+    
+    files_raw = glob.glob(inputdir+raw_pattern)
+    files_raw = sorted(files_raw, key=str.lower)
+    
     tempGraph = Graph()
     edgeIndicators = []
     instances = []
     
-    for f2name, f3name, mname in zip(files_2d[0:1], files_3d[0:1], files_markers[0:1]):
+    first = 0
+    last = 4
+    
+    for f2name, f3name, mname, ddir, rawname in zip(files_2d[first:last], files_3d[first:last], files_markers[first:last], debug_dirs[first:last], files_raw[first:last]):
         print f2name, f3name, mname
+        
+        if debug_images:
+            rawim = vigra.readImage(rawname)
+            vigra.impex.writeImage(rawim, ddir + "/raw.tiff")
+        
         f2 = h5py.File(f2name)
         f3 = h5py.File(f3name)
         
@@ -129,8 +145,8 @@ def calibrate_distance():
         upsampledMembraneProbs = upsampledMembraneProbs.view(vigra.VigraArray)
         upsampledMembraneProbs.axistags = vigra.defaultAxistags('xyc')
         
-        edgeIndicators.append(computeDistanceHessian(upsampledMembraneProbs, 5.0))
-        edgeIndicators.append(computeDistanceRaw(upsampledMembraneProbs, 1.6))
+        edgeIndicators.append(computeDistanceHessian(upsampledMembraneProbs, 5.0, ddir))
+        edgeIndicators.append(computeDistanceRaw(upsampledMembraneProbs, 1.6, ddir))
         
         gridGr = graphs.gridGraph((d2.shape[0], d2.shape[1] )) # !on original pixels
         for iind, indicator in enumerate(edgeIndicators):
@@ -148,16 +164,18 @@ def calibrate_distance():
                     
                     for j in range(i+1, len(points)):
                         other_node = map(long, points[j])
-                        distances_same.append(distances_all[other_node])
+                        distances_same.append(distances_all[other_node[0], other_node[1]])
                         targetNode = gridGr.coordinateToNode(other_node)
                         path = instance.run(gridGraphEdgeIndicator, sourceNode).path(pathType='coordinates',target=targetNode)
                         max_on_path = numpy.max(distances_all[path])
                         min_on_path = numpy.min(distances_all[path])
-                        print max_on_path, min_on_path
-                        print path.shape
+                        #print max_on_path, min_on_path
+                        #print path.shape
+                        print "distance b/w", node, other_node, " = ",  distances_all[other_node[0], other_node[1]]
+                        
                         
                     distances_all[node[0], node[1]] = numpy.max(distances_all)
-                    outfile = debugdir + "/" + str(node[0]) + "_" + str(node[1])+"_"+str(iind)+".png"
+                    outfile = ddir + "/" + str(node[0]) + "_" + str(node[1])+"_"+str(iind)+".tiff"
                     vigra.impex.writeImage(distances_all, outfile )
                         
             #print distances_same
