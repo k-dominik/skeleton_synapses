@@ -8,8 +8,8 @@ from lazyflow.graph import Graph
 from opUpsampleByTwo import OpUpsampleByTwo
 from lazyflow.operators.vigraOperators import OpPixelFeaturesPresmoothed
 
-inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
-#inputdir = "/home/anna/data/distance_tests/"
+#inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
+inputdir = "/home/anna/data/distance_tests/"
 #debugdir = "/home/anna/data/distance_tests/debug_distance_images/"
 debugdir = inputdir + "/debug_distance_images*/"
 d2_pattern = "*_2d_pred*.h5"
@@ -59,6 +59,36 @@ def computeDistanceRaw(upsampledMembraneProbs, sigma, ddir):
         vigra.impex.writeImage(smoothed, outfile)
     return smoothed
     
+def filter_by_size(upsampledSmoothedMembraneProbs, ddir, threshold_high=0.9, threshold_low=0.1, minSize=1000):
+    thresholded = upsampledSmoothedMembraneProbs>threshold_high
+    cc = vigra.analysis.labelImageWithBackground(thresholded.astype(numpy.uint8))
+    
+    counts = numpy.bincount(cc.flat)
+    counts[counts<minSize]=0
+    counts[0] = 0
+    cc_filtered = counts[cc]
+    returnMaps = numpy.zeros(upsampledSmoothedMembraneProbs.shape, upsampledSmoothedMembraneProbs.dtype)
+    thresholded_low = upsampledSmoothedMembraneProbs>threshold_low
+
+    cc_low = vigra.analysis.labelImageWithBackground(thresholded_low.astype(numpy.uint8))
+    indices_low = numpy.zeros((numpy.max(cc_low)+1,), dtype=numpy.uint32)
+    
+    cc_low_filtered = cc_low[cc_filtered>0]
+    counts_low = numpy.bincount(cc_low_filtered.flat)
+    indices_low[0:counts_low.shape[0]] = counts_low[:]
+    
+    cc_low_filtered_full = indices_low[cc_low]
+    
+    indices = cc_low_filtered_full>0
+    returnMaps[indices] = upsampledSmoothedMembraneProbs[indices]
+    
+    if debug_images:
+        outfile = ddir + "cc_filtered.tiff"
+        vigra.impex.writeImage(cc_filtered, outfile)
+        outfile2 = ddir + "map_filtered.tiff"
+        vigra.impex.writeImage(returnMaps, outfile2)
+    return returnMaps
+
 
 def extractMarkedNodes(filename):
     #extracts markers from the raw images
@@ -107,12 +137,14 @@ def calibrate_distance():
     files_raw = glob.glob(inputdir+raw_pattern)
     files_raw = sorted(files_raw, key=str.lower)
     
+    print files_2d, files_3d, files_markers, debug_dirs, files_raw
+    
     tempGraph = Graph()
     edgeIndicators = []
     instances = []
     
     first = 0
-    last = 4
+    last = 3
     
     for f2name, f3name, mname, ddir, rawname in zip(files_2d[first:last], files_3d[first:last], files_markers[first:last], debug_dirs[first:last], files_raw[first:last]):
         print f2name, f3name, mname
@@ -145,8 +177,12 @@ def calibrate_distance():
         upsampledMembraneProbs = upsampledMembraneProbs.view(vigra.VigraArray)
         upsampledMembraneProbs.axistags = vigra.defaultAxistags('xyc')
         
+        #try to filter
+        upsampledSmoothedMembraneProbs = computeDistanceRaw(upsampledMembraneProbs, 1.6, ddir)
+        filter_by_size(upsampledSmoothedMembraneProbs, ddir)
+        
         edgeIndicators.append(computeDistanceHessian(upsampledMembraneProbs, 5.0, ddir))
-        edgeIndicators.append(computeDistanceRaw(upsampledMembraneProbs, 1.6, ddir))
+        edgeIndicators.append(upsampledSmoothedMembraneProbs)
         
         gridGr = graphs.gridGraph((d2.shape[0], d2.shape[1] )) # !on original pixels
         for iind, indicator in enumerate(edgeIndicators):
