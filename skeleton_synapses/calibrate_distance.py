@@ -3,6 +3,7 @@ import glob
 import vigra
 from vigra import graphs
 import numpy
+import matplotlib.pyplot as plt
 
 from lazyflow.graph import Graph
 from opUpsampleByTwo import OpUpsampleByTwo
@@ -133,7 +134,7 @@ def extractMarkedNodes(filename):
     return centers_by_color
 
 
-def calibrate_distance():
+def calculate_distances():
     files_2d = glob.glob(inputdir + d2_pattern)
     files_2d = sorted(files_2d, key=str.lower)
 
@@ -151,21 +152,27 @@ def calibrate_distance():
 
     print files_2d, files_3d, files_markers, debug_dirs, files_raw
 
-    tempGraph = Graph()
-    edgeIndicators = []
-    instances = []
 
     first = 0
-    last = 3
+    last = 4
+
+    all_distances_same = []
+    all_distances_diff = []
 
     for f2name, f3name, mname, ddir, rawname in zip(files_2d[first:last], files_3d[first:last],
                                                     files_markers[first:last], debug_dirs[first:last],
                                                     files_raw[first:last]):
-        print f2name, f3name, mname
+
+        tempGraph = Graph()
+        edgeIndicators = []
+        instances = []
+
 
         if debug_images:
             rawim = vigra.readImage(rawname)
             vigra.impex.writeImage(rawim, ddir + "/raw.tiff")
+
+        print "processing files:", f2name, f3name, mname
 
         f2 = h5py.File(f2name)
         f3 = h5py.File(f3name)
@@ -204,8 +211,9 @@ def calibrate_distance():
             instance = vigra.graphs.ShortestPathPathDijkstra(gridGr)
             instances.append(instance)
             distances_same = []
+            distances_diff = []
             for color, points in markedNodes.iteritems():
-                print color
+                #print "color: ", color
                 for i in range(len(points)):
                     node = map(long, points[i])
                     sourceNode = gridGr.coordinateToNode(node)
@@ -213,28 +221,73 @@ def calibrate_distance():
                     distances_all = instance.distances()
 
                     for j in range(i + 1, len(points)):
+                        # go over points of the same color
+
                         other_node = map(long, points[j])
                         distances_same.append(distances_all[other_node[0], other_node[1]])
-                        targetNode = gridGr.coordinateToNode(other_node)
-                        path = instance.run(gridGraphEdgeIndicator, sourceNode).path(pathType='coordinates',
-                                                                                     target=targetNode)
-                        max_on_path = numpy.max(distances_all[path])
-                        min_on_path = numpy.min(distances_all[path])
+                        #targetNode = gridGr.coordinateToNode(other_node)
+                        #path = instance.run(gridGraphEdgeIndicator, sourceNode).path(pathType='coordinates',
+                        #                                                             target=targetNode)
+                        #max_on_path = numpy.max(distances_all[path])
+                        #min_on_path = numpy.min(distances_all[path])
                         # print max_on_path, min_on_path
                         # print path.shape
-                        print "distance b/w", node, other_node, " = ", distances_all[other_node[0], other_node[1]]
+                        #print "distance b/w", node, other_node, " = ", distances_all[other_node[0], other_node[1]]
 
+                    for newcolor, newpoints in markedNodes.iteritems():
+                        # go over other colors
+                        if color == newcolor:
+                            continue
+                        for newi in range(len(newpoints)):
+                            other_node = map(long, newpoints[newi])
+                            distances_diff.append(distances_all[other_node[0], other_node[1]])
+
+                    # highlight the source point in image
                     distances_all[node[0], node[1]] = numpy.max(distances_all)
                     outfile = ddir + "/" + str(node[0]) + "_" + str(node[1]) + "_" + str(iind) + ".tiff"
                     vigra.impex.writeImage(distances_all, outfile)
 
-                    # print distances_same
+            while len(all_distances_diff)<len(edgeIndicators):
+                all_distances_diff.append([])
+                all_distances_same.append([])
 
+            all_distances_diff[iind].extend(distances_diff)
+            all_distances_same[iind].extend(distances_same)
+            #print "summary for edge indicator:", iind
+            #print "points of same color:", distances_same
+            #print "points of other colors:", distances_diff
+                    # print distances_same
 
                     # vigra.impex.writeImage(combined, f2name+"_combined.tiff")
                     # vigra.impex.writeImage(d3, f2name+"_synapse.tiff")
                     # vigra.impex.writeImage(d2, f2name+"_membrane.tiff")
 
+    analyze_distances(all_distances_same, all_distances_diff)
+
+def analyze_distances(distances_same, distances_diff):
+    plt.subplot(211)
+    hist_same = plt.hist(distances_same[0], 20, color='blue')
+    hist_diff = plt.hist(distances_diff[0], 20, color='yellow', alpha=0.5)
+    plt.subplot(212)
+    hist_same = plt.hist(distances_same[1], 20, color='blue')
+    hist_diff = plt.hist(distances_diff[1], 20, color='yellow', alpha=0.5)
+    plt.show()
+
+
+
+    for iedgeind, edge_ind_dists in enumerate(distances_diff):
+        min_dist_diff = numpy.min(edge_ind_dists)
+        dists_same = distances_same[iedgeind]
+        over = 0
+        for dist in dists_same:
+            if dist>min_dist_diff:
+                over = over+1
+        over_percent = float(over)/len(dists_same)*100
+        print "for edge indicator", iedgeind, ",", over_percent, "are over min dist diff (", min_dist_diff,")", over, len(dists_same)
+
+
+
+
 
 if __name__ == "__main__":
-    calibrate_distance()
+    calculate_distances()
