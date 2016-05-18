@@ -24,3 +24,8 @@ def volume_from_dir(dirpattern, output_filepath, offset=0, nfiles=None):
     outfile.create_dataset("data", data=volume)
     outfile.close()
     return volume
+
+if __name__=="__main__":
+    dirpattern = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/16725035/*.tiff"
+    output_filepath = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/16725035_raw.h5"
+    volume_from_dir(dirpattern, output_filepath)

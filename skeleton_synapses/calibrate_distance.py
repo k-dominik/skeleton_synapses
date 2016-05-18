@@ -9,14 +9,22 @@ from lazyflow.graph import Graph
 from opUpsampleByTwo import OpUpsampleByTwo
 from lazyflow.operators.vigraOperators import OpPixelFeaturesPresmoothed
 
-# inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
-inputdir = "/home/anna/data/distance_tests/"
+inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
+#inputdir = "/home/anna/data/distance_tests/"
 # debugdir = "/home/anna/data/distance_tests/debug_distance_images/"
 debugdir = inputdir + "/debug_distance_images*/"
 d2_pattern = "*_2d_pred*.h5"
 d3_pattern = "*_3d_pred*.h5"
 marker_pattern = "*_with_markers.*"
 raw_pattern = "*_raw.tiff"
+
+colors = {(0, 255, 255): "cyan",
+          (255, 255, 0): "yellow",
+          (0, 0, 255): "blue",
+          (127, 0, 0): "brown",
+          (255, 0, 255): "purple",
+          (255, 0, 0): "red",
+          (0, 255, 0): "green"}
 
 debug_images = True
 
@@ -107,6 +115,7 @@ def extractMarkedNodes(filename):
     # returns a dict, with color as key and a list
     # of marker center coords as value
 
+    print "processing file", filename
     im = vigra.readImage(filename)
     colored1 = im[..., 0] != im[..., 1]
     colored2 = im[..., 1] != im[..., 2]
@@ -127,14 +136,22 @@ def extractMarkedNodes(filename):
     centers_by_color = {}
     for iindex in range(center_coords.shape[0]):
         center = (center_coords[iindex][0], center_coords[iindex][1])
-        # print center, index
-        centers_by_color.setdefault(tuple(im_centers[iindex]), []).append(center)
-
+        #print center, index
+        color = colors[tuple(im_centers[iindex].astype(numpy.uint8))]
+        #centers_by_color.setdefault(tuple(im_centers[iindex]), []).append(center)
+        centers_by_color.setdefault(color, []).append(center)
+        
     print centers_by_color
     return centers_by_color
 
 
 def calculate_distances():
+
+    """
+    compute distances between color markers instead of existing synapses
+    markers of the same color should be in the same neuron
+    """
+
     files_2d = glob.glob(inputdir + d2_pattern)
     files_2d = sorted(files_2d, key=str.lower)
 
@@ -155,7 +172,6 @@ def calculate_distances():
 
     first = 0
     last = 4
-
     all_distances_same = []
     all_distances_diff = []
 
@@ -167,7 +183,6 @@ def calculate_distances():
         edgeIndicators = []
         instances = []
 
-
         if debug_images:
             rawim = vigra.readImage(rawname)
             vigra.impex.writeImage(rawim, ddir + "/raw.tiff")
@@ -178,7 +193,7 @@ def calculate_distances():
         f3 = h5py.File(f3name)
 
         d2 = f2["exported_data"][..., 0]
-        d3 = f3["exported_data"][5, :, :, 2]
+        d3 = f3["exported_data"][5, :, :, 2] # 5 because we only want the central slice, there are 11 in total
         d3 = d3.swapaxes(0, 1)
 
         # print d2.shape, d3.shape
@@ -189,6 +204,7 @@ def calculate_distances():
         # print
         opUpsample = OpUpsampleByTwo(graph=tempGraph)
         combined = numpy.reshape(combined, combined.shape + (1,) + (1,))
+
         combined = combined.view(vigra.VigraArray)
         combined.axistags = vigra.defaultAxistags('xytc')
         opUpsample.Input.setValue(combined)
@@ -213,7 +229,9 @@ def calculate_distances():
             distances_same = []
             distances_diff = []
             for color, points in markedNodes.iteritems():
-                #print "color: ", color
+                #going over points of *same* color
+                if len(points)>1:
+                    print "Processing color", color
                 for i in range(len(points)):
                     node = map(long, points[i])
                     sourceNode = gridGr.coordinateToNode(node)
@@ -235,7 +253,7 @@ def calculate_distances():
                         #print "distance b/w", node, other_node, " = ", distances_all[other_node[0], other_node[1]]
 
                     for newcolor, newpoints in markedNodes.iteritems():
-                        # go over other colors
+                        # go over points of other colors
                         if color == newcolor:
                             continue
                         for newi in range(len(newpoints)):
@@ -265,6 +283,9 @@ def calculate_distances():
     analyze_distances(all_distances_same, all_distances_diff)
 
 def analyze_distances(distances_same, distances_diff):
+
+
+
     plt.subplot(211)
     hist_same = plt.hist(distances_same[0], 20, color='blue')
     hist_diff = plt.hist(distances_diff[0], 20, color='yellow', alpha=0.5)
