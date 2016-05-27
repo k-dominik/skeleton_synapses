@@ -9,14 +9,31 @@ from lazyflow.graph import Graph
 from opUpsampleByTwo import OpUpsampleByTwo
 from lazyflow.operators.vigraOperators import OpPixelFeaturesPresmoothed
 
-inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
+use_2d_only = True
+
+#inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
 #inputdir = "/home/anna/data/distance_tests/"
 # debugdir = "/home/anna/data/distance_tests/debug_distance_images/"
-debugdir = inputdir + "/debug_distance_images*/"
-d2_pattern = "*_2d_pred*.h5"
-d3_pattern = "*_3d_pred*.h5"
-marker_pattern = "*_with_markers.*"
-raw_pattern = "*_raw.tiff"
+
+
+if use_2d_only:
+    inputdir = "/data/connector_archive_2g0y0b/"
+    debugdir = inputdir + "distance_tests/debug_distance_images_new_*/"
+    d2_pattern = "test_data/stage_2_output/*.h5"
+    d3_pattern = "test_data/stage_2_output/*.h5"
+    #d2_pattern = "*_2d_pred*.h5"
+    #d3_pattern = "*_3d_pred*.h5"
+    #d3_pattern = None #test how well 2d only can do
+    marker_pattern = "distance_tests/*_with_markers.*"
+    raw_pattern = "distance_tests/*_raw.tiff"
+else:
+    inputdir = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/"
+    debugdir = inputdir + "debug_distance_images*/"
+    d2_pattern = "*_2d_pred*.h5"
+    d3_pattern = "*_3d_pred*.h5"
+    marker_pattern = "*_with_markers.*"
+    raw_pattern = "*_raw.tiff"
+
 
 colors = {(0, 255, 255): "cyan",
           (255, 255, 0): "yellow",
@@ -27,7 +44,6 @@ colors = {(0, 255, 255): "cyan",
           (0, 255, 0): "green"}
 
 debug_images = True
-
 
 def computeDistanceHessian(upsampledMembraneProbs, sigma, ddir):
     # compute the second Hessian Eigenvalue of the upsampled probability map
@@ -79,6 +95,11 @@ def computeDistanceRaw(upsampledMembraneProbs, sigma, ddir):
 def filter_by_size(upsampledSmoothedMembraneProbs, ddir, threshold_high=0.9, threshold_low=0.1, minSize=1000):
     # remove small connected components from the probability map (hoping to remove noise in the cytoplasm)
     # use 2-level thresholding as usual
+
+
+    if use_2d_only:
+        threshold_high = 0.65
+        threshold_low = 0.65
 
     thresholded = upsampledSmoothedMembraneProbs > threshold_high
     cc = vigra.analysis.labelImageWithBackground(thresholded.astype(numpy.uint8))
@@ -167,7 +188,7 @@ def calculate_distances():
     files_raw = glob.glob(inputdir + raw_pattern)
     files_raw = sorted(files_raw, key=str.lower)
 
-    print files_2d, files_3d, files_markers, debug_dirs, files_raw
+    #print files_2d, files_3d, files_markers, debug_dirs, files_raw
 
 
     first = 0
@@ -179,6 +200,14 @@ def calculate_distances():
                                                     files_markers[first:last], debug_dirs[first:last],
                                                     files_raw[first:last]):
 
+
+        print "processing files:"
+        print f2name
+        print f3name
+        print mname
+        print ddir
+        print rawname
+
         tempGraph = Graph()
         edgeIndicators = []
         instances = []
@@ -187,18 +216,27 @@ def calculate_distances():
             rawim = vigra.readImage(rawname)
             vigra.impex.writeImage(rawim, ddir + "/raw.tiff")
 
-        print "processing files:", f2name, f3name, mname
+        #print "processing files:", f2name, f3name, mname
 
         f2 = h5py.File(f2name)
         f3 = h5py.File(f3name)
 
-        d2 = f2["exported_data"][..., 0]
-        d3 = f3["exported_data"][5, :, :, 2] # 5 because we only want the central slice, there are 11 in total
-        d3 = d3.swapaxes(0, 1)
+
+        if use_2d_only:
+            d2 = f2["exported_data"][5, :, :, 0]
+            d3 = f2["exported_data"][5, :, :, 2]
+        else:
+            d2 = f2["exported_data"][..., 0]
+            d3 = f3["exported_data"][5, :, :, 2] # 5 because we only want the central slice, there are 11 in total
+            d3 = d3.swapaxes(0, 1)
 
         # print d2.shape, d3.shape
 
         combined = d2 + d3
+        if use_2d_only:
+            #convert to float
+            combined = combined.astype(numpy.float32)
+            combined = combined/255.
 
         markedNodes = extractMarkedNodes(mname)
         # print
@@ -216,7 +254,10 @@ def calculate_distances():
 
         # try to filter
         upsampledSmoothedMembraneProbs = computeDistanceRaw(upsampledMembraneProbs, 1.6, ddir)
-        filter_by_size(upsampledSmoothedMembraneProbs, ddir)
+        upsampledMembraneProbs = filter_by_size(upsampledSmoothedMembraneProbs, ddir)
+        upsampledMembraneProbs = upsampledMembraneProbs.view(vigra.VigraArray)
+        upsampledMembraneProbs.axistags = vigra.defaultAxistags('xyc')
+
 
         edgeIndicators.append(computeDistanceHessian(upsampledMembraneProbs, 5.0, ddir))
         edgeIndicators.append(upsampledSmoothedMembraneProbs)
@@ -284,15 +325,12 @@ def calculate_distances():
 
 def analyze_distances(distances_same, distances_diff):
 
-
-
     plt.subplot(211)
     hist_same = plt.hist(distances_same[0], 20, color='blue')
     hist_diff = plt.hist(distances_diff[0], 20, color='yellow', alpha=0.5)
     plt.subplot(212)
     hist_same = plt.hist(distances_same[1], 20, color='blue')
     hist_diff = plt.hist(distances_diff[1], 20, color='yellow', alpha=0.5)
-    plt.show()
 
 
 
@@ -306,8 +344,7 @@ def analyze_distances(distances_same, distances_diff):
         over_percent = float(over)/len(dists_same)*100
         print "for edge indicator", iedgeind, ",", over_percent, "are over min dist diff (", min_dist_diff,")", over, len(dists_same)
 
-
-
+    plt.show()
 
 
 if __name__ == "__main__":
