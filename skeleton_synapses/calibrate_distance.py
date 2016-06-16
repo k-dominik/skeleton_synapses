@@ -195,6 +195,10 @@ def calculate_distances():
     last = 4
     all_distances_same = []
     all_distances_diff = []
+    nsamesame = 0
+    nsamediff = 0
+    ndiffdiff = 0
+    ndiffsame = 0
 
     for f2name, f3name, mname, ddir, rawname in zip(files_2d[first:last], files_3d[first:last],
                                                     files_markers[first:last], debug_dirs[first:last],
@@ -262,7 +266,12 @@ def calculate_distances():
         edgeIndicators.append(computeDistanceHessian(upsampledMembraneProbs, 5.0, ddir))
         edgeIndicators.append(upsampledSmoothedMembraneProbs)
 
+        segm = superpixels(combined.squeeze())
+        if debug_images:
+            vigra.impex.writeImage(segm, ddir + "/superpixels.tiff")
+
         gridGr = graphs.gridGraph((d2.shape[0], d2.shape[1]))  # !on original pixels
+
         for iind, indicator in enumerate(edgeIndicators):
             gridGraphEdgeIndicator = graphs.edgeFeaturesFromInterpolatedImage(gridGr, indicator)
             instance = vigra.graphs.ShortestPathPathDijkstra(gridGr)
@@ -278,12 +287,19 @@ def calculate_distances():
                     sourceNode = gridGr.coordinateToNode(node)
                     instance.run(gridGraphEdgeIndicator, sourceNode, target=None)
                     distances_all = instance.distances()
-
+                    sp_this = segm[node[0], node[1]]
                     for j in range(i + 1, len(points)):
                         # go over points of the same color
 
                         other_node = map(long, points[j])
                         distances_same.append(distances_all[other_node[0], other_node[1]])
+
+                        sp_other = segm[other_node[0], other_node[1]]
+                        if sp_this==sp_other:
+                            nsamesame = nsamesame + 1
+                            #print "same color in the same superpixel!"
+                        else:
+                            nsamediff += 1
                         #targetNode = gridGr.coordinateToNode(other_node)
                         #path = instance.run(gridGraphEdgeIndicator, sourceNode).path(pathType='coordinates',
                         #                                                             target=targetNode)
@@ -299,6 +315,11 @@ def calculate_distances():
                             continue
                         for newi in range(len(newpoints)):
                             other_node = map(long, newpoints[newi])
+                            sp_other = segm[other_node[0], other_node[1]]
+                            if sp_this==sp_other:
+                                ndiffsame += 1
+                            else:
+                                ndiffdiff += 1
                             distances_diff.append(distances_all[other_node[0], other_node[1]])
 
                     # highlight the source point in image
@@ -320,6 +341,12 @@ def calculate_distances():
                     # vigra.impex.writeImage(combined, f2name+"_combined.tiff")
                     # vigra.impex.writeImage(d3, f2name+"_synapse.tiff")
                     # vigra.impex.writeImage(d2, f2name+"_membrane.tiff")
+
+
+    print "same color in the same superpixels:", nsamesame
+    print "same color, different superpixels:", nsamediff
+    print "diff color, same superpixel:", ndiffsame
+    print "diff color, diff superpixels", ndiffdiff
 
     analyze_distances(all_distances_same, all_distances_diff)
 
@@ -346,6 +373,49 @@ def analyze_distances(distances_same, distances_diff):
 
     plt.show()
 
+def superpixels(pmaps, outfile=None):
+    import wsdt
+    from wsdt import wsDtSegmentation
+    # 2d distance transform superpixel for the probability maps
+    #pmap_path = "/path/to/neurocut_examples/probability_map.h5"
+    #pmap_key  = "data"
+    #pmaps = vigra.readHDF5(pmap_path, pmap_key)
+
+    # parameters for the watershed on distance trafo
+
+    # threshold for computing the distance trafo
+    threshold = 0.5
+    # minimal size of connected components that are taken into account
+    # for the distance trafo
+    min_mem = 50
+    # minimal size of segments in the result
+    min_seg = 75
+    # sigma for smoothing the seed map
+    sig_seeds = 1.6
+    # sigma for smoothing the weight map
+    sig_weights = 2.0
+
+    segmentation = numpy.zeros_like(pmaps, dtype = numpy.uint32)
+    # we need an offset for each slice, because we need distinct ids in each slice
+    offset = 0
+    # iterate over the z-slices and perform the wsdt in each
+    #for z in xrange(segmentation.shape[2]):
+    segmentation[:,:] = wsDtSegmentation(
+        pmaps[:,:], threshold,
+        min_mem, min_seg,
+        sig_seeds, sig_weights)
+    # add the offset
+    #segmentation[:,:] += offset
+    # get the new offset
+    #offset = numpy.max(segmentation)
+
+    # save the result
+    if outfile is not None:
+        save_key  = "superpixel"
+
+        vigra.writeHDF5(segmentation, outfile, save_key)
+
+    return segmentation
 
 if __name__ == "__main__":
     calculate_distances()
