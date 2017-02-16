@@ -3,6 +3,7 @@ import sys
 import csv
 import errno    
 import signal
+import shutil
 import argparse
 import tempfile
 import logging
@@ -50,7 +51,9 @@ SYNAPSE_CHANNEL = 2
 # FIXME: This shouldn't be hard-coded.
 ROI_RADIUS = 150
 
-DEBUG_OUTPUT_DIR = "" # Set this to enable debug images
+DEBUG_OUTPUT_DIR = ""   # Set this to enable debug images
+                        # WARNING: The contents of this directory will be DELETED ON STARTUP!
+                        #          (E.g. don't set it to your home directory...)
 
 OUTPUT_COLUMNS = [ "synapse_id",
                    "x_px",
@@ -75,6 +78,10 @@ def main():
     parser.add_argument('progress_port', nargs='?', type=int, default=8000)
     
     parsed_args = parser.parse_args()
+
+    if DEBUG_OUTPUT_DIR:
+        shutil.rmtree(DEBUG_OUTPUT_DIR, ignore_errors=True)
+        mkdir_p(DEBUG_OUTPUT_DIR)
     
     # Read the volume resolution
     volume_description = TiledVolume.readDescription(parsed_args.volume_description)
@@ -94,7 +101,6 @@ def main():
     
     # Get lists of (coord, roi) for each node, grouped into branches
     tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
-    
     tree_nodes_and_rois = filter_skeleton_for_debug(tree_nodes_and_rois)
 
     # Start a server for others to poll progress.
@@ -159,6 +165,10 @@ def locate_synapses( autocontext_project_path,
 
                     # Progress update (notify client)    
                     node_overall_index += 1
+                    logger.debug("PROGRESS: node {}/{} ({.1f}%) ({} detections)"
+                                 .format(node_overall_index, skeleton_node_count,
+                                         float(node_overall_index)/skeleton_node_count), relabeler.max_label)
+
                     progress_callback( ProgressInfo( node_overall_index, 
                                                      skeleton_node_count, 
                                                      branch_index, 
@@ -261,8 +271,6 @@ def append_lane(workflow, input_filepath, axisorder=None):
 def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
     if not DEBUG_OUTPUT_DIR:
         return
-
-    mkdir_p(DEBUG_OUTPUT_DIR)
 
     if isinstance(image_xyzc, Request):
         # Caller may provide a request instead of an image,
@@ -489,24 +497,19 @@ def filter_skeleton_for_debug(tree_nodes_and_rois):
     return tree_nodes_and_rois
 
 if __name__=="__main__":
-    global DEBUG_OUTPUT_DIR
-    DEBUG_OUTPUT_DIR = "/tmp/synapse-debug-images"
-
     DEBUGGING = False
     if DEBUGGING:
         print "USING DEBUG ARGUMENTS"
 
-#         project3dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels3D.ilp'
-#         project2dname = '/magnetic/workspace/skeleton_synapses/Synapse_Labels2D.ilp'
-#         skeleton_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeletons/abd1.5_skeleton_2.swc'
-#         #skeleton_file = '/magnetic/workspace/skeleton_synapses/example/skeleton_18689.json'
-#         volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-#         output_file = '/magnetic/workspace/skeleton_synapses/abd1.5_skeleton_2_detections.csv'
+        SKELETON_ID = '14077615'
+
+        global DEBUG_OUTPUT_DIR
+        DEBUG_OUTPUT_DIR = "/tmp/synapse-debug-images/{}".format(SKELETON_ID) # See warning above. Be careful!
 
         autocontext_project = '/magnetic/workspace/skeleton_synapses/projects-2017/autocontext.ilp'
-        skeleton_file = '/magnetic/workspace/skeleton_synapses/test_skeletons/skeleton_18689.json'
-        volume_description = '/magnetic/workspace/skeleton_synapses/example/example_volume_description_2.json'
-        output_file = '/magnetic/workspace/skeleton_synapses/selected_nodes/output_18689_with_both_distances.csv'
+        volume_description = '/magnetic/workspace/skeleton_synapses/example/L1-CNS-description.json'
+        skeleton_file = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}.swc'.format(SKELETON_ID)
+        output_file = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}-detections.csv'.format(SKELETON_ID)
 
         sys.argv.append(skeleton_file)
         sys.argv.append(autocontext_project)
