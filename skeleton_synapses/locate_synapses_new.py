@@ -137,13 +137,13 @@ def locate_synapses( autocontext_project_path,
     assert axes == list('xytc'), \
         "Project {} has unexpected axis ordering: {}".format(autocontext_project_path, axes)
 
-    max_synapse_label = 0
-
     # Pre-configure the thresholding parameters
     opThreshold = OpThresholdTwoLevels(graph=Graph())
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
     opThreshold.SingleThreshold.setValue(0.5)
     opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0})
+
+    relabeler = SynapseSliceRelabeler()
 
     with open(output_path, "w") as fout:
         csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
@@ -151,7 +151,6 @@ def locate_synapses( autocontext_project_path,
 
         node_overall_index = -1
         for branch_index, branch_rois in enumerate(branchwise_rois):
-            prev_synapses_cc_xyz = prev_roi_xyz = None
             branch_node_count = len(branch_rois)
 
             for node_index_in_branch, (node_info, roi_xyz) in enumerate(branch_rois):
@@ -177,20 +176,8 @@ def locate_synapses( autocontext_project_path,
                     opThreshold.InputImage.meta.drange = (0.0, 1.0)
                     synapse_cc_xyz = opThreshold.Output[:].wait()[...,0]
                     
-                    # Check for detections
-                    if not synapse_cc_xyz.any():
-                        write_debug_image(synapse_cc_xyz[...,None], "synapse_cc", roi_name)
-                        logger.debug( "NO SYNAPSES IN THIS SLICE: {}".format( roi_xyz[0,2] ) )
-                        timing_logger.debug( "ROI TIMER: {}".format( roi_timer.seconds() ) )
-                        prev_synapses_cc_xyz = prev_roi_xyz = None
-                        continue
-
                     # Relabel for consistency with previous slice
-                    synapse_cc_xyz, max_synapse_label = normalize_synapse_ids( synapse_cc_xyz,
-                                                                               roi_xyz,
-                                                                               prev_synapses_cc_xyz,
-                                                                               prev_roi_xyz,
-                                                                               max_synapse_label )
+                    synapse_cc_xyz = relabeler.normalize_synapse_ids(synapse_cc_xyz, roi_xyz)
 
                     write_debug_image(synapse_cc_xyz[...,None], "synapse_cc", roi_name)
 
@@ -202,10 +189,6 @@ def locate_synapses( autocontext_project_path,
                                     predictions_xyzc )
                     fout.flush()
 
-                    # Update these variables for the next iteration.
-                    prev_synapses_cc_xyz = synapse_cc_xyz
-                    prev_roi_xyz = roi_xyz
-
                     # Progress update (notify client)    
                     progress_callback( ProgressInfo( node_overall_index, 
                                                      skeleton_node_count, 
@@ -213,7 +196,7 @@ def locate_synapses( autocontext_project_path,
                                                      skeleton_branch_count, 
                                                      node_index_in_branch, 
                                                      branch_node_count,
-                                                     max_synapse_label ) )
+                                                     relabeler.max_label ) )
 
                     timing_logger.debug( "ROI TIMER: {}".format( roi_timer.seconds() ) )
 
@@ -315,74 +298,89 @@ def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
             del f['data'].attrs['slice-names']
             f['data'].attrs['slice-names'] = names
 
+class SynapseSliceRelabeler(object):
+    def __init__(self):
+        self.max_label = 0
+        self.previous_slice = None
+        self.previous_roi = None
 
-def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_roi, previous_max_label):
-    """
-    When the same synapse appears in two neighboring slices,
-    we want it to have the same ID in both slices.
-    
-    This function will relabel the synapse labels in 'current_slice'
-    to be consistent with those in 'previous_slice'.
-    
-    It is not assumed that the two slices are aligned:
-    the slices' positions are given by current_roi and previous_roi.
-    
-    Returns:
-        (relabeled_slice, new_max_label)
+    def normalize_synapse_ids(self, current_slice, current_roi):
+        """
+        When the same synapse appears in two neighboring slices,
+        we want it to have the same ID in both slices.
         
-    """
-    current_roi = np.array(current_roi)
-    intersection_roi = None
-    if previous_roi is not None:
-        previous_roi = np.array(previous_roi)
-        current_roi_2d = current_roi[:, :-1]
-        previous_roi_2d = previous_roi[:, :-1]
-        intersection_roi, current_intersection_roi, prev_intersection_roi = intersection( current_roi_2d, previous_roi_2d )
-
-    if intersection_roi is None or previous_slice is None or abs(int(current_roi[0,2]) - int(previous_roi[0,2])) > 1:
-        # We want our synapse ids to be consecutive, so we do a proper relabeling.
-        # If we could guarantee that the input slice was already consecutive, we could do this:
-        # relabeled_current = np.where( current_slice, current_slice+previous_max_label, 0 )
-        # ... but that's not the case.
-
-        current_unique_labels = np.unique(current_slice)
-        assert current_unique_labels[0] == 0, "This function assumes that not all pixels belong to detections."
-        if len(current_unique_labels) == 1:
-            # No objects in this slice.
-            return current_slice, previous_max_label
-        max_current_label = current_unique_labels[-1]
-        relabel = np.zeros( (max_current_label+1,), dtype=np.uint32 )
-        new_max = previous_max_label + len(current_unique_labels)-1
-        relabel[(current_unique_labels[1:],)] = np.arange( previous_max_label+1, new_max+1, dtype=np.uint32 )
-        return relabel[current_slice], new_max
+        This function will relabel the synapse labels in 'current_slice'
+        to be consistent with those in 'previous_slice'.
+        
+        It is not assumed that the two slices are aligned:
+        the slices' positions are given by current_roi and previous_roi.
+        
+        Returns:
+            (relabeled_slice, new_max_label)
+            
+        """
+        current_roi = np.array(current_roi)
+        intersection_roi = None
+        if self.previous_roi is not None:
+            previous_roi = self.previous_roi
+            current_roi_2d = current_roi[:, :-1]
+            previous_roi_2d = previous_roi[:, :-1]
+            intersection_roi, current_intersection_roi, prev_intersection_roi = intersection( current_roi_2d, previous_roi_2d )
     
-    # Extract the intersecting region from the current/prev slices,
-    #  so its easy to compare corresponding pixels
-    current_intersection_slice = current_slice[slicing(current_intersection_roi)]
-    prev_intersection_slice = previous_slice[slicing(prev_intersection_roi)]
-
-    # omit label 0
-    previous_slice_objects = unique(previous_slice)[1:]
-    current_slice_objects = unique(current_slice)[1:]
-    max_current_object = max(0, *current_slice_objects)
-    relabel = np.zeros((max_current_object+1,), dtype=np.uint32)
+        if intersection_roi is None or self.previous_slice is None or abs(int(current_roi[0,2]) - int(previous_roi[0,2])) > 1:
+            # We want our synapse ids to be consecutive, so we do a proper relabeling.
+            # If we could guarantee that the input slice was already consecutive, we could do this:
+            # relabeled_current = np.where( current_slice, current_slice+previous_max_label, 0 )
+            # ... but that's not the case.
     
-    for cc in previous_slice_objects:
-        current_labels = np.unique(current_intersection_slice[prev_intersection_slice==cc].flat)
-        for cur_label in current_labels:
-            relabel[cur_label] = cc
+            current_unique_labels = np.unique(current_slice)
+            assert current_unique_labels[0] == 0, "This function assumes that not all pixels belong to detections."
+            if len(current_unique_labels) == 1:
+                # No objects in this slice.
+                self.previous_slice = None
+                self.previous_roi = None
+                return current_slice
+
+            max_current_label = current_unique_labels[-1]
+            relabel = np.zeros( (max_current_label+1,), dtype=np.uint32 )
+            new_max_label = self.max_label + len(current_unique_labels)-1
+            relabel[(current_unique_labels[1:],)] = np.arange( self.max_label+1, new_max_label+1, dtype=np.uint32 )
+            relabeled_slice = relabel[current_slice]
+            self.max_label = new_max_label
+            self.previous_roi = current_roi
+            self.previous_slice = relabeled_slice
+            return relabeled_slice
+        
+        # Extract the intersecting region from the current/prev slices,
+        #  so its easy to compare corresponding pixels
+        current_intersection_slice = current_slice[slicing(current_intersection_roi)]
+        prev_intersection_slice = self.previous_slice[slicing(prev_intersection_roi)]
     
-    new_max_label = previous_max_label
-    for cur_object in current_slice_objects:
-        if relabel[cur_object] == 0:
-            relabel[cur_object] = new_max_label+1
-            new_max_label = new_max_label+1
-
-    relabel[0] = 0
-
-    # Relabel the entire current slice
-    relabeled_slice_objects = relabel[current_slice]
-    return relabeled_slice_objects, new_max_label
+        # omit label 0
+        previous_slice_objects = unique(self.previous_slice)[1:]
+        current_slice_objects = unique(current_slice)[1:]
+        max_current_object = max(0, *current_slice_objects)
+        relabel = np.zeros((max_current_object+1,), dtype=np.uint32)
+        
+        for cc in previous_slice_objects:
+            current_labels = np.unique(current_intersection_slice[prev_intersection_slice==cc].flat)
+            for cur_label in current_labels:
+                relabel[cur_label] = cc
+        
+        new_max_label = self.max_label
+        for cur_object in current_slice_objects:
+            if relabel[cur_object] == 0:
+                relabel[cur_object] = new_max_label+1
+                new_max_label = new_max_label+1
+    
+        # Relabel the entire current slice
+        relabel[0] = 0
+        relabeled_slice = relabel[current_slice]
+    
+        self.max_label = new_max_label
+        self.previous_roi = current_roi
+        self.previous_slice = relabeled_slice
+        return relabeled_slice
 
 
 def write_synapses(csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc):
