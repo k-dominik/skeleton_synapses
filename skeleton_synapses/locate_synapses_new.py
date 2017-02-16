@@ -327,19 +327,19 @@ class SynapseSliceRelabeler(object):
             previous_roi_2d = previous_roi[:, :-1]
             intersection_roi, current_intersection_roi, prev_intersection_roi = intersection( current_roi_2d, previous_roi_2d )
     
+        current_unique_labels = np.unique(current_slice)
+        assert current_unique_labels[0] == 0, "This function assumes that not all pixels belong to detections."
+        if len(current_unique_labels) == 1:
+            # No objects in this slice.
+            self.previous_slice = None
+            self.previous_roi = None
+            return current_slice
+
         if intersection_roi is None or self.previous_slice is None or abs(int(current_roi[0,2]) - int(previous_roi[0,2])) > 1:
             # We want our synapse ids to be consecutive, so we do a proper relabeling.
             # If we could guarantee that the input slice was already consecutive, we could do this:
             # relabeled_current = np.where( current_slice, current_slice+previous_max_label, 0 )
             # ... but that's not the case.
-    
-            current_unique_labels = np.unique(current_slice)
-            assert current_unique_labels[0] == 0, "This function assumes that not all pixels belong to detections."
-            if len(current_unique_labels) == 1:
-                # No objects in this slice.
-                self.previous_slice = None
-                self.previous_roi = None
-                return current_slice
 
             max_current_label = current_unique_labels[-1]
             relabel = np.zeros( (max_current_label+1,), dtype=np.uint32 )
