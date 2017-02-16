@@ -165,9 +165,9 @@ def locate_synapses( autocontext_project_path,
 
                     # Progress update (notify client)    
                     node_overall_index += 1
-                    logger.debug("PROGRESS: node {}/{} ({.1f}%) ({} detections)"
+                    logger.debug("PROGRESS: node {}/{} ({:.1f}%) ({} detections)"
                                  .format(node_overall_index, skeleton_node_count,
-                                         float(node_overall_index)/skeleton_node_count), relabeler.max_label)
+                                         float(node_overall_index)/skeleton_node_count, relabeler.max_label))
 
                     progress_callback( ProgressInfo( node_overall_index, 
                                                      skeleton_node_count, 
