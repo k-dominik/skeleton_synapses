@@ -4,6 +4,7 @@ import csv
 import errno    
 import signal
 import argparse
+import tempfile
 import logging
 from itertools import starmap
 
@@ -14,11 +15,13 @@ from vigra.analysis import unique
 
 from lazyflow.graph import Graph
 from lazyflow.request import Request
-from lazyflow.utility import Timer
+from lazyflow.utility import PathComponents, isUrl, Timer
 from lazyflow.utility.io_util import TiledVolume
 
 import ilastik_main
 from ilastik.shell.headless.headlessShell import HeadlessShell
+from ilastik.applets.dataSelection import DataSelectionApplet
+from ilastik.applets.dataSelection.opDataSelection import DatasetInfo 
 from ilastik.applets.thresholdTwoLevels import OpThresholdTwoLevels
 from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
 from ilastik.applets.pixelClassification.opPixelClassification import OpPixelClassification
@@ -68,7 +71,9 @@ def open_project( project_path ):
     shell = ilastik_main.main( parsed_args )
     return shell
 
+
 def locate_synapses( autocontext_project_path, 
+                     input_filepath,
                      output_path, 
                      branchwise_rois, 
                      progress_callback=lambda p: None ):
@@ -83,12 +88,15 @@ def locate_synapses( autocontext_project_path,
     assert isinstance(shell, HeadlessShell)
     assert isinstance(shell.workflow, NewAutocontextWorkflowBase)
 
+    append_lane(shell.workflow, input_filepath, 'xyt')
+
     # We only use the final stage predictions
     opPixelClassification = shell.workflow.pcApplets[-1].topLevelOperator
     num_classes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.shape[-1]
 
     # Sanity checks
     assert isinstance(opPixelClassification, OpPixelClassification)
+    assert opPixelClassification.Classifier.ready()
     assert opPixelClassification.HeadlessPredictionProbabilities[-1].meta.drange == (0.0, 1.0)
     axes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.getAxisKeys()
     assert axes == list('xytc'), \
@@ -99,8 +107,8 @@ def locate_synapses( autocontext_project_path,
     # Pre-configure the thresholding parameters
     opThreshold = OpThresholdTwoLevels(graph=Graph())
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
-    opThreshold.SingleThreshold.setValue(0.5) #FIXME: solve the mess with uint8/float in predictions
-    opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0}) #NOTE: two-level is much better. Maybe we can afford it?
+    opThreshold.SingleThreshold.setValue(0.5)
+    opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0})
 
     with open(output_path, "w") as fout:
         csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
@@ -173,6 +181,48 @@ def locate_synapses( autocontext_project_path,
                                                      max_synapse_label ) )
 
                     timing_logger.debug( "ROI TIMER: {}".format( roi_timer.seconds() ) )
+
+
+def append_lane(workflow, input_filepath, axisorder=None):
+    """
+    Add a lane to the project file for the given input file.
+
+    If axisorder is given, override the default axisorder for
+    the file and force the project to use the given one.
+    
+    Globstrings are supported, in which case the files are converted to HDF5 first.
+    """
+    # If the filepath is a globstring, convert the stack to h5
+    input_filepath = DataSelectionApplet.convertStacksToH5( [input_filepath], tempfile.mkdtemp() )[0]
+
+    info = DatasetInfo()
+    info.location = DatasetInfo.Location.FileSystem
+    info.filePath = input_filepath
+
+    comp = PathComponents(input_filepath)
+
+    # Convert all (non-url) paths to absolute 
+    # (otherwise they are relative to the project file, which probably isn't what the user meant)        
+    if not isUrl(input_filepath):
+        comp.externalPath = os.path.abspath(comp.externalPath)
+        info.filePath = comp.totalPath()
+    info.nickname = comp.filenameBase
+    if axisorder:
+        info.axistags = vigra.defaultAxistags(axisorder)
+
+    logger.debug( "adding lane: {}".format( info ) )
+
+    opDataSelection = workflow.dataSelectionApplet.topLevelOperator
+
+    # Add a lane
+    num_lanes = len( opDataSelection.DatasetGroup )+1
+    logger.debug( "num_lanes: {}".format( num_lanes ) )
+    opDataSelection.DatasetGroup.resize( num_lanes )
+    
+    # Configure it.
+    role_index = 0 # raw data
+    opDataSelection.DatasetGroup[-1][role_index].setValue( info )
+    
 
 
 DEBUG_OUTPUT_DIR = "" # Set this to enable debug images
