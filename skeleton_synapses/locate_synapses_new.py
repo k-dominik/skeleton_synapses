@@ -12,6 +12,7 @@ import numpy as np
 import h5py
 import vigra
 from vigra.analysis import unique
+from scipy.spatial.distance import euclidean
 
 from lazyflow.graph import Graph
 from lazyflow.request import Request
@@ -56,6 +57,7 @@ OUTPUT_COLUMNS = [ "synapse_id",
                    "y_px",
                    "z_px",
                    "size_px",
+                   "distance",
                    #"distance_hessian",
                    #"distance_raw_probs",
                    "detection_uncertainty",
@@ -387,19 +389,14 @@ def write_synapses(csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_x
     synapseIds = set(synapse_cc_xyz.flat)
     synapseIds.remove(0)
     for sid in synapseIds:
-        #find the pixel positions of this synapse
+        # find the pixel positions of this synapse
         syn_pixel_coords = np.where(synapse_cc_xyz[...,0] == sid)
         synapse_size = len( syn_pixel_coords[0] )
-        #syn_pixel_coords = numpy.unravel_index(syn_pixels, distances.shape)
-        #FIXME: offset by roi
         syn_average_x = np.average(syn_pixel_coords[0])+roi_xyz[0,0]
         syn_average_y = np.average(syn_pixel_coords[1])+roi_xyz[0,1]
 
-        #syn_distances = distances_raw[syn_pixel_coords]
-        #mindist = np.min(syn_distances)                        
-        
-        #syn_distances_raw = distances_raw[syn_pixel_coords]
-        #mindist_raw = np.min(syn_distances_raw)
+        # For now, we just compute euclidean distance to the node.
+        distance_euclidean = euclidean((syn_average_x, syn_average_y), (node_info.x_px, node_info.y_px))
 
         # Determine average uncertainty
         # Get probabilities for this synapse's pixels
@@ -417,8 +414,7 @@ def write_synapses(csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_x
         fields["y_px"] = int(syn_average_y + 0.5)
         fields["z_px"] = roi_xyz[0,2]
         fields["size_px"] = synapse_size
-        #fields["distance_hessian"] = mindist
-        #fields["distance_raw_probs"] = mindist_raw
+        fields["distance"] = distance_euclidean
         fields["detection_uncertainty"] = avg_uncertainty
         fields["node_id"] = node_info.id
         fields["node_x_px"] = node_info.x_px
