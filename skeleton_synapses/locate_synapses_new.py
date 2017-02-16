@@ -129,7 +129,6 @@ def locate_synapses( autocontext_project_path,
 
     # We only use the final stage predictions
     opPixelClassification = shell.workflow.pcApplets[-1].topLevelOperator
-    num_classes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.shape[-1]
 
     # Sanity checks
     assert isinstance(opPixelClassification, OpPixelClassification)
@@ -138,12 +137,6 @@ def locate_synapses( autocontext_project_path,
     axes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.getAxisKeys()
     assert axes == list('xytc'), \
         "Project {} has unexpected axis ordering: {}".format(autocontext_project_path, axes)
-
-    # Pre-configure the thresholding parameters
-    opThreshold = OpThresholdTwoLevels(graph=Graph())
-    opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
-    opThreshold.SingleThreshold.setValue(0.5)
-    opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0})
 
     relabeler = SynapseSliceRelabeler()
 
@@ -156,42 +149,16 @@ def locate_synapses( autocontext_project_path,
             branch_node_count = len(branch_rois)
 
             for node_index_in_branch, (node_info, roi_xyz) in enumerate(branch_rois):
-                with Timer() as roi_timer:
-                    node_overall_index += 1
-                    roi_xyzc = np.append(roi_xyz, [[0],[num_classes]], axis=1)
-                    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
-    
-                    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
-                    logger.debug("skeleton point: {}".format( skeleton_coord ))
-
-                    # Raw image (for debug output)
-                    raw_req = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1])
-                    write_debug_image(raw_req, "raw", roi_name)
-    
-                    # Predict
-                    predictions_xyzc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_xyzc).wait()
-                    predictions_xyzc = vigra.taggedView( predictions_xyzc, "xyzc" )
-                    write_debug_image(predictions_xyzc, "predictions", roi_name)
-    
-                    # Threshold synapses
-                    opThreshold.InputImage.setValue(predictions_xyzc)
-                    opThreshold.InputImage.meta.drange = (0.0, 1.0)
-                    synapse_cc_xyz = opThreshold.Output[:].wait()[...,0]
+                with Timer() as node_timer:
+                    synapse_cc_xyz, predictions_xyzc = \
+                        detections_for_node(opPixelClassification, relabeler, node_info, roi_xyz)
                     
-                    # Relabel for consistency with previous slice
-                    synapse_cc_xyz = relabeler.normalize_synapse_ids(synapse_cc_xyz, roi_xyz)
-
-                    write_debug_image(synapse_cc_xyz[...,None], "synapse_cc", roi_name)
-
                     # Write to csv
-                    write_synapses( csv_writer,
-                                    node_info,
-                                    roi_xyz,
-                                    synapse_cc_xyz,
-                                    predictions_xyzc )
+                    write_synapses( csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc )
                     fout.flush()
 
                     # Progress update (notify client)    
+                    node_overall_index += 1
                     progress_callback( ProgressInfo( node_overall_index, 
                                                      skeleton_node_count, 
                                                      branch_index, 
@@ -200,7 +167,43 @@ def locate_synapses( autocontext_project_path,
                                                      branch_node_count,
                                                      relabeler.max_label ) )
 
-                    timing_logger.debug( "ROI TIMER: {}".format( roi_timer.seconds() ) )
+                    timing_logger.debug( "NODE TIMER: {}".format( node_timer.seconds() ) )
+
+    logger.info("DONE with skeleton.")
+
+
+# opThreshold is global so we don't waste time initializing it repeatedly.
+opThreshold = OpThresholdTwoLevels(graph=Graph())
+
+def detections_for_node(opPixelClassification, relabeler, node_info, roi_xyz):
+    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
+    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
+    logger.debug("skeleton point: {}".format( skeleton_coord ))
+
+    # Raw image (for debug output)
+    raw_req = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1])
+    write_debug_image(raw_req, "raw", roi_name)
+
+    # Predict
+    num_classes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.shape[-1]
+    roi_xyzc = np.append(roi_xyz, [[0],[num_classes]], axis=1)
+    predictions_xyzc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_xyzc).wait()
+    predictions_xyzc = vigra.taggedView( predictions_xyzc, "xyzc" )
+    write_debug_image(predictions_xyzc, "predictions", roi_name)
+
+    # Threshold synapses
+    opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
+    opThreshold.SingleThreshold.setValue(0.5)
+    opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0})
+    opThreshold.InputImage.setValue(predictions_xyzc)
+    opThreshold.InputImage.meta.drange = (0.0, 1.0)
+    synapse_cc_xyz = opThreshold.Output[:].wait()[...,0]
+    
+    # Relabel for consistency with previous slice
+    synapse_cc_xyz = relabeler.normalize_synapse_ids(synapse_cc_xyz, roi_xyz)
+    write_debug_image(synapse_cc_xyz[...,None], "synapse_cc", roi_name)
+    
+    return synapse_cc_xyz, predictions_xyzc
 
 
 def open_project( project_path ):
@@ -267,7 +270,6 @@ def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
         image_xyzc = image_xyzc.wait()
 
     image_xyzc = vigra.taggedView(image_xyzc, 'xyzc')
-    
     
     if mode == "slices":
         slice_name = name
