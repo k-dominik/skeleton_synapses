@@ -29,6 +29,7 @@ class ProgressServer(HTTPServer):
         """
         server = ProgressServer( disable_server_logging, (hostname, port), ProgressRequestHandler )
         server_thread = threading.Thread( target=server.serve_forever )
+        server_thread.daemon = True
         server._set_thread(server_thread)
         server_thread.start()
         return server
