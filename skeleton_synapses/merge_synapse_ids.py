@@ -40,9 +40,24 @@ def merge_synapse_ids(input_path, output_path):
                 # Fast path
                 final_row = rows[0]
             else:
-                # Find min distance
-                distances = map( lambda row: row["distance"], rows )
-                min_distance = numpy.asarray(distances, dtype=numpy.float32).min()
+                min_distance = distance_hessian = distance_raw_probs = None
+                if "distance" in output_columns:
+                    # Find min distance
+                    distances = map( lambda row: row["distance"], rows )
+                    min_distance = numpy.asarray(distances, dtype=numpy.float32).min()
+                
+                connector_distances = map( lambda row: row["nearest_connector_distance_nm"], rows)
+                min_conn_distance = numpy.asarray(connector_distances, dtype=numpy.float32).min()
+
+                if "distance_hessian" in output_columns:
+                    # Find min hessian distance
+                    distances_hessian = map( lambda row: row["distance_hessian"], rows )
+                    min_distance_hessian = numpy.asarray(distances_hessian, dtype=numpy.float32).min()
+
+                if "distance_raw_probs" in output_columns:
+                    # Find min raw_probs distance
+                    distances_raw_probs = map( lambda row: row["distance_raw_probs"], rows )
+                    min_distance_raw_probs = numpy.asarray(distances_raw_probs, dtype=numpy.float32).min()
 
                 # Sum sizes
                 sizes = map( lambda row: row["size_px"], rows )
@@ -64,13 +79,25 @@ def merge_synapse_ids(input_path, output_path):
 
                 # At least one row has the same z-coord as the average coord
                 # Find it and use it as the final_row.
-                final_row = filter( lambda row: float(row["distance"]) == min_distance, rows )[0]
+                #final_row = filter( lambda row: float(row["distance"]) == min_distance, rows )[0]
+                final_row = rows[0]
+                if "distance" in output_columns:
+                    final_row = filter( lambda row: float(row["distance"]) == min_distance, rows )[0]
+                if "distance_hessian" in output_columns:
+                    final_row = filter( lambda row: numpy.float32(row["distance_hessian"]) == numpy.float32(min_distance_hessian), rows )[0]
                 
                 # Replace fields in the final row
                 final_row["x_px"], final_row["y_px"], final_row["z_px"] = avg_coord
-                final_row["distance"] = min_distance
+                final_row["nearest_connector_distance_nm"] = min_conn_distance
                 final_row["size_px"] = total_size
                 final_row["detection_uncertainty"] = avg_uncertainty
+
+                if "distance" in output_columns:
+                    final_row["distance"] = min_distance
+                if "distance_hessian" in output_columns:
+                    final_row["distance_hessian"] = min_distance_hessian
+                if "distance_raw_probs" in output_columns:
+                    final_row["distance_raw_probs"] = min_distance_raw_probs
 
             final_row["node_count"] = len(rows)
 

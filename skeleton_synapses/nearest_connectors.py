@@ -149,6 +149,6 @@ if __name__ == "__main__":
     volume_description = TiledVolume.readDescription(parsed_args.volume_description_json)
     z_res, y_res, x_res = volume_description.resolution_zyx
 
-    connectors = parse_connectors( parsed_args.skeleton_json )
+    connectors, _ = parse_connectors( parsed_args.skeleton_json )
     output_nearest_connectors( parsed_args.detections_csv, connectors, ( x_res, y_res, z_res ), parsed_args.output_csv )
  

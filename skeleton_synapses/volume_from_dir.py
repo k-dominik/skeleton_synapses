@@ -5,7 +5,7 @@ import vigra
 
 def volume_from_dir(dirpattern, output_filepath, offset=0, nfiles=None):
     filelist = glob.glob(dirpattern)
-    filelist = sorted(filelist, key=str.lower)
+    filelist = sorted(filelist, key=str.lower) #mwahaha, 10000<9000
     begin = offset
     if nfiles is not None and offset+nfiles<len(filelist):
         end=offset+nfiles
@@ -24,3 +24,8 @@ def volume_from_dir(dirpattern, output_filepath, offset=0, nfiles=None):
     outfile.create_dataset("data", data=volume)
     outfile.close()
     return volume
+
+if __name__=="__main__":
+    dirpattern = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/16725035/*.tiff"
+    output_filepath = "/home/akreshuk/data/connector_archive_2g0y0b/distance_tests/16725035_raw.h5"
+    volume_from_dir(dirpattern, output_filepath)
