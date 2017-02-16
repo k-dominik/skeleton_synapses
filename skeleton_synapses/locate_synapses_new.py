@@ -42,8 +42,14 @@ timing_logger.setLevel(logging.INFO)
 
 signal.signal(signal.SIGINT, signal.SIG_DFL) # Quit on Ctrl+C
 
+
 MEMBRANE_CHANNEL = 0
 SYNAPSE_CHANNEL = 2
+
+# FIXME: This shouldn't be hard-coded.
+ROI_RADIUS = 150
+
+DEBUG_OUTPUT_DIR = "" # Set this to enable debug images
 
 OUTPUT_COLUMNS = [ "synapse_id",
                    "x_px",
@@ -58,18 +64,47 @@ OUTPUT_COLUMNS = [ "synapse_id",
                    "node_y_px",
                    "node_z_px" ]
 
+def main():
+    parser = argparse.ArgumentParser() 
+    parser.add_argument('skeleton_file')
+    parser.add_argument('autocontext_project')
+    parser.add_argument('volume_description')
+    parser.add_argument('output_file')
+    parser.add_argument('progress_port', nargs='?', type=int, default=8000)
+    
+    parsed_args = parser.parse_args()
+    
+    # Read the volume resolution
+    volume_description = TiledVolume.readDescription(parsed_args.volume_description)
+    z_res, y_res, x_res = volume_description.resolution_zyx
+    
+    # Parse the swc into a list of nodes
+    skeleton_ext = os.path.splitext(parsed_args.skeleton_file)[1]
+    if skeleton_ext == '.swc':
+        node_infos = parse_skeleton_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
+    elif skeleton_ext == '.json':
+        node_infos = parse_skeleton_json( parsed_args.skeleton_file, x_res, y_res, z_res )
+    else:
+        raise Exception("Unknown skeleton file format: " + skeleton_ext)
+    
+    # Construct a networkx tree
+    tree = construct_tree( node_infos )
+    
+    # Get lists of (coord, roi) for each node, grouped into branches
+    tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
+    
+    tree_nodes_and_rois = filter_skeleton_for_debug(tree_nodes_and_rois)
 
-
-def open_project( project_path ):
-    """
-    Open a project file and return the HeadlessShell instance.
-    """
-    parsed_args = ilastik_main.parser.parse_args([])
-    parsed_args.headless = True
-    parsed_args.project = project_path
-
-    shell = ilastik_main.main( parsed_args )
-    return shell
+    # Start a server for others to poll progress.
+    progress_server = ProgressServer.create_and_start( "localhost", parsed_args.progress_port )
+    try:
+        locate_synapses( parsed_args.autocontext_project, 
+                         parsed_args.volume_description, 
+                         parsed_args.output_file,
+                         tree_nodes_and_rois, 
+                         progress_callback=progress_server.update_progress )
+    finally:
+        progress_server.shutdown()
 
 
 def locate_synapses( autocontext_project_path, 
@@ -183,6 +218,18 @@ def locate_synapses( autocontext_project_path,
                     timing_logger.debug( "ROI TIMER: {}".format( roi_timer.seconds() ) )
 
 
+def open_project( project_path ):
+    """
+    Open a project file and return the HeadlessShell instance.
+    """
+    parsed_args = ilastik_main.parser.parse_args([])
+    parsed_args.headless = True
+    parsed_args.project = project_path
+
+    shell = ilastik_main.main( parsed_args )
+    return shell
+
+
 def append_lane(workflow, input_filepath, axisorder=None):
     """
     Add a lane to the project file for the given input file.
@@ -222,10 +269,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
     # Configure it.
     role_index = 0 # raw data
     opDataSelection.DatasetGroup[-1][role_index].setValue( info )
-    
 
-
-DEBUG_OUTPUT_DIR = "" # Set this to enable debug images
 def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
     if not DEBUG_OUTPUT_DIR:
         return
@@ -271,51 +315,6 @@ def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
             del f['data'].attrs['slice-names']
             f['data'].attrs['slice-names'] = names
 
-
-def write_synapses(csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc):
-    synapseIds = set(synapse_cc_xyz.flat)
-    synapseIds.remove(0)
-    for sid in synapseIds:
-        #find the pixel positions of this synapse
-        syn_pixel_coords = np.where(synapse_cc_xyz[...,0] == sid)
-        synapse_size = len( syn_pixel_coords[0] )
-        #syn_pixel_coords = numpy.unravel_index(syn_pixels, distances.shape)
-        #FIXME: offset by roi
-        syn_average_x = np.average(syn_pixel_coords[0])+roi_xyz[0,0]
-        syn_average_y = np.average(syn_pixel_coords[1])+roi_xyz[0,1]
-
-        #syn_distances = distances_raw[syn_pixel_coords]
-        #mindist = np.min(syn_distances)                        
-        
-        #syn_distances_raw = distances_raw[syn_pixel_coords]
-        #mindist_raw = np.min(syn_distances_raw)
-
-        # Determine average uncertainty
-        # Get probabilities for this synapse's pixels
-        flat_predictions = predictions_xyzc[synapse_cc_xyz == sid]
-        # Sort along channel axis
-        flat_predictions.sort(axis=-1)
-        # What's the difference between the highest and second-highest class?
-        certainties = flat_predictions[:,-1] - flat_predictions[:,-2]
-        avg_certainty = np.mean(certainties)
-        avg_uncertainty = 1.0 - avg_certainty
-
-        fields = {}
-        fields["synapse_id"] = int(sid)
-        fields["x_px"] = int(syn_average_x + 0.5)
-        fields["y_px"] = int(syn_average_y + 0.5)
-        fields["z_px"] = roi_xyz[0,2]
-        fields["size_px"] = synapse_size
-        #fields["distance_hessian"] = mindist
-        #fields["distance_raw_probs"] = mindist_raw
-        fields["detection_uncertainty"] = avg_uncertainty
-        fields["node_id"] = node_info.id
-        fields["node_x_px"] = node_info.x_px
-        fields["node_y_px"] = node_info.y_px
-        fields["node_z_px"] = node_info.z_px
-        
-        assert len(fields) == len(OUTPUT_COLUMNS)
-        csv_writer.writerow( fields )                                                
 
 def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_roi, previous_max_label):
     """
@@ -385,6 +384,53 @@ def normalize_synapse_ids(current_slice, current_roi, previous_slice, previous_r
     relabeled_slice_objects = relabel[current_slice]
     return relabeled_slice_objects, new_max_label
 
+
+def write_synapses(csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc):
+    synapseIds = set(synapse_cc_xyz.flat)
+    synapseIds.remove(0)
+    for sid in synapseIds:
+        #find the pixel positions of this synapse
+        syn_pixel_coords = np.where(synapse_cc_xyz[...,0] == sid)
+        synapse_size = len( syn_pixel_coords[0] )
+        #syn_pixel_coords = numpy.unravel_index(syn_pixels, distances.shape)
+        #FIXME: offset by roi
+        syn_average_x = np.average(syn_pixel_coords[0])+roi_xyz[0,0]
+        syn_average_y = np.average(syn_pixel_coords[1])+roi_xyz[0,1]
+
+        #syn_distances = distances_raw[syn_pixel_coords]
+        #mindist = np.min(syn_distances)                        
+        
+        #syn_distances_raw = distances_raw[syn_pixel_coords]
+        #mindist_raw = np.min(syn_distances_raw)
+
+        # Determine average uncertainty
+        # Get probabilities for this synapse's pixels
+        flat_predictions = predictions_xyzc[synapse_cc_xyz == sid]
+        # Sort along channel axis
+        flat_predictions.sort(axis=-1)
+        # What's the difference between the highest and second-highest class?
+        certainties = flat_predictions[:,-1] - flat_predictions[:,-2]
+        avg_certainty = np.mean(certainties)
+        avg_uncertainty = 1.0 - avg_certainty
+
+        fields = {}
+        fields["synapse_id"] = int(sid)
+        fields["x_px"] = int(syn_average_x + 0.5)
+        fields["y_px"] = int(syn_average_y + 0.5)
+        fields["z_px"] = roi_xyz[0,2]
+        fields["size_px"] = synapse_size
+        #fields["distance_hessian"] = mindist
+        #fields["distance_raw_probs"] = mindist_raw
+        fields["detection_uncertainty"] = avg_uncertainty
+        fields["node_id"] = node_info.id
+        fields["node_x_px"] = node_info.x_px
+        fields["node_y_px"] = node_info.y_px
+        fields["node_z_px"] = node_info.z_px
+        
+        assert len(fields) == len(OUTPUT_COLUMNS)
+        csv_writer.writerow( fields )                                                
+
+
 def intersection(roi_a, roi_b):
     """
     Compute the intersection (overlap) of the two rois A and B.
@@ -428,38 +474,7 @@ def mkdir_p(path):
         else:
             raise
 
-def main():
-    # FIXME: This shouldn't be hard-coded.
-    ROI_RADIUS = 150
-
-    parser = argparse.ArgumentParser() 
-    parser.add_argument('skeleton_file')
-    parser.add_argument('autocontext_project')
-    parser.add_argument('volume_description')
-    parser.add_argument('output_file')
-    parser.add_argument('progress_port', nargs='?', type=int, default=8000)
-    
-    parsed_args = parser.parse_args()
-    
-    # Read the volume resolution
-    volume_description = TiledVolume.readDescription(parsed_args.volume_description)
-    z_res, y_res, x_res = volume_description.resolution_zyx
-    
-    # Parse the swc into a list of nodes
-    skeleton_ext = os.path.splitext(parsed_args.skeleton_file)[1]
-    if skeleton_ext == '.swc':
-        node_infos = parse_skeleton_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
-    elif skeleton_ext == '.json':
-        node_infos = parse_skeleton_json( parsed_args.skeleton_file, x_res, y_res, z_res )
-    else:
-        raise Exception("Unknown skeleton file format: " + skeleton_ext)
-    
-    # Construct a networkx tree
-    tree = construct_tree( node_infos )
-    
-    # Get lists of (coord, roi) for each node, grouped into branches
-    tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
-
+def filter_skeleton_for_debug(tree_nodes_and_rois):
     SPECIAL_DEBUG = False
     if SPECIAL_DEBUG:
         nodes_of_interest = [37575, 26717, 29219, 28228, 91037, 33173, 31519, 92443, 28010, 91064, 28129, 226935, 90886, 91047, 91063, 94379, 33997, 28626, 36989, 39556, 33870, 91058, 35882, 28260, 36252, 90399, 36892, 21248, 92841, 94203, 29465, 91967, 27937, 28227, 35717, 38656, 19764, 32398, 91026, 90350]
@@ -475,16 +490,7 @@ def main():
                 new_tree_nodes_and_rois.append( new_branch )
         tree_nodes_and_rois = new_tree_nodes_and_rois
 
-    # Start a server for others to poll progress.
-    progress_server = ProgressServer.create_and_start( "localhost", parsed_args.progress_port )
-    try:
-        locate_synapses( parsed_args.autocontext_project, 
-                         #parsed_args.volume_description, 
-                         parsed_args.output_file,
-                         tree_nodes_and_rois, 
-                         progress_callback=progress_server.update_progress )
-    finally:
-        progress_server.shutdown()
+    return tree_nodes_and_rois
 
 if __name__=="__main__":
     global DEBUG_OUTPUT_DIR
