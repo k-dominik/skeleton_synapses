@@ -5,6 +5,7 @@ import numpy
 import networkx as nx
 from tree_util import partition
 
+
 # Not  used in this file, but defined for cmd-line utilities to use.
 CSV_FORMAT = { 'delimiter' : '\t', 'lineterminator' : '\n' }
 
@@ -44,7 +45,8 @@ def parse_skeleton_json(json_path, x_res, y_res, z_res):
     Note: Mimicking the conventions above for swc files, 
           a parentless node will be assigned parent_id = -1    
     """
-    assert os.path.splitext(json_path)[1] == '.json'
+    assert os.path.splitext(json_path)[1] == '.json', \
+        "Skeleton file must end with .json"
     
     node_infos = []
     with open(json_path, 'r') as json_file:
@@ -85,6 +87,16 @@ def parse_skeleton_ids( json_path ):
 # Note that in ConnectorInfos, we keep the coordinates in nanometers!
 ConnectorInfo = collections.namedtuple('ConnectorInfo', 'id x_nm y_nm z_nm incoming_nodes outgoing_nodes')
 def parse_connectors( json_path ):
+    """
+    Parses skeleton files as returned by the CATMAID
+    export widget's "Treenode and connector geometry" format.
+    
+    Read the skeleton json file and return:
+    - A list of ConnectorInfo tuples
+    - A dict of node -> connectors (regardless of whether the node is incoming or outgoing for the connector:
+      { node : [connector_id, connector_id, ...] }
+    
+    """
     connector_infos = []
     node_to_connector = {}
     with open(json_path, 'r') as json_file:
@@ -109,12 +121,15 @@ def parse_connectors( json_path ):
         #  (not "the connector is presynaptic to the following nodes")
         incoming = map(int, connector_data['presynaptic_to'] )
         outgoing = map(int, connector_data['postsynaptic_to'] )
+        
         for node in incoming:
             node_connectors = node_to_connector.setdefault(node, [])
             node_connectors.append(connector_id)
+        
         for node in outgoing:
             node_connectors = node_to_connector.setdefault(node, [])
             node_connectors.append(connector_id)
+        
         connector_infos.append( ConnectorInfo(connector_id, x_nm, y_nm, z_nm, incoming, outgoing) )
 
     return connector_infos, node_to_connector
@@ -142,22 +157,46 @@ def roi_around_point(coord_xyz, radius):
     stop = coord_xyz + [radius+1, radius+1, 1]
     return numpy.array((tuple(start), tuple(stop)))
 
+def roi_around_node(node_info, radius):
+    coord_xyz = (node_info.x_px, node_info.y_px, node_info.z_px)
+    return roi_around_point(coord_xyz, radius)
+
+def branchwise_node_infos(tree):
+    branches = []
+    for branch in partition(tree):
+        branch = filter(lambda node_id: node_id != -1, branch)
+        branch_nodes = map(lambda node_id: tree.node[node_id]['info'], branch)
+        branches.append(branch_nodes)
+    return branches
+
 def nodes_and_rois_for_tree(tree, radius):
     """
     Return a list of (coord, rois) for all nodes in the given skeleton,
     sorted in a reasonable order to increase cache hits
     (via CATMAID's partition() function).
     """
-    tree_coords_and_rois = []
-    for sequence in partition(tree):
-        branch_coords_and_rois = []
-        for node_id in sequence:
-            if node_id != -1:
-                node_info = tree.node[node_id]['info']
-                coord_xyz = (node_info.x_px, node_info.y_px, node_info.z_px)
-                branch_coords_and_rois.append( ( node_info, roi_around_point(coord_xyz, radius) ) )
-        tree_coords_and_rois.append(branch_coords_and_rois)
-    return tree_coords_and_rois
+    branches = branchwise_node_infos(tree)
+    branchwise_rois = []
+    for branch in branches:
+        rois = map(lambda n: roi_around_node(n, radius), branch)
+        branchwise_rois.append( zip(branch, rois) )
+    return branchwise_rois
+
+class Skeleton(object):
+    def __init__(self, json_path, resolution_xyz):
+        node_infos = parse_skeleton_json( json_path, *resolution_xyz )        
+        connector_infos_list, node_to_connector = parse_connectors(json_path)
+        
+        self.connector_infos = { info.id : info for info in connector_infos_list }
+        self.node_to_connector = node_to_connector
+
+        # Construct a networkx tree
+        self.tree = construct_tree( node_infos )
+        
+        # And a list of the branches [[NodeInfo, NodeInfo,...], [NodeInfo, NodeInfo,...],...]
+        self.branches = branchwise_node_infos(self.tree)
+
+        self.x_res, self.y_res, self.z_res = resolution_xyz
 
 if __name__ == "__main__":
     X_RES = 3.8
