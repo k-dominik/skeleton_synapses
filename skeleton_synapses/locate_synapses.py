@@ -56,23 +56,18 @@ SYNAPSE_CHANNEL = 2
 # FIXME: This shouldn't be hard-coded.
 ROI_RADIUS = 150
 
+INFINITE_DISTANCE = 99999.0 
+
 DEBUG_OUTPUT_DIR = ""   # Set this to enable debug images
                         # WARNING: The contents of this directory will be DELETED ON STARTUP!
                         #          (E.g. don't set it to your home directory...)
 
-OUTPUT_COLUMNS = [ "synapse_id",
-                   "x_px",
-                   "y_px",
-                   "z_px",
-                   "size_px",
-                   "distance",
-                   #"distance_hessian",
-                   #"distance_raw_probs",
+OUTPUT_COLUMNS = [ "synapse_id", "x_px", "y_px", "z_px", "size_px",
                    "detection_uncertainty",
-                   "node_id",
-                   "node_x_px",
-                   "node_y_px",
-                   "node_z_px" ]
+                   "distance",
+                   "node_id", "node_x_px", "node_y_px", "node_z_px",
+                   "node_connector_id", "node_connector_distance_nm",
+                   "node_connector_x_nm", "node_connector_y_nm", "node_connector_z_nm" ]
 
 def main():
     parser = argparse.ArgumentParser() 
@@ -155,7 +150,7 @@ def locate_synapses( autocontext_project_path,
                         detections_for_node(opPixelClassification, relabeler, node_info, roi_xyz)
                     
                     # Write to csv
-                    write_synapses( csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc )
+                    write_synapses( csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc )
                     fout.flush()
 
                     # Progress update (notify client)    
@@ -390,7 +385,7 @@ class SynapseSliceRelabeler(object):
         return relabeled_slice
 
 
-def write_synapses(csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc):
+def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc):
     synapseIds = set(synapse_cc_xyz.flat)
     synapseIds.remove(0)
     for sid in synapseIds:
@@ -425,6 +420,28 @@ def write_synapses(csv_writer, node_info, roi_xyz, synapse_cc_xyz, predictions_x
         fields["node_x_px"] = node_info.x_px
         fields["node_y_px"] = node_info.y_px
         fields["node_z_px"] = node_info.z_px
+
+        try:
+            node_connectors = skeleton.node_to_connector[node_info.id]
+        except KeyError:
+            fields["node_connector_id"] = -1
+            fields["node_connector_distance_nm"] = INFINITE_DISTANCE
+            fields["node_connector_x_nm"] = -1
+            fields["node_connector_y_nm"] = -1
+            fields["node_connector_z_nm"] = -1
+        else:
+            # FIXME: This assumes that there's only one connector associated with this node!
+            connector_info = skeleton.connector_infos[node_connectors[0]]
+            
+            syn_x_nm = syn_average_x * skeleton.x_res
+            syn_y_nm = syn_average_x * skeleton.y_res
+            distance_nm = euclidean((syn_x_nm, syn_y_nm), (connector_info.x_nm, connector_info.y_nm))
+
+            fields["node_connector_id"] = connector_info.id
+            fields["node_connector_distance_nm"] = distance_nm
+            fields["node_connector_x_nm"] = connector_info.x_nm
+            fields["node_connector_y_nm"] = connector_info.y_nm
+            fields["node_connector_z_nm"] = connector_info.z_nm
         
         assert len(fields) == len(OUTPUT_COLUMNS)
         csv_writer.writerow( fields )                                                
