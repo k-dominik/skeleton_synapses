@@ -12,6 +12,11 @@
     "bounds_zyx" : [4841, 31840, 28128],
     "##bounds_zyx" : [500, 31840, 28128],
 
+    "## NOTES": "Skeleton files do not use the same coordinates as the CATMAID viewer/tiles (even after converting from nm to px)",
+    "## NOTES": "There is an offset in the Z-dimension.  Therefore, we use a view_origin_zyx here.",
+    "## NOTES": "When you use this file, ilastik's Z-coordinates don't align to CATMAID's.",
+    "view_origin_zyx": [-121, 0, 0],
+
     "resolution_zyx" : [50.0, 3.8, 3.8],
     "tile_shape_2d_yx" : [512, 512],
 
