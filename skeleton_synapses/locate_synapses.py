@@ -4,10 +4,15 @@ import csv
 import errno    
 import signal
 import shutil
+import logging
 import argparse
 import tempfile
-import logging
+import warnings
 from itertools import starmap
+
+# Don't warn about duplicate python bindings for opengm
+# (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
+warnings.filterwarnings("ignore", message='.*to-Python converter for .*opengm.*', category=RuntimeWarning)
 
 import numpy as np
 import h5py
@@ -28,7 +33,7 @@ from ilastik.applets.thresholdTwoLevels import OpThresholdTwoLevels
 from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
 from ilastik.applets.pixelClassification.opPixelClassification import OpPixelClassification
 
-from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, construct_tree, nodes_and_rois_for_tree
+from skeleton_synapses.skeleton_utils import Skeleton, roi_around_node
 from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
 from skeleton_utils import CSV_FORMAT
 
@@ -71,45 +76,34 @@ OUTPUT_COLUMNS = [ "synapse_id",
 
 def main():
     parser = argparse.ArgumentParser() 
-    parser.add_argument('skeleton_file')
+    parser.add_argument('skeleton_json')
     parser.add_argument('autocontext_project')
     parser.add_argument('volume_description')
     parser.add_argument('output_file')
     parser.add_argument('progress_port', nargs='?', type=int, default=8000)
     
-    parsed_args = parser.parse_args()
+    args = parser.parse_args()
 
     if DEBUG_OUTPUT_DIR:
         shutil.rmtree(DEBUG_OUTPUT_DIR, ignore_errors=True)
         mkdir_p(DEBUG_OUTPUT_DIR)
     
     # Read the volume resolution
-    volume_description = TiledVolume.readDescription(parsed_args.volume_description)
+    volume_description = TiledVolume.readDescription(args.volume_description)
     z_res, y_res, x_res = volume_description.resolution_zyx
     
-    # Parse the swc into a list of nodes
-    skeleton_ext = os.path.splitext(parsed_args.skeleton_file)[1]
-    if skeleton_ext == '.swc':
-        node_infos = parse_skeleton_swc( parsed_args.skeleton_file, x_res, y_res, z_res )
-    elif skeleton_ext == '.json':
-        node_infos = parse_skeleton_json( parsed_args.skeleton_file, x_res, y_res, z_res )
-    else:
-        raise Exception("Unknown skeleton file format: " + skeleton_ext)
+    skeleton = Skeleton(args.skeleton_json, (x_res, y_res, z_res))
+        
     
-    # Construct a networkx tree
-    tree = construct_tree( node_infos )
-    
-    # Get lists of (coord, roi) for each node, grouped into branches
-    tree_nodes_and_rois = nodes_and_rois_for_tree(tree, radius=ROI_RADIUS)
-    tree_nodes_and_rois = filter_skeleton_for_debug(tree_nodes_and_rois)
-
     # Start a server for others to poll progress.
-    progress_server = ProgressServer.create_and_start( "localhost", parsed_args.progress_port )
+    progress_server = ProgressServer.create_and_start( "localhost", args.progress_port )
     try:
-        locate_synapses( parsed_args.autocontext_project, 
-                         parsed_args.volume_description, 
-                         parsed_args.output_file,
-                         tree_nodes_and_rois, 
+        locate_synapses( args.autocontext_project, 
+                         args.volume_description, 
+                         args.output_file,
+                         skeleton,
+                         ROI_RADIUS,
+                         
                          progress_callback=progress_server.update_progress )
     finally:
         progress_server.shutdown()
@@ -118,14 +112,14 @@ def main():
 def locate_synapses( autocontext_project_path, 
                      input_filepath,
                      output_path, 
-                     branchwise_rois, 
+                     skeleton,
+                     roi_radius_px,
                      progress_callback=lambda p: None ):
     """
     autocontext_project_path: Path to .ilp file.  Must use axis order 'xytc'.
-    """
-    
-    skeleton_branch_count = len(branchwise_rois)
-    skeleton_node_count = sum( map(len, branchwise_rois) )
+    """    
+    skeleton_branch_count = len(skeleton.branches)
+    skeleton_node_count = sum( map(len, skeleton.branches) )
 
     shell = open_project(autocontext_project_path)
     assert isinstance(shell, HeadlessShell)
@@ -151,10 +145,11 @@ def locate_synapses( autocontext_project_path,
         csv_writer.writeheader()
 
         node_overall_index = -1
-        for branch_index, branch_rois in enumerate(branchwise_rois):
-            branch_node_count = len(branch_rois)
+        for branch_index, branch in enumerate(skeleton.branches):
+            branch_node_count = len(branch)
 
-            for node_index_in_branch, (node_info, roi_xyz) in enumerate(branch_rois):
+            for node_index_in_branch, node_info in enumerate(branch):
+                roi_xyz = roi_around_node(node_info, roi_radius_px)
                 with Timer() as node_timer:
                     synapse_cc_xyz, predictions_xyzc = \
                         detections_for_node(opPixelClassification, relabeler, node_info, roi_xyz)
@@ -478,40 +473,21 @@ def mkdir_p(path):
         else:
             raise
 
-def filter_skeleton_for_debug(tree_nodes_and_rois):
-    SPECIAL_DEBUG = False
-    if SPECIAL_DEBUG:
-        nodes_of_interest = [37575, 26717, 29219, 28228, 91037, 33173, 31519, 92443, 28010, 91064, 28129, 226935, 90886, 91047, 91063, 94379, 33997, 28626, 36989, 39556, 33870, 91058, 35882, 28260, 36252, 90399, 36892, 21248, 92841, 94203, 29465, 91967, 27937, 28227, 35717, 38656, 19764, 32398, 91026, 90350]
-        nodes_of_interest = [37575]
-        nodes_of_interest = set(nodes_of_interest)
-        new_tree_nodes_and_rois = []
-        for branch_coords_and_rois in tree_nodes_and_rois:
-            new_branch = []
-            for node_info, roi_around_point in branch_coords_and_rois:
-                if node_info.id in nodes_of_interest :
-                    new_branch.append( (node_info, roi_around_point) )
-            if new_branch:
-                new_tree_nodes_and_rois.append( new_branch )
-        tree_nodes_and_rois = new_tree_nodes_and_rois
-
-    return tree_nodes_and_rois
-
 if __name__=="__main__":
     DEBUGGING = False
     if DEBUGGING:
         print "USING DEBUG ARGUMENTS"
 
-        SKELETON_ID = '14077615'
+        SKELETON_ID = '11524047'
 
-        global DEBUG_OUTPUT_DIR
-        DEBUG_OUTPUT_DIR = "/tmp/synapse-debug-images/{}".format(SKELETON_ID) # See warning above. Be careful!
+        DEBUG_OUTPUT_DIR = "/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/debug-images".format(SKELETON_ID) # See warning above. Be careful!
 
         autocontext_project = '/magnetic/workspace/skeleton_synapses/projects-2017/autocontext.ilp'
         volume_description = '/magnetic/workspace/skeleton_synapses/example/L1-CNS-description.json'
-        skeleton_file = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}.swc'.format(SKELETON_ID)
-        output_file = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}-detections.csv'.format(SKELETON_ID)
+        skeleton_json = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/tree_geometry.json'.format(SKELETON_ID)
+        output_file = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/{}-detections.csv'.format(SKELETON_ID, SKELETON_ID)
 
-        sys.argv.append(skeleton_file)
+        sys.argv.append(skeleton_json)
         sys.argv.append(autocontext_project)
         sys.argv.append(volume_description)
         sys.argv.append(output_file)
