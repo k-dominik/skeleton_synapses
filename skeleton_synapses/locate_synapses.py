@@ -69,6 +69,7 @@ OUTPUT_COLUMNS = [ "synapse_id", "x_px", "y_px", "z_px", "size_px",
                    "node_connector_id", "node_connector_distance_nm",
                    "node_connector_x_nm", "node_connector_y_nm", "node_connector_z_nm" ]
 
+
 def main():
     parser = argparse.ArgumentParser() 
     parser.add_argument('skeleton_json')
@@ -141,41 +142,47 @@ def locate_synapses( autocontext_project_path,
 
         node_overall_index = -1
         for branch_index, branch in enumerate(skeleton.branches):
-            branch_node_count = len(branch)
-
             for node_index_in_branch, node_info in enumerate(branch):
-                roi_xyz = roi_around_node(node_info, roi_radius_px)
                 with Timer() as node_timer:
+                    node_overall_index += 1
+                    roi_xyz = roi_around_node(node_info, roi_radius_px)
+
                     synapse_cc_xyz, predictions_xyzc = \
                         detections_for_node(opPixelClassification, relabeler, node_info, roi_xyz)
-                    
-                    # Write to csv
+
                     write_synapses( csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc )
                     fout.flush()
 
-                    # Progress update (notify client)    
-                    node_overall_index += 1
-                    logger.debug("PROGRESS: node {}/{} ({:.1f}%) ({} detections)"
-                                 .format(node_overall_index, skeleton_node_count,
-                                         float(node_overall_index)/skeleton_node_count, relabeler.max_label))
+                timing_logger.debug( "NODE TIMER: {}".format( node_timer.seconds() ) )
 
-                    progress_callback( ProgressInfo( node_overall_index, 
-                                                     skeleton_node_count, 
-                                                     branch_index, 
-                                                     skeleton_branch_count, 
-                                                     node_index_in_branch, 
-                                                     branch_node_count,
-                                                     relabeler.max_label ) )
+                progress = 100*float(node_overall_index)/skeleton_node_count
+                logger.debug("PROGRESS: node {}/{} ({:.1f}%) ({} detections)"
+                             .format(node_overall_index, skeleton_node_count, progress, relabeler.max_label))
 
-                    timing_logger.debug( "NODE TIMER: {}".format( node_timer.seconds() ) )
-
+                # Progress: notify client
+                progress_callback( ProgressInfo( node_overall_index,
+                                                 skeleton_node_count,
+                                                 branch_index,
+                                                 skeleton_branch_count,
+                                                 node_index_in_branch,
+                                                 len(branch),
+                                                 relabeler.max_label ) )
     logger.info("DONE with skeleton.")
 
 
 # opThreshold is global so we don't waste time initializing it repeatedly.
 opThreshold = OpThresholdTwoLevels(graph=Graph())
-
 def detections_for_node(opPixelClassification, relabeler, node_info, roi_xyz):
+    """
+    Detect synapses within roi_xyz for the given node,
+    using the given instance of OpPixelClassification.
+
+    Synapse CC ids are "normalized" using the given SynapseSliceRelabeler,
+    so that repeated detections in consecutive slices are given consistent IDs.
+
+    Returns:
+        (synapse_cc_xyz, predictions_xyzc)
+    """
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
     logger.debug("skeleton point: {}".format( skeleton_coord ))
@@ -258,7 +265,15 @@ def append_lane(workflow, input_filepath, axisorder=None):
     role_index = 0 # raw data
     opDataSelection.DatasetGroup[-1][role_index].setValue( info )
 
+
 def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
+    """
+    Write the given image to an hdf5 file.
+    
+    If mode is "slices", create a new file for the image.
+    If mode is "stacked", create a new file with 'name' if it doesn't exist yet,
+    or append to it if it does.
+    """
     if not DEBUG_OUTPUT_DIR:
         return
 
@@ -300,6 +315,7 @@ def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
             del f['data'].attrs['slice-names']
             f['data'].attrs['slice-names'] = names
 
+
 class SynapseSliceRelabeler(object):
     def __init__(self):
         self.max_label = 0
@@ -312,10 +328,10 @@ class SynapseSliceRelabeler(object):
         we want it to have the same ID in both slices.
         
         This function will relabel the synapse labels in 'current_slice'
-        to be consistent with those in 'previous_slice'.
+        to be consistent with those in self.previous_slice.
         
         It is not assumed that the two slices are aligned:
-        the slices' positions are given by current_roi and previous_roi.
+        the slices' positions are given by current_roi and self.previous_roi.
         
         Returns:
             (relabeled_slice, new_max_label)
@@ -386,6 +402,10 @@ class SynapseSliceRelabeler(object):
 
 
 def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc):
+    """
+    Given a slice of synapse segmentation and prediction images,
+    append a CSV row (using the given writer) for each synapse detection in the slice. 
+    """
     synapseIds = set(synapse_cc_xyz.flat)
     synapseIds.remove(0)
     for sid in synapseIds:
@@ -482,6 +502,9 @@ def slicing(roi):
     return tuple( starmap( slice, zip(*roi) ) )
 
 def mkdir_p(path):
+    """
+    Like the bash command 'mkdir -p'
+    """
     try:
         os.makedirs(path)
     except OSError as exc:  # Python >2.5
