@@ -9,6 +9,7 @@ import argparse
 import tempfile
 import warnings
 from itertools import starmap
+from collections import OrderedDict
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
@@ -30,8 +31,10 @@ from ilastik.shell.headless.headlessShell import HeadlessShell
 from ilastik.applets.dataSelection import DataSelectionApplet
 from ilastik.applets.dataSelection.opDataSelection import DatasetInfo 
 from ilastik.applets.thresholdTwoLevels import OpThresholdTwoLevels
-from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
 from ilastik.applets.pixelClassification.opPixelClassification import OpPixelClassification
+from ilastik.applets.edgeTrainingWithMulticut.opEdgeTrainingWithMulticut import OpEdgeTrainingWithMulticut
+from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
+from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutWorkflow
 
 from skeleton_synapses.skeleton_utils import Skeleton, roi_around_node
 from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
@@ -58,31 +61,41 @@ ROI_RADIUS = 150
 
 INFINITE_DISTANCE = 99999.0 
 
-DEBUG_OUTPUT_DIR = ""   # Set this to enable debug images
+OUTPUT_IMAGE_DIR = ""   # Set this to enable output images
                         # WARNING: The contents of this directory will be DELETED ON STARTUP!
                         #          (E.g. don't set it to your home directory...)
 
-OUTPUT_COLUMNS = [ "synapse_id", "x_px", "y_px", "z_px", "size_px",
+OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
+                   "x_px", "y_px", "z_px", "size_px",
+                   "tile_x_px", "tile_y_px", "tile_index",
+                   "distance_to_node_px",
                    "detection_uncertainty",
-                   "distance",
-                   "node_id", "node_x_px", "node_y_px", "node_z_px",
-                   "node_connector_id", "node_connector_distance_nm",
-                   "node_connector_x_nm", "node_connector_y_nm", "node_connector_z_nm" ]
+                   "node_id", "node_x_px", "node_y_px", "node_z_px"]
 
 
 def main():
-    parser = argparse.ArgumentParser() 
+    global OUTPUT_IMAGE_DIR
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output-image-dir', required=False)
     parser.add_argument('skeleton_json')
     parser.add_argument('autocontext_project')
+    parser.add_argument('multicut_project')
     parser.add_argument('volume_description')
     parser.add_argument('output_file')
     parser.add_argument('progress_port', nargs='?', type=int, default=8000)
     
     args = parser.parse_args()
 
-    if DEBUG_OUTPUT_DIR:
-        shutil.rmtree(DEBUG_OUTPUT_DIR, ignore_errors=True)
-        mkdir_p(DEBUG_OUTPUT_DIR)
+    assert not OUTPUT_IMAGE_DIR or not args.output_image_dir, \
+        "OUTPUT_IMAGE_DIR already has a hard-coded value, so you can't set it with --output-image-dir"
+
+    if args.output_image_dir:
+        OUTPUT_IMAGE_DIR = args.output_image_dir
+
+    if OUTPUT_IMAGE_DIR:
+        shutil.rmtree(OUTPUT_IMAGE_DIR, ignore_errors=True)
+        mkdir_p(OUTPUT_IMAGE_DIR)
     
     # Read the volume resolution
     volume_description = TiledVolume.readDescription(args.volume_description)
@@ -94,18 +107,19 @@ def main():
     # Start a server for others to poll progress.
     progress_server = ProgressServer.create_and_start( "localhost", args.progress_port )
     try:
-        locate_synapses( args.autocontext_project, 
-                         args.volume_description, 
+        locate_synapses( args.autocontext_project,
+                         args.multicut_project,
+                         args.volume_description,
                          args.output_file,
                          skeleton,
                          ROI_RADIUS,
-                         
                          progress_callback=progress_server.update_progress )
     finally:
         progress_server.shutdown()
 
 
 def locate_synapses( autocontext_project_path, 
+                     multicut_project,
                      input_filepath,
                      output_path, 
                      skeleton,
@@ -117,23 +131,24 @@ def locate_synapses( autocontext_project_path,
     skeleton_branch_count = len(skeleton.branches)
     skeleton_node_count = sum( map(len, skeleton.branches) )
 
-    shell = open_project(autocontext_project_path)
-    assert isinstance(shell, HeadlessShell)
-    assert isinstance(shell.workflow, NewAutocontextWorkflowBase)
+    autocontext_shell = open_project(autocontext_project_path, init_logging=True)
+    assert isinstance(autocontext_shell, HeadlessShell)
+    assert isinstance(autocontext_shell.workflow, NewAutocontextWorkflowBase)
 
-    append_lane(shell.workflow, input_filepath, 'xyt')
+    append_lane(autocontext_shell.workflow, input_filepath, 'xyt')
 
     # We only use the final stage predictions
-    opPixelClassification = shell.workflow.pcApplets[-1].topLevelOperator
+    opPixelClassification = autocontext_shell.workflow.pcApplets[-1].topLevelOperator
 
     # Sanity checks
     assert isinstance(opPixelClassification, OpPixelClassification)
     assert opPixelClassification.Classifier.ready()
     assert opPixelClassification.HeadlessPredictionProbabilities[-1].meta.drange == (0.0, 1.0)
-    axes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.getAxisKeys()
-    assert axes == list('xytc'), \
-        "Project {} has unexpected axis ordering: {}".format(autocontext_project_path, axes)
 
+    multicut_shell = open_project(multicut_project, init_logging=False)
+    assert isinstance(multicut_shell, HeadlessShell)
+    assert isinstance(multicut_shell.workflow, EdgeTrainingWithMulticutWorkflow)
+    
     relabeler = SynapseSliceRelabeler()
 
     with open(output_path, "w") as fout:
@@ -146,11 +161,15 @@ def locate_synapses( autocontext_project_path,
                 with Timer() as node_timer:
                     node_overall_index += 1
                     roi_xyz = roi_around_node(node_info, roi_radius_px)
+                    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
+                    logger.debug("skeleton point: {}".format( skeleton_coord ))
 
-                    synapse_cc_xyz, predictions_xyzc = \
-                        detections_for_node(opPixelClassification, relabeler, node_info, roi_xyz)
+                    raw_xy = raw_data_for_node(opPixelClassification, node_info, roi_xyz)
+                    predictions_xyc = predictions_for_node(opPixelClassification, node_info, roi_xyz)
+                    synapse_cc_xy = labeled_synapses_for_node(relabeler, predictions_xyc, node_info, roi_xyz)
+                    segmentation_xy = segmentation_for_node(multicut_shell.workflow, raw_xy, predictions_xyc, node_info, roi_xyz)
 
-                    write_synapses( csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc )
+                    write_synapses( csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy, node_overall_index )
                     fout.flush()
 
                 timing_logger.debug( "NODE TIMER: {}".format( node_timer.seconds() ) )
@@ -170,50 +189,76 @@ def locate_synapses( autocontext_project_path,
     logger.info("DONE with skeleton.")
 
 
+def raw_data_for_node(opPixelClassification, node_info, roi_xyz):
+    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
+    raw_xyzc = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1]).wait()
+    raw_xyzc = vigra.taggedView(raw_xyzc, 'xyzc')
+    write_output_image(raw_xyzc[:,:,0,:], "raw", roi_name)
+    raw_xy = raw_xyzc[:,:,0,0]
+    return raw_xy
+
 # opThreshold is global so we don't waste time initializing it repeatedly.
 opThreshold = OpThresholdTwoLevels(graph=Graph())
-def detections_for_node(opPixelClassification, relabeler, node_info, roi_xyz):
+def predictions_for_node(opPixelClassification, node_info, roi_xyz):
     """
-    Detect synapses within roi_xyz for the given node,
-    using the given instance of OpPixelClassification.
-
-    Synapse CC ids are "normalized" using the given SynapseSliceRelabeler,
-    so that repeated detections in consecutive slices are given consistent IDs.
-
-    Returns:
-        (synapse_cc_xyz, predictions_xyzc)
+    Run classification on the given node with the given operator.
+    Returns: predictions_xyc
     """
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
     logger.debug("skeleton point: {}".format( skeleton_coord ))
-
-    # Raw image (for debug output)
-    raw_req = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1])
-    write_debug_image(raw_req, "raw", roi_name)
 
     # Predict
     num_classes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.shape[-1]
     roi_xyzc = np.append(roi_xyz, [[0],[num_classes]], axis=1)
     predictions_xyzc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_xyzc).wait()
     predictions_xyzc = vigra.taggedView( predictions_xyzc, "xyzc" )
-    write_debug_image(predictions_xyzc, "predictions", roi_name)
+    predictions_xyc = predictions_xyzc[:,:,0,:]
+    write_output_image(predictions_xyc, "predictions", roi_name)
+    return predictions_xyc
+
+def labeled_synapses_for_node(relabeler, predictions_xyc, node_info, roi_xyz):
+    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
+    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
+    logger.debug("skeleton point: {}".format( skeleton_coord ))
 
     # Threshold synapses
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
     opThreshold.SingleThreshold.setValue(0.5)
     opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0})
-    opThreshold.InputImage.setValue(predictions_xyzc)
+    opThreshold.MinSize.setValue(100)
+    opThreshold.MaxSize.setValue(5000) # This is overshooting a bit.
+    opThreshold.InputImage.setValue(predictions_xyc)
     opThreshold.InputImage.meta.drange = (0.0, 1.0)
-    synapse_cc_xyz = opThreshold.Output[:].wait()[...,0]
+    synapse_cc_xy = opThreshold.Output[:].wait()[...,0]
+    synapse_cc_xy = vigra.taggedView(synapse_cc_xy, 'xy')
     
     # Relabel for consistency with previous slice
-    synapse_cc_xyz = relabeler.normalize_synapse_ids(synapse_cc_xyz, roi_xyz)
-    write_debug_image(synapse_cc_xyz[...,None], "synapse_cc", roi_name)
-    
-    return synapse_cc_xyz, predictions_xyzc
+    synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
+    write_output_image(synapse_cc_xy[...,None], "synapse_cc", roi_name)
+    return synapse_cc_xy
+
+def segmentation_for_node(multicut_workflow, raw_xy, predictions_xyc, node_info, roi_xyz):
+    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
+    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
+    logger.debug("skeleton point: {}".format( skeleton_coord ))
+
+    opEdgeTrainingWithMulticut = multicut_workflow.edgeTrainingWithMulticutApplet.topLevelOperator
+    assert isinstance(opEdgeTrainingWithMulticut, OpEdgeTrainingWithMulticut)
+
+    opDataExport = multicut_workflow.dataExportApplet.topLevelOperator
+    opDataExport.OutputAxisOrder.setValue('xy')
+
+    role_data_dict = OrderedDict([ ("Raw Data", [ DatasetInfo(preloaded_array=raw_xy) ]),
+                                   ("Probabilities", [ DatasetInfo(preloaded_array=predictions_xyc) ])]) 
+    batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
+    assert len(batch_results) == 1
+    segmentation_xy = batch_results[0]
+    write_output_image(segmentation_xy[:,:,None], "segmentation", roi_name)
+    return segmentation_xy
 
 
-def open_project( project_path ):
+def open_project( project_path, init_logging=True ):
     """
     Open a project file and return the HeadlessShell instance.
     """
@@ -221,7 +266,7 @@ def open_project( project_path ):
     parsed_args.headless = True
     parsed_args.project = project_path
 
-    shell = ilastik_main.main( parsed_args )
+    shell = ilastik_main.main( parsed_args, init_logging=init_logging )
     return shell
 
 
@@ -266,7 +311,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
     opDataSelection.DatasetGroup[-1][role_index].setValue( info )
 
 
-def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
+def write_output_image(image_xyc, name, name_prefix="", mode="stacked"):
     """
     Write the given image to an hdf5 file.
     
@@ -274,26 +319,22 @@ def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
     If mode is "stacked", create a new file with 'name' if it doesn't exist yet,
     or append to it if it does.
     """
-    if not DEBUG_OUTPUT_DIR:
+    if not OUTPUT_IMAGE_DIR:
         return
-
-    if isinstance(image_xyzc, Request):
-        # Caller may provide a request instead of an image,
-        # in which case we need to execute it now.
-        image_xyzc = image_xyzc.wait()
-
-    image_xyzc = vigra.taggedView(image_xyzc, 'xyzc')
+    
+    # Insert a Z-axis
+    image_xyzc = vigra.taggedView(image_xyc[:,:,None,:], 'xyzc')
     
     if mode == "slices":
         slice_name = name
         if name_prefix:
             slice_name = name_prefix + '-' + name
-        with h5py.File(DEBUG_OUTPUT_DIR + "/" + slice_name + ".h5", 'w') as f:
+        with h5py.File(OUTPUT_IMAGE_DIR + "/" + slice_name + ".h5", 'w') as f:
             f.create_dataset("data", data=image_xyzc)
 
     elif mode == "stacked":    
         # Also append to an HDF5 stack
-        with h5py.File(DEBUG_OUTPUT_DIR + "/" + name + ".h5") as f:
+        with h5py.File(OUTPUT_IMAGE_DIR + "/" + name + ".h5") as f:
             if 'data' in f:
                 # Add room for another z-slice
                 z_size = f['data'].shape[2]
@@ -302,7 +343,7 @@ def write_debug_image(image_xyzc, name, name_prefix="", mode="stacked"):
                 maxshape = np.array(image_xyzc.shape)
                 maxshape[2] = 100000
                 f.create_dataset('data', shape=image_xyzc.shape, maxshape=tuple(maxshape), dtype=image_xyzc.dtype)
-                f['data'].attrs['axistags'] = vigra.defaultAxistags('xyzc').toJSON()
+                f['data'].attrs['axistags'] = image_xyzc.axistags.toJSON()
                 f['data'].attrs['slice-names'] = []
     
             # Write onto the end of the stack.
@@ -345,7 +386,7 @@ class SynapseSliceRelabeler(object):
             previous_roi_2d = previous_roi[:, :-1]
             intersection_roi, current_intersection_roi, prev_intersection_roi = intersection( current_roi_2d, previous_roi_2d )
     
-        current_unique_labels = np.unique(current_slice)
+        current_unique_labels = unique(current_slice)
         assert current_unique_labels[0] == 0, "This function assumes that not all pixels belong to detections."
         if len(current_unique_labels) == 1:
             # No objects in this slice.
@@ -381,7 +422,7 @@ class SynapseSliceRelabeler(object):
         relabel = np.zeros((max_current_object+1,), dtype=np.uint32)
         
         for cc in previous_slice_objects:
-            current_labels = np.unique(current_intersection_slice[prev_intersection_slice==cc].flat)
+            current_labels = unique(current_intersection_slice[prev_intersection_slice==cc])
             for cur_label in current_labels:
                 relabel[cur_label] = cc
         
@@ -401,26 +442,29 @@ class SynapseSliceRelabeler(object):
         return relabeled_slice
 
 
-def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xyz, predictions_xyzc):
+def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy, node_overall_index):
     """
     Given a slice of synapse segmentation and prediction images,
     append a CSV row (using the given writer) for each synapse detection in the slice. 
     """
-    synapseIds = set(synapse_cc_xyz.flat)
-    synapseIds.remove(0)
-    for sid in synapseIds:
+    # Node is always located in the middle pixel, by definition.
+    center_coord = np.array(segmentation_xy.shape) / 2
+    node_segment = segmentation_xy[tuple(center_coord)]
+    
+    synapseIds = unique(synapse_cc_xy)
+    for sid in synapseIds[1:]: # skip 0
         # find the pixel positions of this synapse
-        syn_pixel_coords = np.where(synapse_cc_xyz[...,0] == sid)
+        syn_pixel_coords = np.where(synapse_cc_xy == sid)
         synapse_size = len( syn_pixel_coords[0] )
         syn_average_x = np.average(syn_pixel_coords[0])+roi_xyz[0,0]
         syn_average_y = np.average(syn_pixel_coords[1])+roi_xyz[0,1]
 
-        # For now, we just compute euclidean distance to the node.
+        # For now, we just compute euclidean distance to the node (in pixels).
         distance_euclidean = euclidean((syn_average_x, syn_average_y), (node_info.x_px, node_info.y_px))
 
         # Determine average uncertainty
         # Get probabilities for this synapse's pixels
-        flat_predictions = predictions_xyzc[synapse_cc_xyz == sid]
+        flat_predictions = predictions_xyc[synapse_cc_xy == sid]
         # Sort along channel axis
         flat_predictions.sort(axis=-1)
         # What's the difference between the highest and second-highest class?
@@ -428,43 +472,30 @@ def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xyz, pre
         avg_certainty = np.mean(certainties)
         avg_uncertainty = 1.0 - avg_certainty
 
+        overlapping_segments = unique(segmentation_xy[synapse_cc_xy == sid])
+
         fields = {}
         fields["synapse_id"] = int(sid)
         fields["x_px"] = int(syn_average_x + 0.5)
         fields["y_px"] = int(syn_average_y + 0.5)
         fields["z_px"] = roi_xyz[0,2]
+
         fields["size_px"] = synapse_size
-        fields["distance"] = distance_euclidean
+        fields["distance_to_node_px"] = distance_euclidean
         fields["detection_uncertainty"] = avg_uncertainty
+        fields["overlaps_node_segment"] = {True: "true", False: "false"}[node_segment in overlapping_segments]
+
+        fields["tile_x_px"] = int(syn_average_x + 0.5) - node_info.x_px + center_coord[0]
+        fields["tile_y_px"] = int(syn_average_y + 0.5) - node_info.y_px + center_coord[1]
+        fields["tile_index"] = node_overall_index
+
         fields["node_id"] = node_info.id
         fields["node_x_px"] = node_info.x_px
         fields["node_y_px"] = node_info.y_px
         fields["node_z_px"] = node_info.z_px
 
-        try:
-            node_connectors = skeleton.node_to_connector[node_info.id]
-        except KeyError:
-            fields["node_connector_id"] = -1
-            fields["node_connector_distance_nm"] = INFINITE_DISTANCE
-            fields["node_connector_x_nm"] = -1
-            fields["node_connector_y_nm"] = -1
-            fields["node_connector_z_nm"] = -1
-        else:
-            # FIXME: This assumes that there's only one connector associated with this node!
-            connector_info = skeleton.connector_infos[node_connectors[0]]
-            
-            syn_x_nm = syn_average_x * skeleton.x_res
-            syn_y_nm = syn_average_x * skeleton.y_res
-            distance_nm = euclidean((syn_x_nm, syn_y_nm), (connector_info.x_nm, connector_info.y_nm))
-
-            fields["node_connector_id"] = connector_info.id
-            fields["node_connector_distance_nm"] = distance_nm
-            fields["node_connector_x_nm"] = connector_info.x_nm
-            fields["node_connector_y_nm"] = connector_info.y_nm
-            fields["node_connector_z_nm"] = connector_info.z_nm
-        
         assert len(fields) == len(OUTPUT_COLUMNS)
-        csv_writer.writerow( fields )                                                
+        csv_writer.writerow( fields )
 
 
 def intersection(roi_a, roi_b):
@@ -520,15 +551,18 @@ if __name__=="__main__":
 
         SKELETON_ID = '11524047'
 
-        DEBUG_OUTPUT_DIR = "/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/debug-images".format(SKELETON_ID) # See warning above. Be careful!
+        OUTPUT_IMAGE_DIR = "/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/debug-images".format(SKELETON_ID) # See warning above. Be careful!
 
         autocontext_project = '/magnetic/workspace/skeleton_synapses/projects-2017/autocontext.ilp'
-        volume_description = '/magnetic/workspace/skeleton_synapses/example/L1-CNS-description.json'
+        multicut_project = '/magnetic/workspace/skeleton_synapses/projects-2017/multicut/L1-CNS-multicut.ilp'
+        volume_description = '/magnetic/workspace/skeleton_synapses/projects-2017/L1-CNS-description.json'
         skeleton_json = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/tree_geometry.json'.format(SKELETON_ID)
         output_file = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/{}-detections.csv'.format(SKELETON_ID, SKELETON_ID)
 
+        #sys.argv.append('--output-image-dir={}'.format(OUTPUT_IMAGE_DIR))
         sys.argv.append(skeleton_json)
         sys.argv.append(autocontext_project)
+        sys.argv.append(multicut_project)
         sys.argv.append(volume_description)
         sys.argv.append(output_file)
 
