@@ -71,12 +71,19 @@ OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('skeleton_json', help="A 'treenode and connector geometry' file exported from CATMAID")
-    parser.add_argument('autocontext_project', help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
-    parser.add_argument('multicut_project', help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
-    parser.add_argument('volume_description', help="A file describing the CATMAID tile volume in the ilastik 'TiledVolume' json format.")
-    parser.add_argument('output_dir', help="A directory to drop the output files.")
-    parser.add_argument('progress_port', nargs='?', type=int, default=8000, help="An http server will be launched on the given port, which can be queried to give information about progress.")
+    parser.add_argument('skeleton_json',
+                        help="A 'treenode and connector geometry' file exported from CATMAID")
+    parser.add_argument('autocontext_project',
+                        help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
+    parser.add_argument('multicut_project',
+                        help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
+    parser.add_argument('volume_description',
+                        help="A file describing the CATMAID tile volume in the ilastik 'TiledVolume' json format.")
+    parser.add_argument('output_dir',
+                        help="A directory to drop the output files.")
+    parser.add_argument('progress_port', nargs='?', type=int, default=0,
+                        help="An http server will be launched on the given port (if nonzero), "
+                             "which can be queried to give information about progress.")
     
     args = parser.parse_args()
 
@@ -90,8 +97,12 @@ def main():
     output_dir = args.output_dir + "/{}".format(skeleton.skeleton_id)
     mkdir_p(output_dir)
     
-    # Start a server for others to poll progress.
-    progress_server = ProgressServer.create_and_start( "localhost", args.progress_port )
+    progress_server = None
+    progress_callback = lambda p: None
+    if args.progress_port:
+        # Start a server for others to poll progress.
+        progress_server = ProgressServer.create_and_start( "localhost", args.progress_port )
+        progress_callback = progress_server.update_progress
     try:
         locate_synapses( args.autocontext_project,
                          args.multicut_project,
@@ -99,9 +110,10 @@ def main():
                          output_dir,
                          skeleton,
                          ROI_RADIUS,
-                         progress_callback=progress_server.update_progress )
+                         progress_callback )
     finally:
-        progress_server.shutdown()
+        if progress_server:
+            progress_server.shutdown()
 
 
 def locate_synapses( autocontext_project_path, 
