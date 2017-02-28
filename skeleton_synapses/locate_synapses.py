@@ -1,9 +1,8 @@
 import os
 import sys
 import csv
-import errno    
+import errno
 import signal
-import shutil
 import logging
 import argparse
 import tempfile
@@ -22,7 +21,6 @@ from vigra.analysis import unique
 from scipy.spatial.distance import euclidean
 
 from lazyflow.graph import Graph
-from lazyflow.request import Request
 from lazyflow.utility import PathComponents, isUrl, Timer
 from lazyflow.utility.io_util import TiledVolume
 
@@ -52,12 +50,8 @@ timing_logger.setLevel(logging.INFO)
 
 signal.signal(signal.SIGINT, signal.SIG_DFL) # Quit on Ctrl+C
 
-
 MEMBRANE_CHANNEL = 0
 SYNAPSE_CHANNEL = 2
-
-# FIXME: This shouldn't be hard-coded.
-ROI_RADIUS = 150
 
 INFINITE_DISTANCE = 99999.0 
 
@@ -66,11 +60,13 @@ OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
                    "tile_x_px", "tile_y_px", "tile_index",
                    "distance_to_node_px",
                    "detection_uncertainty",
-                   "node_id", "node_x_px", "node_y_px", "node_z_px"]
+                   "node_id", "node_x_px", "node_y_px", "node_z_px" ]
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--roi-radius-px', default=150,
+                        help='The radius (in pixels) around each skeleton node to search for synapses')
     parser.add_argument('skeleton_json',
                         help="A 'treenode and connector geometry' file exported from CATMAID")
     parser.add_argument('autocontext_project',
@@ -109,7 +105,7 @@ def main():
                          args.volume_description,
                          output_dir,
                          skeleton,
-                         ROI_RADIUS,
+                         args.roi_radius_px,
                          progress_callback )
     finally:
         if progress_server:
