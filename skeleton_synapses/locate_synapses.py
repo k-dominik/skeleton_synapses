@@ -61,9 +61,7 @@ ROI_RADIUS = 150
 
 INFINITE_DISTANCE = 99999.0 
 
-OUTPUT_IMAGE_DIR = ""   # Set this to enable output images
-                        # WARNING: The contents of this directory will be DELETED ON STARTUP!
-                        #          (E.g. don't set it to your home directory...)
+OUTPUT_IMAGE_DIR = "" # Set this to enable output images
 
 OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
                    "x_px", "y_px", "z_px", "size_px",
@@ -90,11 +88,9 @@ def main():
     assert not OUTPUT_IMAGE_DIR or not args.output_image_dir, \
         "OUTPUT_IMAGE_DIR already has a hard-coded value, so you can't set it with --output-image-dir"
 
-    if args.output_image_dir:
-        OUTPUT_IMAGE_DIR = args.output_image_dir
+    OUTPUT_IMAGE_DIR = args.output_image_dir or OUTPUT_IMAGE_DIR
 
     if OUTPUT_IMAGE_DIR:
-        shutil.rmtree(OUTPUT_IMAGE_DIR, ignore_errors=True)
         mkdir_p(OUTPUT_IMAGE_DIR)
     
     # Read the volume resolution
@@ -311,6 +307,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
     opDataSelection.DatasetGroup[-1][role_index].setValue( info )
 
 
+initialized_files = set()
 def write_output_image(image_xyc, name, name_prefix="", mode="stacked"):
     """
     Write the given image to an hdf5 file.
@@ -319,6 +316,7 @@ def write_output_image(image_xyc, name, name_prefix="", mode="stacked"):
     If mode is "stacked", create a new file with 'name' if it doesn't exist yet,
     or append to it if it does.
     """
+    global initialized_files
     if not OUTPUT_IMAGE_DIR:
         return
     
@@ -332,9 +330,20 @@ def write_output_image(image_xyc, name, name_prefix="", mode="stacked"):
         with h5py.File(OUTPUT_IMAGE_DIR + "/" + slice_name + ".h5", 'w') as f:
             f.create_dataset("data", data=image_xyzc)
 
-    elif mode == "stacked":    
+    elif mode == "stacked":
+        # If the file exists from a previous (failed) run,
+        # delete it and start from scratch.
+        filepath = OUTPUT_IMAGE_DIR + "/" + name + ".h5"
+        if filepath not in initialized_files:
+            try:
+                os.unlink(filepath)
+            except OSError as ex:
+                if ex.errno != errno.ENOENT:
+                    raise
+            initialized_files.append(filepath)
+
         # Also append to an HDF5 stack
-        with h5py.File(OUTPUT_IMAGE_DIR + "/" + name + ".h5") as f:
+        with h5py.File(filepath) as f:
             if 'data' in f:
                 # Add room for another z-slice
                 z_size = f['data'].shape[2]
