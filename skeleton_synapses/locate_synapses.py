@@ -49,9 +49,6 @@ logging.getLogger("requests").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-timing_logger = logging.getLogger(__name__ + '.timing')
-timing_logger.setLevel(logging.INFO)
-
 signal.signal(signal.SIGINT, signal.SIG_DFL) # Quit on Ctrl+C
 
 MEMBRANE_CHANNEL = 0
@@ -148,6 +145,9 @@ def locate_synapses( autocontext_project_path,
     assert isinstance(multicut_shell, HeadlessShell)
     assert isinstance(multicut_shell.workflow, EdgeTrainingWithMulticutWorkflow)
     
+    timing_logger = logging.getLogger(__name__ + '.timing')
+    timing_logger.setLevel(logging.INFO)
+
     relabeler = SynapseSliceRelabeler()
 
     with open(output_path, "w") as fout:
@@ -171,7 +171,7 @@ def locate_synapses( autocontext_project_path,
                     write_synapses( csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy, node_overall_index )
                     fout.flush()
 
-                timing_logger.debug( "NODE TIMER: {}".format( node_timer.seconds() ) )
+                timing_logger.info( "NODE TIMER: {}".format( node_timer.seconds() ) )
 
                 progress = 100*float(node_overall_index)/skeleton_node_count
                 logger.debug("PROGRESS: node {}/{} ({:.1f}%) ({} detections)"
@@ -563,12 +563,14 @@ if __name__=="__main__":
 
         SKELETON_ID = '11524047'
 
-        output_dir = "/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/outputs"
+        L1_CNS = '/magnetic/workspace/skeleton_synapses/projects-2017/L1-CNS'
+        SKELETON_DIR = L1_CNS + '/skeletons/{}'.format(SKELETON_ID)
 
-        autocontext_project = '/magnetic/workspace/skeleton_synapses/projects-2017/autocontext.ilp'
-        multicut_project = '/magnetic/workspace/skeleton_synapses/projects-2017/multicut/L1-CNS-multicut.ilp'
-        volume_description = '/magnetic/workspace/skeleton_synapses/projects-2017/L1-CNS-description.json'
-        skeleton_json = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/tree_geometry.json'.format(SKELETON_ID)
+        autocontext_project = L1_CNS + '/projects/full-vol-autocontext.ilp'
+        multicut_project = L1_CNS + '/projects/multicut/L1-CNS-multicut.ilp'
+        volume_description = L1_CNS + '/L1-CNS-description.json'
+        skeleton_json = SKELETON_DIR + '/tree_geometry.json'
+        output_dir = SKELETON_DIR
 
         sys.argv.append(skeleton_json)
         sys.argv.append(autocontext_project)
