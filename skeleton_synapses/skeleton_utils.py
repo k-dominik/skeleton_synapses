@@ -73,7 +73,9 @@ def parse_skeleton_json(json_path, x_res, y_res, z_res):
         z_px = int(z_nm / float(z_res))
         
         node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )
-    return node_infos
+    
+    skeleton_id = json_data['skeletons'].keys()[0]
+    return skeleton_id, node_infos
 
 def parse_skeleton_ids( json_path ):
     """
@@ -184,9 +186,10 @@ def nodes_and_rois_for_tree(tree, radius):
 
 class Skeleton(object):
     def __init__(self, json_path, resolution_xyz):
-        node_infos = parse_skeleton_json( json_path, *resolution_xyz )        
+        skeleton_id, node_infos = parse_skeleton_json( json_path, *resolution_xyz )
         connector_infos_list, node_to_connector = parse_connectors(json_path)
         
+        self.skeleton_id = skeleton_id
         self.connector_infos = { info.id : info for info in connector_infos_list }
         self.node_to_connector = node_to_connector
 

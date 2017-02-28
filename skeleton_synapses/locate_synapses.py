@@ -61,8 +61,6 @@ ROI_RADIUS = 150
 
 INFINITE_DISTANCE = 99999.0 
 
-OUTPUT_IMAGE_DIR = "" # Set this to enable output images
-
 OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
                    "x_px", "y_px", "z_px", "size_px",
                    "tile_x_px", "tile_y_px", "tile_index",
@@ -72,33 +70,25 @@ OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
 
 
 def main():
-    global OUTPUT_IMAGE_DIR
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output-image-dir', required=False)
-    parser.add_argument('skeleton_json')
-    parser.add_argument('autocontext_project')
-    parser.add_argument('multicut_project')
-    parser.add_argument('volume_description')
-    parser.add_argument('output_file')
-    parser.add_argument('progress_port', nargs='?', type=int, default=8000)
+    parser.add_argument('skeleton_json', help="A 'treenode and connector geometry' file exported from CATMAID")
+    parser.add_argument('autocontext_project', help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
+    parser.add_argument('multicut_project', help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
+    parser.add_argument('volume_description', help="A file describing the CATMAID tile volume in the ilastik 'TiledVolume' json format.")
+    parser.add_argument('output_dir', help="A directory to drop the output files.")
+    parser.add_argument('progress_port', nargs='?', type=int, default=8000, help="An http server will be launched on the given port, which can be queried to give information about progress.")
     
     args = parser.parse_args()
 
-    assert not OUTPUT_IMAGE_DIR or not args.output_image_dir, \
-        "OUTPUT_IMAGE_DIR already has a hard-coded value, so you can't set it with --output-image-dir"
-
-    OUTPUT_IMAGE_DIR = args.output_image_dir or OUTPUT_IMAGE_DIR
-
-    if OUTPUT_IMAGE_DIR:
-        mkdir_p(OUTPUT_IMAGE_DIR)
-    
     # Read the volume resolution
     volume_description = TiledVolume.readDescription(args.volume_description)
     z_res, y_res, x_res = volume_description.resolution_zyx
     
     skeleton = Skeleton(args.skeleton_json, (x_res, y_res, z_res))
-        
+    
+    # Name the output directory with the skeleton id
+    output_dir = args.output_dir + "/{}".format(skeleton.skeleton_id)
+    mkdir_p(output_dir)
     
     # Start a server for others to poll progress.
     progress_server = ProgressServer.create_and_start( "localhost", args.progress_port )
@@ -106,7 +96,7 @@ def main():
         locate_synapses( args.autocontext_project,
                          args.multicut_project,
                          args.volume_description,
-                         args.output_file,
+                         output_dir,
                          skeleton,
                          ROI_RADIUS,
                          progress_callback=progress_server.update_progress )
@@ -117,13 +107,14 @@ def main():
 def locate_synapses( autocontext_project_path, 
                      multicut_project,
                      input_filepath,
-                     output_path, 
+                     output_dir, 
                      skeleton,
                      roi_radius_px,
                      progress_callback=lambda p: None ):
     """
     autocontext_project_path: Path to .ilp file.  Must use axis order 'xytc'.
-    """    
+    """
+    output_path = output_dir + "/skeleton-{}-synapses.csv".format(skeleton.skeleton_id)
     skeleton_branch_count = len(skeleton.branches)
     skeleton_node_count = sum( map(len, skeleton.branches) )
 
@@ -160,10 +151,10 @@ def locate_synapses( autocontext_project_path,
                     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
                     logger.debug("skeleton point: {}".format( skeleton_coord ))
 
-                    raw_xy = raw_data_for_node(opPixelClassification, node_info, roi_xyz)
-                    predictions_xyc = predictions_for_node(opPixelClassification, node_info, roi_xyz)
-                    synapse_cc_xy = labeled_synapses_for_node(relabeler, predictions_xyc, node_info, roi_xyz)
-                    segmentation_xy = segmentation_for_node(multicut_shell.workflow, raw_xy, predictions_xyc, node_info, roi_xyz)
+                    raw_xy = raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification)
+                    predictions_xyc = predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification)
+                    synapse_cc_xy = labeled_synapses_for_node(node_info, roi_xyz, output_dir, relabeler, predictions_xyc)
+                    segmentation_xy = segmentation_for_node(node_info, roi_xyz, output_dir, multicut_shell.workflow, raw_xy, predictions_xyc)
 
                     write_synapses( csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy, node_overall_index )
                     fout.flush()
@@ -185,17 +176,17 @@ def locate_synapses( autocontext_project_path,
     logger.info("DONE with skeleton.")
 
 
-def raw_data_for_node(opPixelClassification, node_info, roi_xyz):
+def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     raw_xyzc = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1]).wait()
     raw_xyzc = vigra.taggedView(raw_xyzc, 'xyzc')
-    write_output_image(raw_xyzc[:,:,0,:], "raw", roi_name)
+    write_output_image(output_dir, raw_xyzc[:,:,0,:], "raw", roi_name)
     raw_xy = raw_xyzc[:,:,0,0]
     return raw_xy
 
 # opThreshold is global so we don't waste time initializing it repeatedly.
 opThreshold = OpThresholdTwoLevels(graph=Graph())
-def predictions_for_node(opPixelClassification, node_info, roi_xyz):
+def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     """
     Run classification on the given node with the given operator.
     Returns: predictions_xyc
@@ -210,10 +201,10 @@ def predictions_for_node(opPixelClassification, node_info, roi_xyz):
     predictions_xyzc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_xyzc).wait()
     predictions_xyzc = vigra.taggedView( predictions_xyzc, "xyzc" )
     predictions_xyc = predictions_xyzc[:,:,0,:]
-    write_output_image(predictions_xyc, "predictions", roi_name)
+    write_output_image(output_dir, predictions_xyc, "predictions", roi_name)
     return predictions_xyc
 
-def labeled_synapses_for_node(relabeler, predictions_xyc, node_info, roi_xyz):
+def labeled_synapses_for_node(node_info, roi_xyz, output_dir, relabeler, predictions_xyc):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
     logger.debug("skeleton point: {}".format( skeleton_coord ))
@@ -231,10 +222,10 @@ def labeled_synapses_for_node(relabeler, predictions_xyc, node_info, roi_xyz):
     
     # Relabel for consistency with previous slice
     synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
-    write_output_image(synapse_cc_xy[...,None], "synapse_cc", roi_name)
+    write_output_image(output_dir, synapse_cc_xy[...,None], "synapse_cc", roi_name)
     return synapse_cc_xy
 
-def segmentation_for_node(multicut_workflow, raw_xy, predictions_xyc, node_info, roi_xyz):
+def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw_xy, predictions_xyc):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
     logger.debug("skeleton point: {}".format( skeleton_coord ))
@@ -250,7 +241,7 @@ def segmentation_for_node(multicut_workflow, raw_xy, predictions_xyc, node_info,
     batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
     assert len(batch_results) == 1
     segmentation_xy = batch_results[0]
-    write_output_image(segmentation_xy[:,:,None], "segmentation", roi_name)
+    write_output_image(output_dir, segmentation_xy[:,:,None], "segmentation", roi_name)
     return segmentation_xy
 
 
@@ -308,7 +299,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
 
 
 initialized_files = set()
-def write_output_image(image_xyc, name, name_prefix="", mode="stacked"):
+def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacked"):
     """
     Write the given image to an hdf5 file.
     
@@ -317,7 +308,7 @@ def write_output_image(image_xyc, name, name_prefix="", mode="stacked"):
     or append to it if it does.
     """
     global initialized_files
-    if not OUTPUT_IMAGE_DIR:
+    if not output_dir:
         return
     
     # Insert a Z-axis
@@ -327,20 +318,20 @@ def write_output_image(image_xyc, name, name_prefix="", mode="stacked"):
         slice_name = name
         if name_prefix:
             slice_name = name_prefix + '-' + name
-        with h5py.File(OUTPUT_IMAGE_DIR + "/" + slice_name + ".h5", 'w') as f:
+        with h5py.File(output_dir + "/" + slice_name + ".h5", 'w') as f:
             f.create_dataset("data", data=image_xyzc)
 
     elif mode == "stacked":
         # If the file exists from a previous (failed) run,
         # delete it and start from scratch.
-        filepath = OUTPUT_IMAGE_DIR + "/" + name + ".h5"
+        filepath = output_dir + "/" + name + ".h5"
         if filepath not in initialized_files:
             try:
                 os.unlink(filepath)
             except OSError as ex:
                 if ex.errno != errno.ENOENT:
                     raise
-            initialized_files.append(filepath)
+            initialized_files.add(filepath)
 
         # Also append to an HDF5 stack
         with h5py.File(filepath) as f:
@@ -560,19 +551,17 @@ if __name__=="__main__":
 
         SKELETON_ID = '11524047'
 
-        OUTPUT_IMAGE_DIR = "/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/debug-images".format(SKELETON_ID) # See warning above. Be careful!
+        output_dir = "/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/outputs"
 
         autocontext_project = '/magnetic/workspace/skeleton_synapses/projects-2017/autocontext.ilp'
         multicut_project = '/magnetic/workspace/skeleton_synapses/projects-2017/multicut/L1-CNS-multicut.ilp'
         volume_description = '/magnetic/workspace/skeleton_synapses/projects-2017/L1-CNS-description.json'
         skeleton_json = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/tree_geometry.json'.format(SKELETON_ID)
-        output_file = '/magnetic/workspace/skeleton_synapses/L1-CNS-skeletons/{}/{}-detections.csv'.format(SKELETON_ID, SKELETON_ID)
 
-        #sys.argv.append('--output-image-dir={}'.format(OUTPUT_IMAGE_DIR))
         sys.argv.append(skeleton_json)
         sys.argv.append(autocontext_project)
         sys.argv.append(multicut_project)
         sys.argv.append(volume_description)
-        sys.argv.append(output_file)
+        sys.argv.append(output_dir)
 
     sys.exit( main() )
