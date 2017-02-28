@@ -14,6 +14,10 @@ from collections import OrderedDict
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
 warnings.filterwarnings("ignore", message='.*second conversion method ignored.', category=RuntimeWarning)
 
+# Start with a NullHandler to avoid logging configuration
+# warnings before we actually configure logging below.
+logging.getLogger().addHandler(logging.NullHandler())
+
 import numpy as np
 import h5py
 import vigra
