@@ -12,7 +12,7 @@ from collections import OrderedDict
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
-warnings.filterwarnings("ignore", message='.*to-Python converter for .*opengm.*', category=RuntimeWarning)
+warnings.filterwarnings("ignore", message='.*second conversion method ignored.', category=RuntimeWarning)
 
 import numpy as np
 import h5py
