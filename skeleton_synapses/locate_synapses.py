@@ -559,17 +559,17 @@ def mkdir_p(path):
 if __name__=="__main__":
     DEBUGGING = False
     if DEBUGGING:
+        from os.path import dirname, abspath
         print "USING DEBUG ARGUMENTS"
 
         SKELETON_ID = '11524047'
-
-        L1_CNS = '/magnetic/workspace/skeleton_synapses/projects-2017/L1-CNS'
-        SKELETON_DIR = L1_CNS + '/skeletons/{}'.format(SKELETON_ID)
+        L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
+        SKELETON_DIR = L1_CNS + '/skeletons'.format(SKELETON_ID)
 
         autocontext_project = L1_CNS + '/projects/full-vol-autocontext.ilp'
         multicut_project = L1_CNS + '/projects/multicut/L1-CNS-multicut.ilp'
         volume_description = L1_CNS + '/L1-CNS-description.json'
-        skeleton_json = SKELETON_DIR + '/tree_geometry.json'
+        skeleton_json = SKELETON_DIR + '/{}/tree_geometry.json'.format(SKELETON_ID)
         output_dir = SKELETON_DIR
 
         sys.argv.append(skeleton_json)
