@@ -108,6 +108,16 @@ EXAMPLE:
   L1-CNS/skeletons
 
 
+VIEWING IMAGE OUTPUTS:
+
+The file 'L1-CNS/projects/debug-layers.ilp' is a preconfigured ilastik project file
+that makes it easy to view the hdf5 output produced by this script. 
+Just copy it into your skeleton output directory and then open it with ilastik:
+
+cp L1-CNS/projects/debug-layers.ilp L1-CNS/skeletons/11524047/
+./run_ilastik.sh --project=L1-CNS/skeletons/11524047/debug-layers.ilp
+
+
 ENVIRONMENT VARIABLES:
 
 By default, ilastik uses all CPU cores on the machine, and (potentially) as much RAM as the machine can offer.
