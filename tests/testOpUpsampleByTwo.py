@@ -1,9 +1,9 @@
-
-import vigra
 import numpy
-
+import vigra
 from lazyflow.graph import Graph
-from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo 
+
+from skeleton_synapses.OLD.opUpsampleByTwo import OpUpsampleByTwo
+
 
 class TestOpUpsampleByTwo(object):    
 

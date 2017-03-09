@@ -1,5 +1,5 @@
 import csv
-from skeleton_utils import CSV_FORMAT
+from skeleton_synapses.skeleton_utils import CSV_FORMAT
 
 def remove_csv_columns(input_path, output_path, columns_to_remove):
     with open(input_path, 'r') as f_in, open(output_path, 'w') as f_out:
