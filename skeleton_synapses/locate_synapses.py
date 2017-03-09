@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 import sys
 import csv
@@ -38,8 +39,8 @@ from ilastik.applets.edgeTrainingWithMulticut.opEdgeTrainingWithMulticut import 
 from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
 from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutWorkflow
 
-from skeleton_synapses.skeleton_utils import Skeleton, roi_around_node
-from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
+from skeleton_utils import Skeleton, roi_around_node
+from progress_server import ProgressInfo, ProgressServer
 from skeleton_utils import CSV_FORMAT
 
 # Import requests in advance so we can silence its log messages.
