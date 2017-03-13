@@ -10,6 +10,7 @@ import tempfile
 import warnings
 from itertools import starmap
 from collections import OrderedDict
+import json
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
@@ -42,6 +43,7 @@ from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutW
 from skeleton_utils import Skeleton, roi_around_node
 from progress_server import ProgressInfo, ProgressServer
 from skeleton_utils import CSV_FORMAT
+from catmaid_interface import CatmaidAPI
 
 # Import requests in advance so we can silence its log messages.
 import requests
@@ -69,14 +71,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--roi-radius-px', default=150,
                         help='The radius (in pixels) around each skeleton node to search for synapses')
-    parser.add_argument('skeleton_json',
-                        help="A 'treenode and connector geometry' file exported from CATMAID")
+    parser.add_argument('credentials_path',
+                        help='Path to a JSON file containing CATMAID credentials (see credentials.jsonEXAMPLE)')
+    parser.add_argument('stack_id',
+                        help='ID or name of image stack in CATMAID')
+    parser.add_argument('skeleton_id',
+                        help="A skeleton ID in CATMAID")
     parser.add_argument('autocontext_project',
                         help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
     parser.add_argument('multicut_project',
                         help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
-    parser.add_argument('volume_description',
-                        help="A file describing the CATMAID tile volume in the ilastik 'TiledVolume' json format.")
     parser.add_argument('output_dir',
                         help="A directory to drop the output files.")
     parser.add_argument('progress_port', nargs='?', type=int, default=0,
@@ -85,16 +89,29 @@ def main():
     
     args = parser.parse_args()
 
+    catmaid = CatmaidAPI.from_json(args.credentials_path)
+
+    volume_description_path = os.path.join(args.output_dir, 'description.json')
+    if not os.path.isfile(volume_description_path):
+        volume_description_dict = catmaid.get_stack_description(args.stack_id)
+        with open(volume_description_path, 'w') as f:
+            json.dump(volume_description_dict, f, sort_keys=True, indent=2)
+
     # Read the volume resolution
-    volume_description = TiledVolume.readDescription(args.volume_description)
+    volume_description = TiledVolume.readDescription(volume_description_path)
     z_res, y_res, x_res = volume_description.resolution_zyx
-    
-    skeleton = Skeleton(args.skeleton_json, (x_res, y_res, z_res))
-    
+
     # Name the output directory with the skeleton id
-    output_dir = args.output_dir + "/{}".format(skeleton.skeleton_id)
+    output_dir = args.output_dir + "/{}".format(args.skeleton_id)
     mkdir_p(output_dir)
-    
+
+    skeleton_dict = catmaid.get_treenode_and_connector_geometry(args.skeleton_id)
+    skeleton_path = os.path.join(output_dir, 'tree_geometry.json')
+    with open(skeleton_path, 'w') as f:
+        json.dump(skeleton_dict, f, sort_keys=True, indent=2)
+
+    skeleton = Skeleton(skeleton_path, (x_res, y_res, z_res))
+
     progress_server = None
     progress_callback = lambda p: None
     if args.progress_port:
@@ -104,7 +121,7 @@ def main():
     try:
         locate_synapses( args.autocontext_project,
                          args.multicut_project,
-                         args.volume_description,
+                         volume_description_path,
                          output_dir,
                          skeleton,
                          args.roi_radius_px,
@@ -112,7 +129,6 @@ def main():
     finally:
         if progress_server:
             progress_server.shutdown()
-
 
 def locate_synapses( autocontext_project_path, 
                      multicut_project,
@@ -565,7 +581,7 @@ if __name__=="__main__":
 
         SKELETON_ID = '11524047'
         L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
-        SKELETON_DIR = L1_CNS + '/skeletons'.format(SKELETON_ID)
+        SKELETON_DIR = L1_CNS + '/skeletons/{}'.format(SKELETON_ID)
 
         autocontext_project = L1_CNS + '/projects/full-vol-autocontext.ilp'
         multicut_project = L1_CNS + '/projects/multicut/L1-CNS-multicut.ilp'
