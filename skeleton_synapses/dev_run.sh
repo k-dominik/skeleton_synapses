@@ -1,6 +1,6 @@
 #!/bin/bash
 project_dir="../projects-2017/L1-CNS"
-cred_path="credentials_real.json"
+cred_path="credentials_dev.json"
 stack_id=1
 skel_id=11524047
 
