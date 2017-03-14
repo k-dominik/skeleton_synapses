@@ -6,19 +6,44 @@ import os
 import json
 from tqdm import trange
 import argparse
+import pandas as pd
 from catmaid_interface import CatmaidAPI
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 VOLUME_HDF5_PATH = os.path.join(ROOT, 'projects-2017/synapse_volume.hdf5')
-SKELETON_HDF5_PATH = os.path.join(ROOT, 'projects-2017/L1-CNS/skeletons/11524047/synapse_cc.h5')
+ILASTIK_OUTPUT_PATH = os.path.join(ROOT, 'projects-2017/L1-CNS/')
 
 DTYPE = np.uint32  # can only store up to 2^24
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
 CHUNK_SHAPE = (256, 256, 1)  # yxz
 
+CSV_HEADERS = [
+    'synapse_id',
+    'overlaps_node_segment',
+    'x_px',
+    'y_px',
+    'z_px',
+    'size_px',
+    'tile_x_px',
+    'tile_y_px',
+    'tile_index',
+    'distance_to_node_px',
+    'detection_uncertainty',
+    'node_id',
+    'node_x_px',
+    'node_y_px',
+    'node_z_px',
+    'skeleton_id'
+]
+
+
+CSV_DTYPE = np.float64
+
+
 REFRESH = True
+DEBUGGING = True
 
 
 def load_json(path):
@@ -98,12 +123,20 @@ def ensure_volume_exists(volume_path, description, force=False):
                 fillvalue=UNKNOWN_LABEL,
                 dtype=DTYPE
             )
-            volume.attrs['max_id'] = BACKGROUND_LABEL
             volume.attrs['unknown'] = UNKNOWN_LABEL
             volume.attrs['background'] = BACKGROUND_LABEL
 
+            synapse_info = volume_file.create_dataset(
+                'synapse_info',
+                shape=(0, len(CSV_HEADERS)),
+                dtype=CSV_DTYPE
+            )
+            synapse_info.attrs['headers'] = CSV_HEADERS
+            synapse_info.attrs['max_id'] = BACKGROUND_LABEL
 
-def main(credential_path, stack_id, skeleton_hdf5_path=SKELETON_HDF5_PATH, volume_hdf5_path=VOLUME_HDF5_PATH):
+
+# todo: deal with intersecting synapses (give them same ID)
+def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_PATH, volume_hdf5_path=VOLUME_HDF5_PATH):
     catmaid = CatmaidAPI.from_json(credential_path)
     description = catmaid.get_stack_description(stack_id)
 
@@ -113,12 +146,18 @@ def main(credential_path, stack_id, skeleton_hdf5_path=SKELETON_HDF5_PATH, volum
         REFRESH
     )
 
+    skeleton_hdf5_path = os.path.join(ilastik_output_path, str(skel_id), 'synapse_cc.h5')
+    skeleton_csv_path = os.path.join(
+        ilastik_output_path, str(skel_id), 'skeleton-{}-synapses.csv'.format(skel_id)
+    )
+
     with h5py.File(volume_hdf5_path, 'r+') as volume_file, h5py.File(skeleton_hdf5_path, 'r') as synapse_file:
         volume = volume_file['volume']
         synapses = synapse_file['data']
+        synapse_info = volume_file['synapse_info']
         offset = np.floor(synapses.shape[0] / 2)
 
-        max_id = volume.attrs['max_id']
+        max_id = synapse_info.attrs['max_id']
         next_max_id = max_id
         background_label = volume.attrs['background']
 
@@ -134,30 +173,64 @@ def main(credential_path, stack_id, skeleton_hdf5_path=SKELETON_HDF5_PATH, volum
             bbox = slice_boundaries[z_idx]
             volume[bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1], bbox['z']] = z_slice
 
-        volume.attrs['max_id'] = next_max_id
+        headers = synapse_info.attrs['headers']
+
+        df = pd.read_csv(skeleton_csv_path, delimiter='\t')
+        df['synapse_id'] += max_id
+        df['skeleton_id'] = pd.Series([int(skel_id)]*df.shape[0], index=df.index)
+        old_info = np.array(synapse_info)
+        new_info = df.astype(old_info.dtype).as_matrix()
+
+        del volume_file['synapse_info']  # todo: race condition
+        try:
+            del synapse_info
+        except NameError:
+            pass
+
+        synapse_info = volume_file.create_dataset(
+            'synapse_info',
+            dtype=old_info.dtype,
+            data=np.vstack((old_info, new_info))
+        )
+
+        synapse_info.attrs['headers'] = headers
+        synapse_info.attrs['max_id'] = next_max_id
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description="" +
-        "Commit the treenode-centered synapse label stack to the volume-sized label stack."
-    )
-    parser.add_argument(
-        'credential_path',
-        help='Path to a JSON file containing credentials for interacting with CATMAID'
-    )
-    parser.add_argument(
-        'stack_id',
-        help='ID or name of CATMAID image stack'
-    )
-    parser.add_argument(
-        'skeleton_path', default=SKELETON_HDF5_PATH,
-        help='Path to the HDF5 skeleton label stack'
-    )
-    parser.add_argument(
-        'volume_path', default=VOLUME_HDF5_PATH,
-        help='Path to the HDF5 volume-scale label stack'
-    )
-    args = parser.parse_args()
+    if DEBUGGING:
+        main(
+            'credentials_dev.json',
+            '1',
+            '11524047',
+            "../projects-2017/L1-CNS/skeletons",
+            "../projects-2017/L1-CNS/synapse_volume.hdf5"
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description="" +
+            "Commit the treenode-centered synapse label stack to the volume-sized label stack."
+        )
+        parser.add_argument(
+            'credential_path',
+            help='Path to a JSON file containing credentials for interacting with CATMAID'
+        )
+        parser.add_argument(
+            'stack_id',
+            help='ID or name of CATMAID image stack'
+        )
+        parser.add_argument(
+            'skel_id', default=VOLUME_HDF5_PATH,
+            help='ID of skeleton being segmented'
+        )
+        parser.add_argument(
+            'ilastik_output_path', default=ILASTIK_OUTPUT_PATH,
+            help="Path to ilastik's output directory"
+        )
+        parser.add_argument(
+            'volume_hdf5_path',
+            help='Path to the output HDF5 volume file'
+        )
+        args = parser.parse_args()
 
-    main(args.credential_path, args.stack_id, args.skeleton_path, args.volume_path)
+        main(args.credential_path, args.stack_id, args.skel_id, args.ilastik_output_path, args.volume_hdf5_path)
