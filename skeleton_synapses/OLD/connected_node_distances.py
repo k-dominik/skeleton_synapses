@@ -1,5 +1,5 @@
 import csv
-from skeleton_utils import parse_connectors, parse_skeleton_json, CSV_FORMAT
+from skeleton_synapses.skeleton_utils import parse_connectors, parse_skeleton_json, CSV_FORMAT
 
 def connected_node_distances( skeleton_json_path,
                               raw_detection_csv_path,

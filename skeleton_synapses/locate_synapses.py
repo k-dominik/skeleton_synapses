@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 import sys
 import csv
@@ -9,6 +10,7 @@ import tempfile
 import warnings
 from itertools import starmap
 from collections import OrderedDict
+import json
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
@@ -38,9 +40,10 @@ from ilastik.applets.edgeTrainingWithMulticut.opEdgeTrainingWithMulticut import 
 from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
 from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutWorkflow
 
-from skeleton_synapses.skeleton_utils import Skeleton, roi_around_node
-from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
+from skeleton_utils import Skeleton, roi_around_node
+from progress_server import ProgressInfo, ProgressServer
 from skeleton_utils import CSV_FORMAT
+from catmaid_interface import CatmaidAPI
 
 # Import requests in advance so we can silence its log messages.
 import requests
@@ -64,54 +67,49 @@ OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
                    "node_id", "node_x_px", "node_y_px", "node_z_px" ]
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--roi-radius-px', default=150,
-                        help='The radius (in pixels) around each skeleton node to search for synapses')
-    parser.add_argument('skeleton_json',
-                        help="A 'treenode and connector geometry' file exported from CATMAID")
-    parser.add_argument('autocontext_project',
-                        help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
-    parser.add_argument('multicut_project',
-                        help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
-    parser.add_argument('volume_description',
-                        help="A file describing the CATMAID tile volume in the ilastik 'TiledVolume' json format.")
-    parser.add_argument('output_dir',
-                        help="A directory to drop the output files.")
-    parser.add_argument('progress_port', nargs='?', type=int, default=0,
-                        help="An http server will be launched on the given port (if nonzero), "
-                             "which can be queried to give information about progress.")
-    
-    args = parser.parse_args()
+def main(credentials_path, stack_id, skeleton_id, autocontext_project, multicut_project, output_dir,
+         roi_radius_px=150, progress_port=None):
+
+    catmaid = CatmaidAPI.from_json(credentials_path)
+
+    volume_description_path = os.path.join(output_dir, 'description.json')
+    if not os.path.isfile(volume_description_path):
+        volume_description_dict = catmaid.get_stack_description(stack_id)
+        with open(volume_description_path, 'w') as f:
+            json.dump(volume_description_dict, f, sort_keys=True, indent=2)
 
     # Read the volume resolution
-    volume_description = TiledVolume.readDescription(args.volume_description)
+    volume_description = TiledVolume.readDescription(volume_description_path)
     z_res, y_res, x_res = volume_description.resolution_zyx
-    
-    skeleton = Skeleton(args.skeleton_json, (x_res, y_res, z_res))
-    
+
     # Name the output directory with the skeleton id
-    output_dir = args.output_dir + "/{}".format(skeleton.skeleton_id)
+    output_dir += "/{}".format(skeleton_id)
     mkdir_p(output_dir)
-    
+
+    skeleton_dict = catmaid.get_treenode_and_connector_geometry(skeleton_id)
+    skeleton_path = os.path.join(output_dir, 'tree_geometry.json')
+    with open(skeleton_path, 'w') as f:
+        json.dump(skeleton_dict, f, sort_keys=True, indent=2)
+
+    skeleton = Skeleton(skeleton_path, (x_res, y_res, z_res))
+
     progress_server = None
     progress_callback = lambda p: None
-    if args.progress_port:
+    if progress_port is not None:
         # Start a server for others to poll progress.
-        progress_server = ProgressServer.create_and_start( "localhost", args.progress_port )
+        progress_server = ProgressServer.create_and_start( "localhost", progress_port )
         progress_callback = progress_server.update_progress
     try:
-        locate_synapses( args.autocontext_project,
-                         args.multicut_project,
-                         args.volume_description,
+        locate_synapses( autocontext_project,
+                         multicut_project,
+                         volume_description_path,
                          output_dir,
                          skeleton,
-                         args.roi_radius_px,
+                         roi_radius_px,
                          progress_callback )
     finally:
         if progress_server:
             progress_server.shutdown()
-
 
 def locate_synapses( autocontext_project_path, 
                      multicut_project,
@@ -560,22 +558,40 @@ if __name__=="__main__":
     DEBUGGING = False
     if DEBUGGING:
         from os.path import dirname, abspath
-        print "USING DEBUG ARGUMENTS"
+        print("USING DEBUG ARGUMENTS")
 
         SKELETON_ID = '11524047'
         L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
-        SKELETON_DIR = L1_CNS + '/skeletons'.format(SKELETON_ID)
+        SKELETON_DIR = L1_CNS + '/skeletons/{}'.format(SKELETON_ID)
 
         autocontext_project = L1_CNS + '/projects/full-vol-autocontext.ilp'
         multicut_project = L1_CNS + '/projects/multicut/L1-CNS-multicut.ilp'
-        volume_description = L1_CNS + '/L1-CNS-description.json'
-        skeleton_json = SKELETON_DIR + '/{}/tree_geometry.json'.format(SKELETON_ID)
         output_dir = SKELETON_DIR
+        args_list = ['credentials_dev.json', 1, SKELETON_ID, autocontext_project, multicut_project, output_dir]
+    else:
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--roi-radius-px', default=150,
+                            help='The radius (in pixels) around each skeleton node to search for synapses')
+        parser.add_argument('credentials_path',
+                            help='Path to a JSON file containing CATMAID credentials (see credentials.jsonEXAMPLE)')
+        parser.add_argument('stack_id',
+                            help='ID or name of image stack in CATMAID')
+        parser.add_argument('skeleton_id',
+                            help="A skeleton ID in CATMAID")
+        parser.add_argument('autocontext_project',
+                            help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
+        parser.add_argument('multicut_project',
+                            help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
+        parser.add_argument('output_dir',
+                            help="A directory to drop the output files.")
+        parser.add_argument('progress_port', nargs='?', type=int, default=0,
+                            help="An http server will be launched on the given port (if nonzero), "
+                                 "which can be queried to give information about progress.")
 
-        sys.argv.append(skeleton_json)
-        sys.argv.append(autocontext_project)
-        sys.argv.append(multicut_project)
-        sys.argv.append(volume_description)
-        sys.argv.append(output_dir)
+        args = parser.parse_args()
+        args_list = [
+            args.credentials_path, args.stack_id, args.skeleton_id, args.autocontext_project, args.multicut_project,
+            args.output_dir, args.roi_radius_px, args.progress_port
+        ]
 
-    sys.exit( main() )
+    sys.exit( main(*args_list) )

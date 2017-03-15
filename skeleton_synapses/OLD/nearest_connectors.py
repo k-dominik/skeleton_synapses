@@ -4,7 +4,7 @@ import scipy.spatial.distance
 
 from lazyflow.roi import getIntersectingBlocks
 from lazyflow.utility.io import TiledVolume
-from skeleton_utils import parse_connectors, ConnectorInfo, CSV_FORMAT
+from skeleton_synapses.skeleton_utils import parse_connectors, ConnectorInfo, CSV_FORMAT
 
 class ConnectorStore(object):
     """

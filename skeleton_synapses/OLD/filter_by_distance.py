@@ -1,5 +1,5 @@
 import csv
-from skeleton_utils import CSV_FORMAT
+from skeleton_synapses.skeleton_utils import CSV_FORMAT
 
 def filter_by_distance( synapse_detections_csv, output_csv, max_distance, column_name ):
     with open(synapse_detections_csv, 'r') as detections_file, \

@@ -2,7 +2,7 @@ import os
 import csv
 import numpy
 import matplotlib.pyplot as plt
-from skeleton_utils import CSV_FORMAT
+from skeleton_synapses.skeleton_utils import CSV_FORMAT
 
 def distance_histogram( detection_csv_path, column, include_negative_distances=False ):
     distances = []

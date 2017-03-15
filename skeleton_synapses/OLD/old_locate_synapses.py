@@ -1,35 +1,33 @@
-import os
 import collections
-import numpy
 import csv
-from functools import partial
-import vigra
-from vigra import graphs
+import os
 import time
-import scipy
+from functools import partial
 
 import ilastik_main
-from ilastik.workflows.pixelClassification import PixelClassificationWorkflow
+import numpy
+import scipy
+import vigra
 from ilastik.applets.dataSelection import DataSelectionApplet
+from ilastik.applets.dataSelection.opDataSelection import DatasetInfo
 from ilastik.applets.thresholdTwoLevels import OpThresholdTwoLevels
-from ilastik.applets.dataSelection.opDataSelection import DatasetInfo 
-from lazyflow.operators.vigraOperators import OpPixelFeaturesPresmoothed
+from ilastik.workflows.pixelClassification import PixelClassificationWorkflow
 from lazyflow.graph import Graph
-from lazyflow.utility import PathComponents, isUrl, Timer
-
-from lazyflow.roi import roiToSlice, getIntersection
-from lazyflow.utility.io import TiledVolume
+from lazyflow.operators.vigraOperators import OpPixelFeaturesPresmoothed
 from lazyflow.request import Request, RequestPool, RequestLock
-
+from lazyflow.roi import roiToSlice, getIntersection
+from lazyflow.utility import PathComponents, isUrl, Timer
+from lazyflow.utility.io import TiledVolume
 from skeleton_synapses.opCombinePredictions import OpCombinePredictions
 from skeleton_synapses.opNodewiseCache import OpNodewiseCache
-from skeleton_synapses.opUpsampleByTwo import OpUpsampleByTwo
+from vigra import graphs
+
+from skeleton_synapses.OLD.opUpsampleByTwo import OpUpsampleByTwo
+from skeleton_synapses.progress_server import ProgressInfo
+from skeleton_synapses.skeleton_utils import CSV_FORMAT
 from skeleton_synapses.skeleton_utils import parse_skeleton_swc, parse_skeleton_json, \
                                              construct_tree, nodes_and_rois_for_tree, \
                                              parse_connectors
-                                             
-from skeleton_synapses.progress_server import ProgressInfo, ProgressServer
-from skeleton_utils import CSV_FORMAT
 
 THRESHOLD = 5
 MEMBRANE_CHANNEL = 0
@@ -50,7 +48,6 @@ import lazyflow.request
 lazyflow.request.Request.reset_thread_pool(0)
 
 # Import requests in advance so we can silence its log messages.
-import requests
 logging.getLogger("requests").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
