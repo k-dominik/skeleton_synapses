@@ -57,9 +57,11 @@ signal.signal(signal.SIGINT, signal.SIG_DFL) # Quit on Ctrl+C
 MEMBRANE_CHANNEL = 0
 SYNAPSE_CHANNEL = 2
 
-INFINITE_DISTANCE = 99999.0 
+INFINITE_DISTANCE = 99999.0
 
-OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
+PROJECT_NAME = 'L1-CNS'  # todo: remove dependency on this
+
+OUTPUT_COLUMNS = [ "synapse_id", "skeleton_id", "overlaps_node_segment",
                    "x_px", "y_px", "z_px", "size_px",
                    "tile_x_px", "tile_y_px", "tile_index",
                    "distance_to_node_px",
@@ -67,14 +69,13 @@ OUTPUT_COLUMNS = [ "synapse_id", "overlaps_node_segment",
                    "node_id", "node_x_px", "node_y_px", "node_z_px" ]
 
 
-def main(credentials_path, stack_id, skeleton_id, autocontext_project, multicut_project, output_dir,
-         roi_radius_px=150, progress_port=None):
+def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None):
 
     catmaid = CatmaidAPI.from_json(credentials_path)
 
-    volume_description_path = os.path.join(output_dir, 'description.json')
+    volume_description_path = os.path.join(project_dir, PROJECT_NAME + '-description-NO-OFFSET.json')
     if not os.path.isfile(volume_description_path):
-        volume_description_dict = catmaid.get_stack_description(stack_id)
+        volume_description_dict = catmaid.get_stack_description(stack_id, include_offset=False)
         with open(volume_description_path, 'w') as f:
             json.dump(volume_description_dict, f, sort_keys=True, indent=2)
 
@@ -83,11 +84,11 @@ def main(credentials_path, stack_id, skeleton_id, autocontext_project, multicut_
     z_res, y_res, x_res = volume_description.resolution_zyx
 
     # Name the output directory with the skeleton id
-    output_dir += "/{}".format(skeleton_id)
-    mkdir_p(output_dir)
+    skel_output_dir = os.path.join(project_dir, 'skeletons', skeleton_id)
+    mkdir_p(skel_output_dir)
 
     skeleton_dict = catmaid.get_treenode_and_connector_geometry(skeleton_id)
-    skeleton_path = os.path.join(output_dir, 'tree_geometry.json')
+    skeleton_path = os.path.join(skel_output_dir, 'tree_geometry.json')
     with open(skeleton_path, 'w') as f:
         json.dump(skeleton_dict, f, sort_keys=True, indent=2)
 
@@ -100,10 +101,13 @@ def main(credentials_path, stack_id, skeleton_id, autocontext_project, multicut_
         progress_server = ProgressServer.create_and_start( "localhost", progress_port )
         progress_callback = progress_server.update_progress
     try:
+        autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
+        multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
+
         locate_synapses( autocontext_project,
                          multicut_project,
                          volume_description_path,
-                         output_dir,
+                         skel_output_dir,
                          skeleton,
                          roi_radius_px,
                          progress_callback )
@@ -111,17 +115,17 @@ def main(credentials_path, stack_id, skeleton_id, autocontext_project, multicut_
         if progress_server:
             progress_server.shutdown()
 
-def locate_synapses( autocontext_project_path, 
-                     multicut_project,
-                     input_filepath,
-                     output_dir, 
-                     skeleton,
-                     roi_radius_px,
-                     progress_callback=lambda p: None ):
+def locate_synapses(autocontext_project_path,
+                    multicut_project,
+                    input_filepath,
+                    skel_output_dir,
+                    skeleton,
+                    roi_radius_px,
+                    progress_callback=lambda p: None):
     """
     autocontext_project_path: Path to .ilp file.  Must use axis order 'xytc'.
     """
-    output_path = output_dir + "/skeleton-{}-synapses.csv".format(skeleton.skeleton_id)
+    output_path = skel_output_dir + "/skeleton-{}-synapses.csv".format(skeleton.skeleton_id)
     skeleton_branch_count = len(skeleton.branches)
     skeleton_node_count = sum( map(len, skeleton.branches) )
 
@@ -161,10 +165,10 @@ def locate_synapses( autocontext_project_path,
                     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
                     logger.debug("skeleton point: {}".format( skeleton_coord ))
 
-                    raw_xy = raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification)
-                    predictions_xyc = predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification)
-                    synapse_cc_xy = labeled_synapses_for_node(node_info, roi_xyz, output_dir, relabeler, predictions_xyc)
-                    segmentation_xy = segmentation_for_node(node_info, roi_xyz, output_dir, multicut_shell.workflow, raw_xy, predictions_xyc)
+                    raw_xy = raw_data_for_node(node_info, roi_xyz, skel_output_dir, opPixelClassification)
+                    predictions_xyc = predictions_for_node(node_info, roi_xyz, skel_output_dir, opPixelClassification)
+                    synapse_cc_xy = labeled_synapses_for_node(node_info, roi_xyz, skel_output_dir, relabeler, predictions_xyc)
+                    segmentation_xy = segmentation_for_node(node_info, roi_xyz, skel_output_dir, multicut_shell.workflow, raw_xy, predictions_xyc)
 
                     write_synapses( csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy, node_overall_index )
                     fout.flush()
@@ -493,6 +497,7 @@ def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, pred
         fields["size_px"] = synapse_size
         fields["distance_to_node_px"] = distance_euclidean
         fields["detection_uncertainty"] = avg_uncertainty
+        fields["skeleton_id"] = int(skeleton.skeleton_id)
         fields["overlaps_node_segment"] = {True: "true", False: "false"}[node_segment in overlapping_segments]
 
         fields["tile_x_px"] = int(syn_average_x + 0.5) - node_info.x_px + center_coord[0]
@@ -562,12 +567,12 @@ if __name__=="__main__":
 
         SKELETON_ID = '11524047'
         L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
-        SKELETON_DIR = L1_CNS + '/skeletons/{}'.format(SKELETON_ID)
-
-        autocontext_project = L1_CNS + '/projects/full-vol-autocontext.ilp'
-        multicut_project = L1_CNS + '/projects/multicut/L1-CNS-multicut.ilp'
-        output_dir = SKELETON_DIR
-        args_list = ['credentials_dev.json', 1, SKELETON_ID, autocontext_project, multicut_project, output_dir]
+        # SKELETON_DIR = L1_CNS + '/skeletons/{}'.format(SKELETON_ID)
+        #
+        # autocontext_project = L1_CNS + '/projects/full-vol-autocontext.ilp'
+        # multicut_project = L1_CNS + '/projects/multicut/L1-CNS-multicut.ilp'
+        # output_dir = SKELETON_DIR
+        args_list = ['credentials_dev.json', 1, SKELETON_ID, L1_CNS]
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('--roi-radius-px', default=150,
@@ -578,20 +583,21 @@ if __name__=="__main__":
                             help='ID or name of image stack in CATMAID')
         parser.add_argument('skeleton_id',
                             help="A skeleton ID in CATMAID")
-        parser.add_argument('autocontext_project',
-                            help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
-        parser.add_argument('multicut_project',
-                            help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
-        parser.add_argument('output_dir',
-                            help="A directory to drop the output files.")
+        # parser.add_argument('autocontext_project',
+        #                     help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
+        # parser.add_argument('multicut_project',
+        #                     help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
+        parser.add_argument('project_dir',
+                            help="A directory containing project files in ./projects, and which output files will be "
+                                 "dropped into.")
         parser.add_argument('progress_port', nargs='?', type=int, default=0,
                             help="An http server will be launched on the given port (if nonzero), "
                                  "which can be queried to give information about progress.")
 
         args = parser.parse_args()
         args_list = [
-            args.credentials_path, args.stack_id, args.skeleton_id, args.autocontext_project, args.multicut_project,
-            args.output_dir, args.roi_radius_px, args.progress_port
+            args.credentials_path, args.stack_id, args.skeleton_id, args.project_dir, args.roi_radius_px,
+            args.progress_port
         ]
 
     sys.exit( main(*args_list) )
