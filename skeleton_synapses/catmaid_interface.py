@@ -1,7 +1,6 @@
 import requests
 import json
 from collections import defaultdict
-import math
 
 NEUROCEAN_CONSTANTS = {
     'skel_id': 11524047,
@@ -58,6 +57,24 @@ def extend_slices(broken_slices):
     return [[key, value] for key, value in sorted(d.items(), key=lambda x: x[0])]
 
 
+def make_url(base_url, *args):
+    """
+    Given any number of URL components, join them as if they were a path regardless of trailing and prepending slashes
+
+    >>> make_url('google.com', 'mail')
+    'google.com/mail'
+
+    >>> make_url('google.com/', '/mail')
+    'google.com/mail'
+    """
+    for arg in args:
+        joiner = '' if base_url.endswith('/') else '/'
+        relative = arg[1:] if arg.startswith('/') else arg
+        base_url = requests.compat.urljoin(base_url + joiner, relative)
+
+    return base_url
+
+
 class CatmaidAPI(object):
     """
     See catpy [1]_ for alternative implementation/ inspiration
@@ -83,26 +100,45 @@ class CatmaidAPI(object):
             r.headers['X-Authorization'] = 'Token {}'.format(self.token)
             return super(CatmaidAPI.CatmaidAuthToken, self).__call__(r)
 
-    def _make_url(self, relative):
-        joiner = '' if self.base_url.endswith('/') else '/'
-        relative = relative[1:] if relative.startswith('/') else relative
-        return requests.compat.urljoin(self.base_url + joiner, relative)
+    def _make_catmaid_url(self, *args):
+        return make_url(self.base_url, *args)
 
-    def _get_project_id(self, project_title):
-        projects = self.get('projects')
-        for project in projects:
-            if project_title == project['title']:
-                return project['id']
-        raise ValueError('Project with title {} does not exist'.format(repr(project_title)))
+    def _get_project_id(self, project_id_or_title):
+        try:
+            return int(project_id_or_title)
+        except ValueError:
+            projects = self.get('projects')
+            for project in projects:
+                if project_id_or_title == project['title']:
+                    return project['id']
+            raise ValueError('Project with title {} does not exist'.format(repr(project_id_or_title)))
 
     def set_project(self, project_id_or_title):
-        try:
-            self.project_id = int(project_id_or_title)
-        except ValueError:
-            self.project_id = self._get_project_id(project_id_or_title)
+        self.project_id = self._get_project_id(project_id_or_title)
 
     @classmethod
     def from_json(cls, path, with_project_id=True):
+        """
+        Return a CatmaidAPI instance with credentials matching those in a JSON file. Should have the properties:
+
+        base_url, token, auth_name, auth_pass
+
+        And optionally
+
+        project_id
+
+        Parameters
+        ----------
+        path : str
+            Path to the JSON credentials file
+        with_project_id : bool
+            Whether to look for the `project_id` field (it can be set later on the returned CatmaidAPI instance)
+
+        Returns
+        -------
+        CatmaidAPI
+            Authenticated instance of the API
+        """
         with open(path) as f:
             credentials = json.load(f)
         return cls(
@@ -173,7 +209,7 @@ class CatmaidAPI(object):
         dict or str
             Data returned from CATMAID: type depends on the 'raw' parameter.
         """
-        url = self._make_url(relative_url)
+        url = self._make_catmaid_url(relative_url)
         data = data or dict()
         if method.upper() == 'GET':
             response = requests.get(url, params=data, auth=self.auth_token)
@@ -221,12 +257,15 @@ class CatmaidAPI(object):
 
         return {"skeletons": {str(skeleton_id): skeleton}}
 
-    def _get_stack_id(self, stack_title):
-        stacks = self.get('{}/stacks'.format(self.project_id))
-        for stack in stacks:
-            if stack['title'] == stack_title:
-                return stack['id']
-        raise ValueError('Stack {} not found for project with ID {}'.format(repr(stack_title), self.project_id))
+    def _get_stack_id(self, stack_id_or_title):
+        try:
+            return int(stack_id_or_title)
+        except ValueError:
+            stacks = self.get('{}/stacks'.format(self.project_id))
+            for stack in stacks:
+                if stack['title'] == stack_id_or_title:
+                    return stack['id']
+            raise ValueError('Stack {} not found for project with ID {}'.format(repr(stack_id_or_title), self.project_id))
 
     def get_stack_description(self, stack_id_or_title, include_offset=True, cache_tiles=False):
         """
@@ -248,10 +287,7 @@ class CatmaidAPI(object):
         dict
             Information required by ilastik for getting images from CATMAID
         """
-        try:
-            stack_id = int(stack_id_or_title)
-        except ValueError:
-            stack_id = self._get_stack_id(stack_id_or_title)
+        stack_id = self._get_stack_id(stack_id_or_title)
 
         stack_info = self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
         stack_mirror = stack_info['mirrors'][0]
@@ -274,7 +310,7 @@ class CatmaidAPI(object):
             "resolution_zyx": [stack_info['resolution'][axis] for axis in 'zyx'],
             "tile_shape_2d_yx": [stack_mirror['tile_height'], stack_mirror['tile_width']],
 
-            "tile_url_format": requests.compat.urljoin(  # probably not correct for all image bases
+            "tile_url_format": make_url(  # probably not correct for all image bases
                 stack_mirror['image_base'],
                 "{z_index}/0/{y_index}_{x_index}.jpg"
             ),
@@ -285,6 +321,32 @@ class CatmaidAPI(object):
 
             "extend_slices": extend_slices(stack_info['broken_slices'])
         }
+
+    def get_stack_project_translation(self, stack_id_or_title):
+        """
+        Get the pixel offsets of the project from the stack.
+
+        Parameters
+        ----------
+        stack_id_or_title : int or str
+            Integer ID or string title of the image stack in CATMAID
+
+        Returns
+        -------
+        dict
+            Dict of x, y, z offsets of project from stack, in pixels (i.e. the offsets detailed in the project
+            stacks admin panel, divided by the resolution, multiplied by -1)
+        """
+        stack_id = self._get_stack_id(stack_id_or_title)
+        stack_info = self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
+
+        return {axis: -int(stack_info['translation'][axis]/stack_info['resolution'][axis]) for axis in 'zyx'}
+
+    def get_project_title(self, stack_id_or_title):
+        stack_id = self._get_stack_id(stack_id_or_title)
+        stack_info = self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
+
+        return stack_info['ptitle']
 
 
 if __name__ == '__main__':
