@@ -21,6 +21,7 @@ CHUNK_SHAPE = (256, 256, 1)  # yxz
 
 CSV_HEADERS = [
     'synapse_id',
+    'skeleton_id'
     'overlaps_node_segment',
     'x_px',
     'y_px',
@@ -35,7 +36,6 @@ CSV_HEADERS = [
     'node_x_px',
     'node_y_px',
     'node_z_px',
-    'skeleton_id'
 ]
 
 
@@ -74,16 +74,16 @@ def parse_slice_name(s):
     return int(idx), {item[0]: int(item[1:]) for item in name.split('-')}
 
 
-def center_to_bounding_box(center, offset):
+def topleft_to_bounding_box(center, side_length):
     """
     Assumes z-depth of 1 and square bounding box
 
     Parameters
     ----------
     center : dict
-        x, y, z coords of the center of the tile
-    offset : int
-        aka radius of box, x or y distance from center to side/ top
+        x, y, z coords of the top left corner of the tile
+    side_length : int
+        side length of bounding box
 
     Returns
     -------
@@ -91,8 +91,8 @@ def center_to_bounding_box(center, offset):
         {'x': (min, max), 'y': (min, max), 'z': number} boundaries
     """
     return {
-        'x': (int(center['x'] - offset), int(center['x'] + offset + 1)),
-        'y': (int(center['y'] - offset), int(center['y'] + offset + 1)),
+        'x': (int(center['x']), int(center['x'] + side_length)),
+        'y': (int(center['y']), int(center['y'] + side_length)),
         'z': int(center['z'])
     }
 
@@ -155,14 +155,13 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
         volume = volume_file['volume']
         synapses = synapse_file['data']
         synapse_info = volume_file['synapse_info']
-        offset = np.floor(synapses.shape[0] / 2)
 
         max_id = synapse_info.attrs['max_id']
         next_max_id = max_id
         background_label = volume.attrs['background']
 
         slice_centers = dict(parse_slice_name(s) for s in synapses.attrs['slice-names'])
-        slice_boundaries = {key: center_to_bounding_box(value, offset) for key, value in slice_centers.items()}
+        slice_boundaries = {key: topleft_to_bounding_box(value, synapses.shape[0]) for key, value in slice_centers.items()}
 
         for z_idx in trange(synapses.shape[2]):
             z_slice = np.array(synapses[:, :, z_idx, 0])
@@ -177,7 +176,6 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
 
         df = pd.read_csv(skeleton_csv_path, delimiter='\t')
         df['synapse_id'] += max_id
-        df['skeleton_id'] = pd.Series([int(skel_id)]*df.shape[0], index=df.index)
         old_info = np.array(synapse_info)
         new_info = df.astype(old_info.dtype).as_matrix()
 
