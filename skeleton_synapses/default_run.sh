@@ -4,7 +4,7 @@ cred_path="credentials_real.json"
 stack_id=1
 skel_id=11524047
 
-./locate_synapses.py ${cred_path} ${stack_id} ${skel_id} ${project_dir};
+./locate_synapses.py ${cred_path} ${stack_id} ${skel_id} ${project_dir} -f;
 
 ./results_to_volume.py ${cred_path} ${stack_id} ${skel_id} ${project_dir}/skeletons \
-${project_dir}/synapse_volume.hdf5;
+${project_dir}/synapse_volume.hdf5 -f;
