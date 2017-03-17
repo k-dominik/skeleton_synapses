@@ -42,8 +42,8 @@ CSV_HEADERS = [
 CSV_DTYPE = np.float64
 
 
-REFRESH = True
-DEBUGGING = True
+REFRESH = False
+DEBUGGING = False
 
 
 def load_json(path):
@@ -136,14 +136,15 @@ def ensure_volume_exists(volume_path, description, force=False):
 
 
 # todo: deal with intersecting synapses (give them same ID)
-def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_PATH, volume_hdf5_path=VOLUME_HDF5_PATH):
+def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_PATH,
+         volume_hdf5_path=VOLUME_HDF5_PATH, force=REFRESH):
     catmaid = CatmaidAPI.from_json(credential_path)
     description = catmaid.get_stack_description(stack_id)
 
     ensure_volume_exists(
         volume_hdf5_path,
         description,
-        REFRESH
+        force
     )
 
     skeleton_hdf5_path = os.path.join(ilastik_output_path, str(skel_id), 'synapse_cc.h5')
@@ -202,7 +203,8 @@ if __name__ == '__main__':
             '1',
             '11524047',
             "../projects-2017/L1-CNS/skeletons",
-            "../projects-2017/L1-CNS/synapse_volume.hdf5"
+            "../projects-2017/L1-CNS/synapse_volume.hdf5",
+            True
         )
     else:
         parser = argparse.ArgumentParser(
@@ -229,6 +231,11 @@ if __name__ == '__main__':
             'volume_hdf5_path',
             help='Path to the output HDF5 volume file'
         )
+        parser.add_argument(
+            'force_refresh',
+            help='Create a new output HDF5 regardless of whether or not it exists'
+        )
         args = parser.parse_args()
 
-        main(args.credential_path, args.stack_id, args.skel_id, args.ilastik_output_path, args.volume_hdf5_path)
+        main(args.credential_path, args.stack_id, args.skel_id, args.ilastik_output_path, args.volume_hdf5_path,
+             args.force_refresh)

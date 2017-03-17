@@ -567,11 +567,6 @@ if __name__=="__main__":
 
         SKELETON_ID = '11524047'
         L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
-        # SKELETON_DIR = L1_CNS + '/skeletons/{}'.format(SKELETON_ID)
-        #
-        # autocontext_project = L1_CNS + '/projects/full-vol-autocontext.ilp'
-        # multicut_project = L1_CNS + '/projects/multicut/L1-CNS-multicut.ilp'
-        # output_dir = SKELETON_DIR
         args_list = ['credentials_dev.json', 1, SKELETON_ID, L1_CNS]
     else:
         parser = argparse.ArgumentParser()
@@ -583,10 +578,6 @@ if __name__=="__main__":
                             help='ID or name of image stack in CATMAID')
         parser.add_argument('skeleton_id',
                             help="A skeleton ID in CATMAID")
-        # parser.add_argument('autocontext_project',
-        #                     help="ilastik autocontext project file (.ilp) with output channels [membrane,other,synapse].  Must use axes 'xyt'.")
-        # parser.add_argument('multicut_project',
-        #                     help="ilastik 2D multicut project file.  Should expect the probability channels from the autocontext project.")
         parser.add_argument('project_dir',
                             help="A directory containing project files in ./projects, and which output files will be "
                                  "dropped into.")
