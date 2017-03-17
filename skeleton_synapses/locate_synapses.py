@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
+import shutil
 import csv
 import errno
 import signal
@@ -70,7 +71,7 @@ OUTPUT_COLUMNS = [ "synapse_id", "skeleton_id", "overlaps_node_segment",
                    "node_id", "node_x_px", "node_y_px", "node_z_px" ]
 
 
-def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None):
+def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
 
     catmaid = CatmaidAPI.from_json(credentials_path)
 
@@ -86,6 +87,8 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
 
     # Name the output directory with the skeleton id
     skel_output_dir = os.path.join(project_dir, 'skeletons', skeleton_id)
+    if force:
+        shutil.rmtree(skel_output_dir, ignore_errors=True)
     mkdir_p(skel_output_dir)
 
     skeleton_dict = catmaid.get_treenode_and_connector_geometry(skeleton_id)
@@ -570,6 +573,7 @@ if __name__=="__main__":
         SKELETON_ID = '11524047'
         L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
         args_list = ['credentials_dev.json', 1, SKELETON_ID, L1_CNS]
+        kwargs_dict = {'force': True}
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('--roi-radius-px', default=150,
@@ -586,11 +590,14 @@ if __name__=="__main__":
         parser.add_argument('progress_port', nargs='?', type=int, default=0,
                             help="An http server will be launched on the given port (if nonzero), "
                                  "which can be queried to give information about progress.")
+        parser.add_argument('-f', '--force', action='store_true',
+                            help="Whether to delete all prior results for a given skeleton")
 
         args = parser.parse_args()
         args_list = [
             args.credentials_path, args.stack_id, args.skeleton_id, args.project_dir, args.roi_radius_px,
-            args.progress_port
+            args.progress_port, args.force
         ]
+        kwargs_dict = {}  # must be empty
 
-    sys.exit( main(*args_list) )
+    sys.exit( main(*args_list, **kwargs_dict) )
