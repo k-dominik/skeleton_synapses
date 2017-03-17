@@ -4,10 +4,12 @@ import h5py
 import numpy as np
 import os
 import json
-from tqdm import trange
 import argparse
 import pandas as pd
 from catmaid_interface import CatmaidAPI
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
@@ -21,7 +23,7 @@ CHUNK_SHAPE = (256, 256, 1)  # yxz
 
 CSV_HEADERS = [
     'synapse_id',
-    'skeleton_id'
+    'skeleton_id',
     'overlaps_node_segment',
     'x_px',
     'y_px',
@@ -57,21 +59,20 @@ def reorder(lst, order):
 
 def parse_slice_name(s):
     """
-    Take string of the form '{slice_index}: x{x_coord}-y{y_coord}-z{z_coord}' and return the integer index and a dict
-    of x, y and z coords.
+    Take string of the form 'x{x_coord}-y{y_coord}-z{z_coord}' and return the integer index and a dict of x,
+    y and z coords.
 
     Parameters
     ----------
     s : str
-        Slice name of the form '{slice_index}: x{x_coord}-y{y_coord}-z{z_coord}'
+        Slice name of the form 'x{x_coord}-y{y_coord}-z{z_coord}'
 
     Returns
     -------
-    tuple
-        (slice_index, {'x': x_coord, 'y': y_coord, 'z': z_coord})
+    dict
+        {'x': x_coord, 'y': y_coord, 'z': z_coord}
     """
-    idx, name = s.split(': ')
-    return int(idx), {item[0]: int(item[1:]) for item in name.split('-')}
+    return {item[0]: int(item[1:]) for item in s.split('-')}
 
 
 def topleft_to_bounding_box(center, side_length):
@@ -126,6 +127,7 @@ def ensure_volume_exists(volume_path, description, force=False):
             volume.attrs['unknown'] = UNKNOWN_LABEL
             volume.attrs['background'] = BACKGROUND_LABEL
 
+            logging.debug('Creating synapse CSV array of shape {}'.format((0, len(CSV_HEADERS))))
             synapse_info = volume_file.create_dataset(
                 'synapse_info',
                 shape=(0, len(CSV_HEADERS)),
@@ -147,38 +149,39 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
         force
     )
 
-    skeleton_hdf5_path = os.path.join(ilastik_output_path, str(skel_id), 'synapse_cc.h5')
+    skeleton_hdf5_path = os.path.join(ilastik_output_path, str(skel_id), 'synapse_cc')
     skeleton_csv_path = os.path.join(
         ilastik_output_path, str(skel_id), 'skeleton-{}-synapses.csv'.format(skel_id)
     )
 
-    with h5py.File(volume_hdf5_path, 'r+') as volume_file, h5py.File(skeleton_hdf5_path, 'r') as synapse_file:
+    logging.info('Opening volume file at {}'.format(volume_hdf5_path))
+    with h5py.File(volume_hdf5_path, 'r+') as volume_file:
         volume = volume_file['volume']
-        synapses = synapse_file['data']
         synapse_info = volume_file['synapse_info']
 
         max_id = synapse_info.attrs['max_id']
         next_max_id = max_id
         background_label = volume.attrs['background']
+        filenames = os.listdir(skeleton_hdf5_path)
+        for idx, filename in enumerate(filenames, 1):
+            logging.debug('Committing node slice {} of {}'.format(idx, len(filenames)))
+            file_path = os.path.join(skeleton_hdf5_path, filename)
+            logging.debug('Extracting data from {}'.format(file_path))
+            topleft = parse_slice_name(os.path.splitext(filename)[0])
+            with h5py.File(file_path, 'r') as synapse_file:
+                slice_data = np.array(synapse_file['data'])[:, :, 0, 0]
+                bbox = topleft_to_bounding_box(topleft, slice_data.shape[0])
+                slice_data[slice_data != 0] = slice_data[slice_data != 0] + max_id  # ensure no label clashes
+                slice_data[slice_data == 0] = background_label
 
-        slice_centers = dict(parse_slice_name(s) for s in synapses.attrs['slice-names'])
-        slice_boundaries = {key: topleft_to_bounding_box(value, synapses.shape[0]) for key, value in slice_centers.items()}
-
-        for z_idx in trange(synapses.shape[2]):
-            z_slice = np.array(synapses[:, :, z_idx, 0])
-            z_slice[z_slice != 0] = z_slice[z_slice != 0] + max_id  # ensure no label clashes
-            z_slice[z_slice == 0] = background_label
-
-            next_max_id = max(next_max_id, np.max(z_slice))
-            bbox = slice_boundaries[z_idx]
-            volume[bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1], bbox['z']] = z_slice
+                volume[bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1], bbox['z']] = slice_data
 
         headers = synapse_info.attrs['headers']
 
-        df = pd.read_csv(skeleton_csv_path, delimiter='\t')
-        df['synapse_id'] += max_id
+        synapse_csv = pd.read_csv(skeleton_csv_path, delimiter='\t')
+        synapse_csv['synapse_id'] += max_id
         old_info = np.array(synapse_info)
-        new_info = df.astype(old_info.dtype).as_matrix()
+        new_info = synapse_csv.astype(old_info.dtype).as_matrix()
 
         del volume_file['synapse_info']  # todo: race condition
         try:
@@ -232,10 +235,10 @@ if __name__ == '__main__':
             help='Path to the output HDF5 volume file'
         )
         parser.add_argument(
-            'force_refresh',
+            '-f', '--force', action='store_true',
             help='Create a new output HDF5 regardless of whether or not it exists'
         )
         args = parser.parse_args()
 
         main(args.credential_path, args.stack_id, args.skel_id, args.ilastik_output_path, args.volume_hdf5_path,
-             args.force_refresh)
+             args.force)
