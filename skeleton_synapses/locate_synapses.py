@@ -13,6 +13,7 @@ from itertools import starmap
 from collections import OrderedDict
 import json
 import datetime
+import networkx as nx
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
@@ -118,6 +119,12 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
     finally:
         if progress_server:
             progress_server.shutdown()
+
+def node_slices_adjoin(coords1, coords2, roi_radius=150):
+    if abs(coords1['z'] - coords2['z']) <= 1:
+        if all(abs(coords1[axis] - coords2[axis]) <= roi_radius*2 for axis in 'xy'):
+            return True
+    return False
 
 def locate_synapses(autocontext_project_path,
                     multicut_project,
