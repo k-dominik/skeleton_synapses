@@ -1,6 +1,8 @@
 import requests
 import json
 from collections import defaultdict
+import time
+import math
 
 NEUROCEAN_CONSTANTS = {
     'skel_id': 11524047,
@@ -73,6 +75,13 @@ def make_url(base_url, *args):
         base_url = requests.compat.urljoin(base_url + joiner, relative)
 
     return base_url
+
+
+def make_tile_url_template(image_base):
+    """
+    May not be correct for all bases
+    """
+    return make_url(image_base, "{z_index}/0/{y_index}_{x_index}.jpg")
 
 
 class CatmaidAPI(object):
@@ -310,10 +319,7 @@ class CatmaidAPI(object):
             "resolution_zyx": [stack_info['resolution'][axis] for axis in 'zyx'],
             "tile_shape_2d_yx": [stack_mirror['tile_height'], stack_mirror['tile_width']],
 
-            "tile_url_format": make_url(  # probably not correct for all image bases
-                stack_mirror['image_base'],
-                "{z_index}/0/{y_index}_{x_index}.jpg"
-            ),
+            "tile_url_format": make_tile_url_template(stack_mirror['image_base']),  # may not be correct for all bases
 
             "output_axes": "xyz",  # DO NOT TOUCH
 
@@ -347,6 +353,27 @@ class CatmaidAPI(object):
         stack_info = self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
 
         return stack_info['ptitle']
+    #
+    # def get_fastest_stack_mirror(self, stack_info):
+    #     speeds = dict()
+    #     canary_loc = stack_info['canary_location']
+    #     for idx, stack_mirror in enumerate(stack_info['mirrors']):
+    #         canary_url = make_tile_url_template(stack_mirror['image_base']).format(
+    #             x_index=math.floor(canary_loc['x']/stack_mirror['tile_width']),
+    #             y_index=math.floor(canary_loc['y']/stack_mirror['tile_width']),
+    #             z_index=canary_loc['z']
+    #         )
+    #         try:
+    #             start_time = time.time()
+    #             response = requests.get(canary_url, auth=self.auth_token)
+    #             roundtrip = time.time() - start_time
+    #             assert response.status_code == 200
+    #             speeds[idx] = roundtrip
+    #         except Exception:
+    #             speeds[idx] = float('inf')
+    #
+    #     fastest_idx = min(speeds.items(), key=lambda x: x[1])[0]
+    #     return stack_info['mirrors'][fastest_idx]
 
 
 if __name__ == '__main__':
