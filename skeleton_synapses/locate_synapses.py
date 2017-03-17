@@ -11,6 +11,7 @@ import warnings
 from itertools import starmap
 from collections import OrderedDict
 import json
+import datetime
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
@@ -194,7 +195,7 @@ def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     raw_xyzc = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1]).wait()
     raw_xyzc = vigra.taggedView(raw_xyzc, 'xyzc')
-    write_output_image(output_dir, raw_xyzc[:,:,0,:], "raw", roi_name)
+    write_output_image(output_dir, raw_xyzc[:,:,0,:], "raw", roi_name, 'slices')
     raw_xy = raw_xyzc[:,:,0,0]
     return raw_xy
 
@@ -215,7 +216,7 @@ def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     predictions_xyzc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_xyzc).wait()
     predictions_xyzc = vigra.taggedView( predictions_xyzc, "xyzc" )
     predictions_xyc = predictions_xyzc[:,:,0,:]
-    write_output_image(output_dir, predictions_xyc, "predictions", roi_name)
+    write_output_image(output_dir, predictions_xyc, "predictions", roi_name, mode='slices')
     return predictions_xyc
 
 def labeled_synapses_for_node(node_info, roi_xyz, output_dir, relabeler, predictions_xyc):
@@ -236,7 +237,7 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, relabeler, predict
     
     # Relabel for consistency with previous slice
     synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
-    write_output_image(output_dir, synapse_cc_xy[...,None], "synapse_cc", roi_name)
+    write_output_image(output_dir, synapse_cc_xy[...,None], "synapse_cc", roi_name, mode="slices")
     return synapse_cc_xy
 
 def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw_xy, predictions_xyc):
@@ -255,7 +256,7 @@ def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw
     batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
     assert len(batch_results) == 1
     segmentation_xy = batch_results[0]
-    write_output_image(output_dir, segmentation_xy[:,:,None], "segmentation", roi_name)
+    write_output_image(output_dir, segmentation_xy[:,:,None], "segmentation", roi_name, 'slices')
     return segmentation_xy
 
 
@@ -329,10 +330,11 @@ def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacke
     image_xyzc = vigra.taggedView(image_xyc[:,:,None,:], 'xyzc')
     
     if mode == "slices":
-        slice_name = name
-        if name_prefix:
-            slice_name = name_prefix + '-' + name
-        with h5py.File(output_dir + "/" + slice_name + ".h5", 'w') as f:
+        output_subdir = os.path.join(output_dir, name)
+        mkdir_p(output_subdir)
+        if not name_prefix:
+            name_prefix = datetime.datetime.now().isoformat()
+        with h5py.File(output_subdir + "/" + name_prefix + ".h5", 'w') as f:
             f.create_dataset("data", data=image_xyzc)
 
     elif mode == "stacked":
