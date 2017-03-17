@@ -145,8 +145,12 @@ def construct_tree(node_infos):
     """
     tree = nx.DiGraph()
     for node_info in node_infos:
-        tree.add_edge( node_info.parent_id, node_info.id )
-        tree.node[node_info.id]['info'] = node_info    
+        if node_info.parent_id is None:
+            tree.add_node(node_info.id)
+            tree.graph['root'] = node_info.id
+        else:
+            tree.add_edge(node_info.parent_id, node_info.id)
+        tree.node[node_info.id]['info'] = node_info
     return tree
 
 def roi_around_point(coord_xyz, radius):
