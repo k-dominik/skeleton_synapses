@@ -465,7 +465,7 @@ class SegmenterProcess(mp.Process):
         self.count += 1
         if self.max_nodes and self.count > self.max_nodes:
             return True
-        elif self.max_ram_MB and self.psutil_process.memory_info().uss >= self.max_ram_MB * 1024 * 1024:
+        elif self.max_ram_MB and self.psutil_process.memory_info().rss >= self.max_ram_MB * 1024 * 1024:
             return True
         else:
             return False
