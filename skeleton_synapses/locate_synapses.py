@@ -32,6 +32,7 @@ from scipy.spatial.distance import euclidean
 from lazyflow.graph import Graph
 from lazyflow.utility import PathComponents, isUrl, Timer
 from lazyflow.utility.io_util import TiledVolume
+from lazyflow.request import Request
 
 import ilastik_main
 from ilastik.shell.headless.headlessShell import HeadlessShell
@@ -332,6 +333,8 @@ class SegmenterProcess(mp.Process):
             description_file, autocontext_project_path, multicut_project
         )
 
+        Request.reset_thread_pool(1)
+
         self.debug = debug
 
     def run(self):
@@ -507,6 +510,7 @@ def open_project( project_path, init_logging=True ):
     parsed_args = ilastik_main.parser.parse_args([])
     parsed_args.headless = True
     parsed_args.project = project_path
+    parsed_args.readonly = True
 
     shell = ilastik_main.main( parsed_args, init_logging=init_logging )
     return shell
