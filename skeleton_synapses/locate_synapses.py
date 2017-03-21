@@ -75,9 +75,31 @@ OUTPUT_COLUMNS = [ "synapse_id", "skeleton_id", "overlaps_node_segment",
 
 DEFAULT_ROI_RADIUS = 150
 
-THREADS = os.getenv('THREADS', 3)
-NODES_PER_PROCESS = os.getenv('NODES_PER_PROCESS', 500)
-RAM_MB_PER_PROCESS = os.getenv('RAM_MB_PER_PROCESS', 5000)
+
+def get_and_print_env(name, default, constructor=str):
+    """
+
+    Parameters
+    ----------
+    name
+    default
+    constructor : callable
+
+    Returns
+    -------
+
+    """
+    val = os.getenv(name)
+    if val is None:
+        print('{} environment variable not set, using default.'.format(name, default))
+        val = default
+    print('{} value is {}'.format(name[len('SYNAPSE_DETECTION_'):], val))
+    return constructor(val)
+
+
+THREADS = get_and_print_env('SYNAPSE_DETECTION_THREADS', 3, int)
+NODES_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500, int)
+RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000, int)
 
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
