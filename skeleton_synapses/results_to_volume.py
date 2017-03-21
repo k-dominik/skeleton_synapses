@@ -174,7 +174,8 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
                 slice_data[slice_data != 0] = slice_data[slice_data != 0] + max_id  # ensure no label clashes
                 slice_data[slice_data == 0] = background_label
 
-                volume[bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1], bbox['z']] = slice_data
+                # slice_data is in [x, y], where it needs to be in [y, x]
+                volume[bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1], bbox['z']] = slice_data.T
 
         headers = synapse_info.attrs['headers']
 
