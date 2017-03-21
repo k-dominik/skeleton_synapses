@@ -236,7 +236,7 @@ if __name__ == '__main__':
             help='Path to the output HDF5 volume file'
         )
         parser.add_argument(
-            '-f', '--force', action='store_true',
+            '-f', '--force', type=int, default=0,
             help='Create a new output HDF5 regardless of whether or not it exists'
         )
         args = parser.parse_args()
