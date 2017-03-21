@@ -17,7 +17,9 @@ script_path=`realpath $0`
 cp ${script_path} ${log_dir}/run_script.sh
 cp ./set_env_vars.sh ${log_dir}/env_script.sh
 
-./locate_synapses.py ${cred_path} ${stack_id} ${skel_id} ${project_dir} -f &> ${log_dir}/locate_synapses.txt;
+./locate_synapses.py ${cred_path} ${stack_id} ${skel_id} ${project_dir} -f ${force} 2>&1 tee ${log_dir}/locate_synapses.txt;
 
 ./results_to_volume.py ${cred_path} ${stack_id} ${skel_id} ${project_dir}/skeletons \
-${project_dir}/synapse_volume.hdf5 -f &> ${log_dir}/results_to_volume.txt;
+${project_dir}/synapse_volume.hdf5 -f ${force} 2>&1 tee ${log_dir}/results_to_volume.txt;
+
+echo "FINISHED"
