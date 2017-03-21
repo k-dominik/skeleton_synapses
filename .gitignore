@@ -5,3 +5,4 @@ projects-*
 environment.yml
 set_env_vars.sh
 credentials*.json
+skeleton_synapses/logs/*
