@@ -74,10 +74,10 @@ OUTPUT_COLUMNS = [ "synapse_id", "skeleton_id", "overlaps_node_segment",
                    "node_id", "node_x_px", "node_y_px", "node_z_px" ]
 
 DEFAULT_ROI_RADIUS = 150
-THREADS = 3  # max(mp.cpu_count() - 2, 1)
 
-MAX_NODES_PER_PROCESS = 500
-MAX_RAM_PER_PROCESS = 5000
+THREADS = os.getenv('THREADS', 3)
+NODES_PER_PROCESS = os.getenv('NODES_PER_PROCESS', 500)
+RAM_MB_PER_PROCESS = os.getenv('RAM_MB_PER_PROCESS', 5000)
 
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
@@ -241,7 +241,7 @@ def locate_synapses_parallel(autocontext_project_path,
     segmenter_containers = [
         SegmenterCaretaker(
             node_queue, result_queue, input_filepath, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes=MAX_NODES_PER_PROCESS, max_ram_MB=MAX_RAM_PER_PROCESS, debug=False
+            skel_output_dir, max_nodes=NODES_PER_PROCESS, max_ram_MB=RAM_MB_PER_PROCESS, debug=False
         )
         for _ in range(THREADS)
     ]
@@ -432,6 +432,9 @@ class SegmenterProcess(mp.Process):
         self.psutil_process = [proc for proc in psutil.process_iter() if proc.pid == self.pid][0]
         Request.reset_thread_pool(1)
         while not self.input_queue.empty():
+            if self.needs_pruning():
+                return
+
             node_overall_index, node_info, roi_radius_px = self.input_queue.get()
 
             logger.debug("{} PROGRESS: addressing node {}, {} nodes remaining"
@@ -449,9 +452,6 @@ class SegmenterProcess(mp.Process):
 
             self.output_queue.put(SegmenterOutput(node_overall_index, node_info, roi_radius_px, predictions_xyc,
                                                   synapse_cc_xy, segmentation_xy))
-
-            if self.needs_pruning():
-                return
 
     def needs_pruning(self):
         """
@@ -928,7 +928,7 @@ def mkdir_p(path):
             raise
 
 if __name__=="__main__":
-    DEBUGGING = True
+    DEBUGGING = False
     if DEBUGGING:
         from os.path import dirname, abspath
         print("USING DEBUG ARGUMENTS")
@@ -953,8 +953,8 @@ if __name__=="__main__":
         parser.add_argument('progress_port', nargs='?', type=int, default=0,
                             help="An http server will be launched on the given port (if nonzero), "
                                  "which can be queried to give information about progress.")
-        parser.add_argument('-f', '--force', action='store_true',
-                            help="Whether to delete all prior results for a given skeleton")
+        parser.add_argument('-f', '--force', type=int, default=0,
+                            help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
 
         args = parser.parse_args()
         args_list = [
