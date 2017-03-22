@@ -105,9 +105,14 @@ RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
     catmaid = CatmaidAPI.from_json(credentials_path)
 
-    volume_description_path = os.path.join(project_dir, PROJECT_NAME + '-description-NO-OFFSET.json')
+    include_offset = True
+
+    volume_description_path = os.path.join(
+        project_dir, PROJECT_NAME + '-description{}.json'.format('' if include_offset else '-NO-OFFSET')
+    )
+
     if not os.path.isfile(volume_description_path):
-        volume_description_dict = catmaid.get_stack_description(stack_id, include_offset=False)
+        volume_description_dict = catmaid.get_stack_description(stack_id, include_offset=include_offset)
         with open(volume_description_path, 'w') as f:
             json.dump(volume_description_dict, f, sort_keys=True, indent=2)
 
@@ -956,8 +961,9 @@ if __name__=="__main__":
         print("USING DEBUG ARGUMENTS")
 
         SKELETON_ID = '11524047'
+        # SKELETON_ID = '18531735'
         L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
-        args_list = ['credentials_real.json', 1, SKELETON_ID, L1_CNS]
+        args_list = ['credentials_dev.json', 1, SKELETON_ID, L1_CNS]
         kwargs_dict = {'force': True}
     else:
         parser = argparse.ArgumentParser()
