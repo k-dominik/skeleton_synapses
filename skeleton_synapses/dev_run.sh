@@ -2,12 +2,12 @@
 project_dir="../projects-2017/L1-CNS"
 cred_path="credentials_dev.json"
 stack_id=1
-skel_id=11524047
+skel_id=18531735  # small test skeleton only on CLB's local instance
 force=1
 
 timestamp=$(date +"%Y-%m-%d_%H:%M:%S")
 
-log_dir=./logs/${timestamp}
+log_dir=${project_dir}/logs/${timestamp}
 mkdir -p ${log_dir}
 
 source ./set_env_vars.sh

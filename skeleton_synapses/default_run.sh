@@ -7,7 +7,7 @@ force=1
 
 timestamp=$(date +"%Y-%m-%d_%H:%M:%S")
 
-log_dir=./logs/${timestamp}
+log_dir=${project_dir}/logs/${timestamp}
 mkdir -p ${log_dir}
 
 source ./set_env_vars.sh
