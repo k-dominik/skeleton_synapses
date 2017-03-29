@@ -38,6 +38,10 @@ CSV_HEADERS = [
     'node_x_px',
     'node_y_px',
     'node_z_px',
+    'xmin',
+    'xmax',
+    'ymin',
+    'ymax'
 ]
 
 

@@ -71,7 +71,8 @@ OUTPUT_COLUMNS = [ "synapse_id", "skeleton_id", "overlaps_node_segment",
                    "tile_x_px", "tile_y_px", "tile_index",
                    "distance_to_node_px",
                    "detection_uncertainty",
-                   "node_id", "node_x_px", "node_y_px", "node_z_px" ]
+                   "node_id", "node_x_px", "node_y_px", "node_z_px",
+                   'xmin', 'xmax', 'ymin', 'ymax']
 
 DEFAULT_ROI_RADIUS = 150
 
@@ -903,6 +904,11 @@ def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, pred
         fields["node_x_px"] = node_info.x_px
         fields["node_y_px"] = node_info.y_px
         fields["node_z_px"] = node_info.z_px
+
+        fields["xmin"] = np.min(syn_pixel_coords[0]) + roi_xyz[0, 0]
+        fields["xmax"] = np.max(syn_pixel_coords[0]) + roi_xyz[0, 0]
+        fields["ymin"] = np.min(syn_pixel_coords[1]) + roi_xyz[0, 1]
+        fields["ymax"] = np.max(syn_pixel_coords[1]) + roi_xyz[0, 1]
 
         assert len(fields) == len(OUTPUT_COLUMNS)
         csv_writer.writerow( fields )
