@@ -93,7 +93,9 @@ class CatmaidAPI(object):
 
     def __init__(self, base_url, token, auth_name=None, auth_pass=None, project_id_or_title=None):
         self.base_url = base_url
-        self.auth_token = self.CatmaidAuthToken(token, auth_name, auth_pass)
+
+        self.session = requests.Session()
+        self.session.auth = self.CatmaidAuthToken(token, auth_name, auth_pass)
 
         if project_id_or_title is None:
             self.project_id = None
@@ -221,9 +223,9 @@ class CatmaidAPI(object):
         url = self._make_catmaid_url(relative_url)
         data = data or dict()
         if method.upper() == 'GET':
-            response = requests.get(url, params=data, auth=self.auth_token)
+            response = self.session.get(url, params=data)
         elif method.upper() == 'POST':
-            response = requests.post(url, data=data, auth=self.auth_token)
+            response = self.session.post(url, data=data)
         else:
             raise ValueError('Unknown HTTP method {}'.format(repr(method)))
 
@@ -296,10 +298,9 @@ class CatmaidAPI(object):
         dict
             Information required by ilastik for getting images from CATMAID
         """
-        stack_id = self._get_stack_id(stack_id_or_title)
-
-        stack_info = self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
+        stack_info = self._get_stack_info(stack_id_or_title)
         stack_mirror = stack_info['mirrors'][0]
+
         return {
             "_schema_name": "tiled-volume-description",
             "_schema_version": 1.0,
@@ -343,17 +344,46 @@ class CatmaidAPI(object):
             Dict of x, y, z offsets of project from stack, in pixels (i.e. the offsets detailed in the project
             stacks admin panel, divided by the resolution, multiplied by -1)
         """
-        stack_id = self._get_stack_id(stack_id_or_title)
-        stack_info = self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
+        stack_info = self._get_stack_info(stack_id_or_title)
 
         return {axis: -int(stack_info['translation'][axis]/stack_info['resolution'][axis]) for axis in 'zyx'}
 
     def get_project_title(self, stack_id_or_title):
-        stack_id = self._get_stack_id(stack_id_or_title)
-        stack_info = self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
+        stack_info = self._get_stack_info(stack_id_or_title)
 
         return stack_info['ptitle']
-    #
+
+    def _get_user_id(self, user_id_or_name):
+        try:
+            return int(user_id_or_name)
+        except ValueError:
+            users = self.get('user-list')
+            for user in users:
+                if user_id_or_name in [user['login'], user['full_name']]:
+                    return user['id']
+            raise ValueError('User {} not found.'.format(repr(user_id_or_name)))
+
+    def get_connectors(self, user_id_or_name, date_from, date_to):
+        params = dict()
+
+        if user_id_or_name:
+            params['completed_by'] = self._get_user_id(user_id_or_name)
+        if date_from:
+            params['from'] = None
+        if date_to:
+            params['to'] = None
+
+        return self.get('{}/connector/list/completed'.format(self.project_id), params)
+
+    def _get_stack_info(self, stack_id_or_title):
+        stack_id = self._get_stack_id(stack_id_or_title)
+        return self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
+
+    def get_coord_transformer(self, stack_id_or_title):
+        stack_info = self._get_stack_info(stack_id_or_title)
+
+        return CoordinateTransformer(stack_info['resolution'], stack_info['translation'])
+
     # def get_fastest_stack_mirror(self, stack_info):
     #     speeds = dict()
     #     canary_loc = stack_info['canary_location']
@@ -374,6 +404,60 @@ class CatmaidAPI(object):
     #
     #     fastest_idx = min(speeds.items(), key=lambda x: x[1])[0]
     #     return stack_info['mirrors'][fastest_idx]
+
+
+class CoordinateTransformer(object):
+    def __init__(self, resolution, translation):
+        """
+        Helper class for transforming between stack and project coordinates.
+        
+        Parameters
+        ----------
+        resolution : dict
+            x, y and z resolution of the stack
+        translation : dict
+            x, y and z the location of the stack's origin (0, 0, 0) in project space
+        """
+        self.resolution = resolution
+        self.translation = translation
+
+    def project_to_stack_coord(self, dim, project_coord):
+        return (project_coord - self.translation[dim]) / self.resolution[dim]
+
+    def project_to_stack(self, project_coords):
+        """
+        Take a point in project space and transform it into stack space.
+        
+        Parameters
+        ----------
+        project_coords : dict
+            x, y, and/or z coordinates in project/ real space
+
+        Returns
+        -------
+        dict
+            coordinates transformed into stack/voxel space
+        """
+        return {dim: self.project_to_stack_coord(dim, proj_coord) for dim, proj_coord in project_coords.items()}
+
+    def stack_to_project_coord(self, dim, stack_coord):
+        return stack_coord * self.resolution[dim] + self.translation[dim]
+
+    def stack_to_project(self, stack_coords):
+        """
+        Take a point in stack space and transform it into project space.
+        
+        Parameters
+        ----------
+        stack_coords : dict
+            x, y, and/or z coordinates in stack/ voxel space
+
+        Returns
+        -------
+        dict
+            coordinates transformed into project/ real space
+        """
+        return {dim: self.stack_to_project_coord(dim, stack_coord) for dim, stack_coord in stack_coords.items()}
 
 
 if __name__ == '__main__':
