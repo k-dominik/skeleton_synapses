@@ -231,14 +231,24 @@ class CatmaidAPI(object):
 
         return response.json() if not raw else response.text
 
-    def get_treenode_and_connector_geometry(self, skeleton_id):
+    def get_treenode_and_connector_geometry(self, skeleton_id, stack_id_or_title=None):
         """
         See CATMAID code [2]_ for original js implementation
         .. [2] http://github.com/catmaid/CATMAID/blob/master/django/applications/catmaid/static/js/widgets/export
         -widget.js#L449
+        
+        Parameters
+        ----------
+        skeleton_id : int or str
+        stack_id_or_title : int or str
+            By default (= None), geometry will be returned in project coordinates. If a stack_id_or_title is given, 
+            they will be transformed into stack coordinates for the given stack.
         """
 
         data = self.get('{}/{}/1/0/compact-skeleton'.format(self.project_id, skeleton_id))
+
+        # if stack id is not given, will return a null transformer which does not change its inputs
+        coord_transformer = self.get_coord_transformer(stack_id_or_title)
 
         skeleton = {
             'treenodes': dict(),
@@ -247,7 +257,9 @@ class CatmaidAPI(object):
 
         for treenode in data[0]:
             skeleton['treenodes'][treenode[0]] = {
-                'location': treenode[3:6],
+                'location': [
+                    coord_transformer.project_to_stack_coord(dim, coord) for dim, coord in zip('xyz', treenode[3:6])
+                ],
                 'parent_id': treenode[1]
             }
 
@@ -262,7 +274,9 @@ class CatmaidAPI(object):
                     'postsynaptic_to': []
                 }
 
-            skeleton['connectors'][conn_id]['location'] = connector[3:6]
+            skeleton['connectors'][conn_id]['location'] = [
+                    coord_transformer.project_to_stack_coord(dim, coord) for dim, coord in zip('xyz', connector[3:6])
+                ]
             relation = 'postsynaptic_to' if connector[2] == 1 else 'presynaptic_to'
             skeleton['connectors'][conn_id][relation].append(connector[0])
 
@@ -329,25 +343,6 @@ class CatmaidAPI(object):
             "extend_slices": extend_slices(stack_info['broken_slices'])
         }
 
-    def get_stack_project_translation(self, stack_id_or_title):
-        """
-        Get the pixel offsets of the project from the stack.
-
-        Parameters
-        ----------
-        stack_id_or_title : int or str
-            Integer ID or string title of the image stack in CATMAID
-
-        Returns
-        -------
-        dict
-            Dict of x, y, z offsets of project from stack, in pixels (i.e. the offsets detailed in the project
-            stacks admin panel, divided by the resolution, multiplied by -1)
-        """
-        stack_info = self._get_stack_info(stack_id_or_title)
-
-        return {axis: -int(stack_info['translation'][axis]/stack_info['resolution'][axis]) for axis in 'zyx'}
-
     def get_project_title(self, stack_id_or_title):
         stack_info = self._get_stack_info(stack_id_or_title)
 
@@ -379,10 +374,13 @@ class CatmaidAPI(object):
         stack_id = self._get_stack_id(stack_id_or_title)
         return self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
 
-    def get_coord_transformer(self, stack_id_or_title):
-        stack_info = self._get_stack_info(stack_id_or_title)
+    def get_coord_transformer(self, stack_id_or_title=None):
+        if stack_id_or_title is None:
+            return NullCoordinateTransformer()
+        else:
+            stack_info = self._get_stack_info(stack_id_or_title)
 
-        return CoordinateTransformer(stack_info['resolution'], stack_info['translation'])
+            return CoordinateTransformer(stack_info['resolution'], stack_info['translation'])
 
     # def get_fastest_stack_mirror(self, stack_info):
     #     speeds = dict()
@@ -407,7 +405,7 @@ class CatmaidAPI(object):
 
 
 class CoordinateTransformer(object):
-    def __init__(self, resolution, translation):
+    def __init__(self, resolution=None, translation=None):
         """
         Helper class for transforming between stack and project coordinates.
         
@@ -418,8 +416,8 @@ class CoordinateTransformer(object):
         translation : dict
             x, y and z the location of the stack's origin (0, 0, 0) in project space
         """
-        self.resolution = resolution
-        self.translation = translation
+        self.resolution = resolution if resolution else {dim: 1 for dim in 'xyz'}
+        self.translation = translation if translation else {dim: 0 for dim in 'xyz'}
 
     def project_to_stack_coord(self, dim, project_coord):
         return (project_coord - self.translation[dim]) / self.resolution[dim]
@@ -458,6 +456,20 @@ class CoordinateTransformer(object):
             coordinates transformed into project/ real space
         """
         return {dim: self.stack_to_project_coord(dim, stack_coord) for dim, stack_coord in stack_coords.items()}
+
+
+class NullCoordinateTransformer(CoordinateTransformer):
+    def project_to_stack_coord(self, dim, project_coord):
+        return project_coord
+
+    def project_to_stack(self, project_coords):
+        return project_coords.copy()
+
+    def stack_to_project_coord(self, dim, stack_coord):
+        return stack_coord
+
+    def stack_to_project(self, stack_coords):
+        return stack_coords.copy()
 
 
 if __name__ == '__main__':
