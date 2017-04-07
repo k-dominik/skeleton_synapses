@@ -1,13 +1,18 @@
+from __future__ import division
 import h5py
 import numpy as np
 from matplotlib import pyplot as plt
 import argparse
 import os
+from nearest_slice import get_filename_for_coords
+
+plt.style.use('ggplot')
+
+OFFSET = -121
 
 DEFAULT_INNER_PATH = 'data'
 DEFAULT_SHAPE = '16:9'
 
-SSH_ROOT = r'/run/user/1000/gvfs/sftp:host=10.101.50.112'
 DEBUG_ROOT = r'/home/barnesc/synapse_detection/skeleton_synapses/projects-2017/L1-CNS/skeletons/11524047'
 
 DIRS = ['raw', 'predictions', 'synapse_cc', 'segmentation']
@@ -58,8 +63,8 @@ def get_data(file_path, inner_path):
 def view_data(root_dir, file_name, **kwargs):
     inner_path = kwargs.get('inner_path', DEFAULT_INNER_PATH)
 
-    f, ax_arr = plt.subplots(2, 2)
-    f.suptitle('{} from {}'.format(inner_path, file_name))
+    fig, ax_arr = plt.subplots(2, 2)
+    # fig.suptitle('{} from {}'.format(inner_path, file_name))
     ax_dict = {im_type: ax for im_type, ax in zip(DIRS, list(ax_arr.flatten()))}
 
     for im_type in DIRS:
@@ -67,13 +72,18 @@ def view_data(root_dir, file_name, **kwargs):
         data = get_data(file_path, inner_path)
         ax = ax_dict[im_type]
         ax.set_title(im_type)
+
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+
         assert data.shape[2] == 1
         try:
             ax.imshow(np.transpose(data, (1, 0, 2, 3)).squeeze(), **types_kwargs[im_type])
         except TypeError:
             pass
 
-    plt.tight_layout()
+    fig.tight_layout()
+    # fig.set_size_inches(6, 6)
     plt.show()
 
 
@@ -81,8 +91,14 @@ if __name__ == "__main__":
     DEBUG = True
     if DEBUG:
         DEBUG_ROOT = '/home/cbarnes/work/synapse_detection/remote_results/L1-CNS/skeletons/11524047'
-        filenames = list(sorted(os.listdir(os.path.join(DEBUG_ROOT, 'raw'))))
-        filename = filenames[600]
+        filenames = sorted(os.listdir(os.path.join(DEBUG_ROOT, 'raw')))
+        # filename = filenames[600]
+        coords = {
+            'x': 9507,
+            'y': 8451,
+            'z': 616 - OFFSET
+        }
+        filename = get_filename_for_coords(coords, os.path.join(DEBUG_ROOT, 'raw'))
 
         view_data(DEBUG_ROOT, filename, inner_path='data')
     else:
