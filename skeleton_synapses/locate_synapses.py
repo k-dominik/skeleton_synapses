@@ -362,7 +362,23 @@ SegmenterOutput = namedtuple('SegmenterOutput', ['node_overall_index', 'node_inf
                                                  'synapse_cc_xy', 'segmentation_xy'])
 
 
-class SegmenterCaretaker(mp.Process):
+class DebuggableProcess(mp.Process):
+    """
+    Classes inheriting from this instead of multiprocessing.Process can use a `debug` parameter to run in serial 
+    instead of spawning a new python process, for easier debugging.
+    """
+    def __init__(self, debug=False):
+        super(DebuggableProcess, self).__init__()
+        self.debug = debug
+
+    def start(self):
+        if self.debug:
+            self.run()
+        else:
+            super(DebuggableProcess, self).start()
+
+
+class SegmenterCaretaker(DebuggableProcess):
     """
     Process which takes care of spawning a SegmenterProcess, pruning it when it terminates, and starting a new one if
     there are still items remaining in the input queue.
@@ -371,12 +387,11 @@ class SegmenterCaretaker(mp.Process):
             self, input_queue, output_queue, description_file, autocontext_project_path, multicut_project,
             skel_output_dir, max_nodes=0, max_ram_MB=0, debug=False
     ):
-        super(SegmenterCaretaker, self).__init__()
+        super(SegmenterCaretaker, self).__init__(debug)
         self.segmenter_args = (input_queue, output_queue, description_file, autocontext_project_path, multicut_project,
             skel_output_dir, max_nodes, max_ram_MB, debug)
 
         self.input_queue = input_queue
-        self.debug = debug
 
     def run(self):
         while not self.input_queue.empty():
@@ -386,17 +401,8 @@ class SegmenterCaretaker(mp.Process):
             segmenter.join()
             del segmenter
 
-    def start(self):
-        """
-        Overriding this method allows the instantiation of a serial version of the process, for debugging purposes.
-        """
-        if self.debug:
-            self.run()
-        else:
-            super(SegmenterCaretaker, self).start()
 
-
-class SegmenterProcess(mp.Process):
+class SegmenterProcess(DebuggableProcess):
     """
     Process which creates its own pixel classifier and multicut workflow, pulls jobs from one queue and returns
     outputs to another queue.
@@ -420,7 +426,7 @@ class SegmenterProcess(mp.Process):
         debug : bool
             Whether to instantiate a serial version for debugging purposes
         """
-        super(SegmenterProcess, self).__init__()
+        super(SegmenterProcess, self).__init__(debug)
         self.input_queue = input_queue
         self.output_queue = output_queue
 
@@ -445,8 +451,6 @@ class SegmenterProcess(mp.Process):
                           'the program may crash due to a memory leak in ilastik')
 
         self.psutil_process = None
-
-        self.debug = debug
 
     def run(self):
         """
@@ -497,15 +501,6 @@ class SegmenterProcess(mp.Process):
             return True
         else:
             return False
-
-    def start(self):
-        """
-        Overriding this method allows the instantiation of a serial version of the process, for debugging purposes.
-        """
-        if self.debug:
-            self.run()
-        else:
-            super(SegmenterProcess, self).start()
 
 
 def search_queue(queue, criterion, timeout=None):
