@@ -45,8 +45,8 @@ def get_exemplar_synapses(credentials_path, sample_size=DEFAULT_SAMPLE_SIZE, out
     catmaid = CatmaidAPI.from_json(credentials_path)
 
     responses = []
-    date_from = (datetime.now() - timedelta(days=365.25*TIME_WINDOW_YEARS)).strftime('%Y%m%d')
-    date_to = datetime.now().strftime('%Y%m%d')
+    date_to = datetime.now()
+    date_from = date_to - timedelta(days=365.25*TIME_WINDOW_YEARS)
 
     # todo: speed this up with threading?
     for username in tqdm(TRUSTED_USERS, desc='Getting connectors by trusted annotators', file=sys.stdout):

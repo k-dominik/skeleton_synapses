@@ -359,14 +359,26 @@ class CatmaidAPI(object):
             raise ValueError('User {} not found.'.format(repr(user_id_or_name)))
 
     def get_connectors(self, user_id_or_name, date_from, date_to):
+        """
+        
+        Parameters
+        ----------
+        user_id_or_name
+        date_from : datetime.datetime
+        date_to : datetime.datetime
+
+        Returns
+        -------
+        list
+        """
         params = dict()
 
         if user_id_or_name:
             params['completed_by'] = self._get_user_id(user_id_or_name)
         if date_from:
-            params['from'] = None
+            params['from'] = date_from.strftime('%Y%m%d')
         if date_to:
-            params['to'] = None
+            params['to'] = date_to.strftime('%Y%m%d')
 
         return self.get('{}/connector/list/completed'.format(self.project_id), params)
 
