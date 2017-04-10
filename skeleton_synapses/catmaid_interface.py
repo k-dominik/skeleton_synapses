@@ -312,7 +312,7 @@ class CatmaidAPI(object):
         dict
             Information required by ilastik for getting images from CATMAID
         """
-        stack_info = self._get_stack_info(stack_id_or_title)
+        stack_info = self.get_stack_info(stack_id_or_title)
         stack_mirror = stack_info['mirrors'][0]
 
         return {
@@ -344,7 +344,7 @@ class CatmaidAPI(object):
         }
 
     def get_project_title(self, stack_id_or_title):
-        stack_info = self._get_stack_info(stack_id_or_title)
+        stack_info = self.get_stack_info(stack_id_or_title)
 
         return stack_info['ptitle']
 
@@ -382,17 +382,16 @@ class CatmaidAPI(object):
 
         return self.get('{}/connector/list/completed'.format(self.project_id), params)
 
-    def _get_stack_info(self, stack_id_or_title):
+    def get_stack_info(self, stack_id_or_title):
         stack_id = self._get_stack_id(stack_id_or_title)
         return self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
 
     def get_coord_transformer(self, stack_id_or_title=None):
         if stack_id_or_title is None:
-            return NullCoordinateTransformer()
+            return CoordinateTransformer()
         else:
-            stack_info = self._get_stack_info(stack_id_or_title)
-
-            return CoordinateTransformer(stack_info['resolution'], stack_info['translation'])
+            stack_info = self.get_stack_info(stack_id_or_title)
+            return CoordinateTransformer.from_stack_info(stack_info)
 
     # def get_fastest_stack_mirror(self, stack_info):
     #     speeds = dict()
@@ -431,6 +430,10 @@ class CoordinateTransformer(object):
         self.resolution = resolution if resolution else {dim: 1 for dim in 'xyz'}
         self.translation = translation if translation else {dim: 0 for dim in 'xyz'}
 
+    @classmethod
+    def from_stack_info(cls, stack_info):
+        return cls(stack_info['resolution'], stack_info['translation'])
+
     def project_to_stack_coord(self, dim, project_coord):
         return (project_coord - self.translation[dim]) / self.resolution[dim]
 
@@ -468,20 +471,6 @@ class CoordinateTransformer(object):
             coordinates transformed into project/ real space
         """
         return {dim: self.stack_to_project_coord(dim, stack_coord) for dim, stack_coord in stack_coords.items()}
-
-
-class NullCoordinateTransformer(CoordinateTransformer):
-    def project_to_stack_coord(self, dim, project_coord):
-        return project_coord
-
-    def project_to_stack(self, project_coords):
-        return project_coords.copy()
-
-    def stack_to_project_coord(self, dim, stack_coord):
-        return stack_coord
-
-    def stack_to_project(self, stack_coords):
-        return stack_coords.copy()
 
 
 if __name__ == '__main__':
