@@ -4,8 +4,6 @@ import os
 DEBUG = True
 DEBUG_ROOT = r'/home/cbarnes/work/synapse_detection/remote_results/L1-CNS/skeletons/11524047'
 
-OFFSET = -121
-
 
 def path2coords(path):
     fname = os.path.basename(path)
@@ -33,7 +31,7 @@ if __name__ == '__main__':
         coords = {
             'x': 8768,
             'y': 8173,
-            'z': 642 - OFFSET
+            'z': 642
         }
         filename = get_filename_for_coords(coords, directory)
         print(filename)

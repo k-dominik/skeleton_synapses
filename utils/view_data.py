@@ -8,8 +8,6 @@ from nearest_slice import get_filename_for_coords
 
 plt.style.use('ggplot')
 
-OFFSET = -121
-
 DEFAULT_INNER_PATH = 'data'
 DEFAULT_SHAPE = '16:9'
 
@@ -96,7 +94,7 @@ if __name__ == "__main__":
         coords = {
             'x': 9507,
             'y': 8451,
-            'z': 616 - OFFSET
+            'z': 616
         }
         filename = get_filename_for_coords(coords, os.path.join(DEBUG_ROOT, 'raw'))
 
