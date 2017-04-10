@@ -45,7 +45,7 @@ from ilastik.applets.edgeTrainingWithMulticut.opEdgeTrainingWithMulticut import 
 from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
 from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutWorkflow
 
-from skeleton_utils import Skeleton, roi_around_node
+from skeleton_utils import TransformedSkeleton, roi_around_node
 from progress_server import ProgressInfo, ProgressServer
 from skeleton_utils import CSV_FORMAT
 from catmaid_interface import CatmaidAPI
@@ -132,7 +132,7 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
     with open(skeleton_path, 'w') as f:
         json.dump(skeleton_dict, f, sort_keys=True, indent=2)
 
-    skeleton = Skeleton(skeleton_path, (x_res, y_res, z_res))
+    skeleton = TransformedSkeleton(skeleton_path, (x_res, y_res, z_res))
 
     progress_server = None
     progress_callback = lambda p: None
@@ -245,7 +245,7 @@ def locate_synapses_parallel(autocontext_project_path,
         Stack description JSON file
     skel_output_dir : str
         {project_dir}/skeletons/{skel_id}/
-    skeleton : Skeleton
+    skeleton : TransformedSkeleton
     roi_radius_px : int
         Default 150
 
@@ -534,7 +534,7 @@ def write_synapses_from_queue(queue, output_path, skeleton, last_node_id, synaps
     ----------
     queue
     output_path
-    skeleton : Skeleton
+    skeleton : TransformedSkeleton
     last_node_id
     synapse_output_dir
     relabeler : SynapseSliceRelabeler
