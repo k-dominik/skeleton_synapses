@@ -4,6 +4,8 @@ import collections
 import numpy
 import networkx as nx
 from tree_util import partition
+from catmaid_interface import CatmaidAPI
+import tempfile
 
 
 # Not  used in this file, but defined for cmd-line utilities to use.
@@ -188,8 +190,18 @@ def nodes_and_rois_for_tree(tree, radius):
         branchwise_rois.append( zip(branch, rois) )
     return branchwise_rois
 
-class Skeleton(object):
+
+class TransformedSkeleton(object):
     def __init__(self, json_path, resolution_xyz):
+        """
+        JSON should be in project coordinates. This transforms nodes into coordinates at stack scale, but still using 
+        the project origin. Connector coordinates are not transformed
+        
+        Parameters
+        ----------
+        json_path
+        resolution_xyz
+        """
         skeleton_id, node_infos = parse_skeleton_json( json_path, *resolution_xyz )
         connector_infos_list, node_to_connector = parse_connectors(json_path)
         
@@ -204,6 +216,45 @@ class Skeleton(object):
         self.branches = branchwise_node_infos(self.tree)
 
         self.x_res, self.y_res, self.z_res = resolution_xyz
+
+
+class Skeleton(TransformedSkeleton):
+    """
+    Coordinates are not transformed in any way.
+    """
+    def __init__(self, json_path):
+        super(Skeleton, self).__init__(json_path, (1, 1, 1))
+
+    @classmethod
+    def from_catmaid(cls, catmaid, skeleton_id, stack_id_or_title=None, save_path=None):
+        """
+        
+        Parameters
+        ----------
+        catmaid : CatmaidAPI
+        skeleton_id
+        stack_id_or_title : int | str
+            If set, coordinates will be transformed into stack coordinates. If not, project coordinates will be used.
+            
+        Returns
+        -------
+        Skeleton
+        """
+        if save_path:
+            f, path = tempfile.mkstemp('.json', 'ilastik_skel')
+            f.close()
+        else:
+            path = save_path
+
+        geom = catmaid.get_treenode_and_connector_geometry(skeleton_id, stack_id_or_title)
+        with open(path, 'w') as f:
+            json.dump(geom, f, sort_keys=True, indent=2)
+
+        if not save_path:
+            os.remove(path)
+
+        return cls(path)
+
 
 if __name__ == "__main__":
     X_RES = 3.8
