@@ -8,6 +8,9 @@ import argparse
 import pandas as pd
 from catmaid_interface import CatmaidAPI
 import logging
+import networkx as nx
+from collections import namedtuple
+from six import iteritems
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -143,6 +146,101 @@ def ensure_volume_exists(volume_path, stack_info, force=False):
             )
             synapse_info.attrs['headers'] = CSV_HEADERS
             synapse_info.attrs['max_id'] = BACKGROUND_LABEL
+
+
+DfRow = namedtuple('DfRow', CSV_HEADERS)
+
+
+class IntersectionDetector(object):
+    def __init__(self, existing_df, existing_volume, slice_dir):
+        """
+        
+        Parameters
+        ----------
+        existing_df : pandas.DataFrame
+        existing_volume : h5py.Dataset
+        slice_dir : str
+        """
+        self.df = existing_df
+        self.volume = existing_volume
+        self.slice_dir = slice_dir
+        self.ancestry = nx.Graph()
+
+    def process(self, new_df):
+        background_label = self.volume.attrs['background']
+
+        # merge old and new dataframes, noting where the boundary is and preventing ID clashes
+        new_idx = len(self.df)
+        current_max = self.df['synapse_id'].max()
+        new_df['synapse_id'] += current_max if not np.isnan(current_max) else background_label
+        self.df = pd.concat((self.df, new_df))
+
+        # find all adjacencies/intersections in new synapse slices
+        for idx, row in enumerate(new_df.itertuples(False, 'DfRow')):
+            up_to = new_idx + idx
+            self.ancestry.add_edges_from(
+                (row['synapse_id'], existing_id) for existing_id in self.bbox_intersects(row, up_to)['synapse_id']
+            )
+
+        id_mapping = self._get_id_mapping()
+
+        # relabel existing image labels and all df rows
+        for old_id, new_id in iteritems(id_mapping):
+            to_relabel = self.df['synapse_id'] == old_id
+            for row in self.df[to_relabel].itertuples(False, 'DfRow'):
+                slice_im = np.array(self.volume[row['z_px'], row['ymin']:row['ymax'], row['xmin']:row['xmax']])
+                slice_im[slice_im == old_id] = new_id  # could maybe be done in one step
+                self.volume[row['z_px'], row['ymin']:row['ymax'], row['xmin']:row['xmax']] = slice_im
+
+            self.df.loc[to_relabel, 'synapse_id'] = new_id
+
+        # dump label images into volume, remapping synapse IDs (and add background label)
+        filenames = os.listdir(self.slice_dir)
+        for idx, filename in enumerate(filenames, 1):
+            logging.debug('Committing node slice {} of {}'.format(idx, len(filenames)))
+            file_path = os.path.join(self.slice_dir, filename)
+            logging.debug('Extracting data from {}'.format(file_path))
+            topleft = parse_slice_name(os.path.splitext(filename)[0])
+            with h5py.File(file_path, 'r') as synapse_file:
+                slice_data = np.array(synapse_file['data'])[:, :, 0, 0]
+
+                for old_id in slice_data.uniques():
+                    if old_id in id_mapping:
+                        slice_data[slice_data == old_id] = id_mapping[old_id]
+
+                bbox = topleft_to_bounding_box(topleft, slice_data.shape[0])
+                slice_data[slice_data == 0] = background_label
+
+                # slice_data is in [x, y], where it needs to be in [y, x]
+                self.volume[bbox['z'], bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1]] = slice_data.T
+
+        # todo: clear rows of table if their bounding box has been entirely replaced? Not necessary if versioning
+
+
+
+    def _get_id_mapping(self):
+        mappings = dict()
+        for component in nx.connected_components(self.ancestry):
+            master = min(component)
+            for synapse_id in component:
+                if synapse_id != master:
+                    mappings[synapse_id] = master
+
+        return mappings
+
+    def bbox_intersects(self, new_row, up_to=None):
+        df = self.df if up_to is None else self.df.iloc[:up_to]
+        return df[
+            np.abs(df['z_px'] - new_row['z_px']) <= 1 and  # same or adjacent Z slice
+            not (
+                df['xmin'] > new_row['xmax'] + 1 or    # new slice isn't to the left
+                df['xmax'] < new_row['xmin'] - 1       # new slice isn't to the right
+            ) and
+            not (
+                df['ymin'] > new_row['ymax'] + 1 or    # new slice isn't below
+                df['ymax'] < new_row['ymin'] - 1       # new slice isn't above
+            )
+        ]
 
 
 # todo: deal with intersecting synapses (give them same ID)
