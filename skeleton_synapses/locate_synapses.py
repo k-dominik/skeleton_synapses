@@ -32,7 +32,6 @@ from scipy.spatial.distance import euclidean
 
 from lazyflow.graph import Graph
 from lazyflow.utility import PathComponents, isUrl, Timer
-from lazyflow.utility.io_util import TiledVolume
 from lazyflow.request import Request
 
 import ilastik_main
@@ -45,7 +44,7 @@ from ilastik.applets.edgeTrainingWithMulticut.opEdgeTrainingWithMulticut import 
 from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
 from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutWorkflow
 
-from skeleton_utils import TransformedSkeleton, roi_around_node
+from skeleton_utils import Skeleton, roi_around_node
 from progress_server import ProgressInfo, ProgressServer
 from skeleton_utils import CSV_FORMAT
 from catmaid_interface import CatmaidAPI
@@ -106,7 +105,7 @@ RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
     catmaid = CatmaidAPI.from_json(credentials_path)
 
-    include_offset = True
+    include_offset = False
 
     volume_description_path = os.path.join(
         project_dir, PROJECT_NAME + '-description{}.json'.format('' if include_offset else '-NO-OFFSET')
@@ -117,22 +116,14 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
         with open(volume_description_path, 'w') as f:
             json.dump(volume_description_dict, f, sort_keys=True, indent=2)
 
-    # Read the volume resolution
-    volume_description = TiledVolume.readDescription(volume_description_path)
-    z_res, y_res, x_res = volume_description.resolution_zyx
-
     # Name the output directory with the skeleton id
     skel_output_dir = os.path.join(project_dir, 'skeletons', skeleton_id)
     if force:
         shutil.rmtree(skel_output_dir, ignore_errors=True)
     mkdir_p(skel_output_dir)
 
-    skeleton_dict = catmaid.get_treenode_and_connector_geometry(skeleton_id)
-    skeleton_path = os.path.join(skel_output_dir, 'tree_geometry.json')
-    with open(skeleton_path, 'w') as f:
-        json.dump(skeleton_dict, f, sort_keys=True, indent=2)
-
-    skeleton = TransformedSkeleton(skeleton_path, (x_res, y_res, z_res))
+    skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
+    skeleton = Skeleton.from_catmaid(catmaid, skeleton_id, stack_id, skel_path)
 
     progress_server = None
     progress_callback = lambda p: None
@@ -245,7 +236,7 @@ def locate_synapses_parallel(autocontext_project_path,
         Stack description JSON file
     skel_output_dir : str
         {project_dir}/skeletons/{skel_id}/
-    skeleton : TransformedSkeleton
+    skeleton : Skeleton
     roi_radius_px : int
         Default 150
 
@@ -525,7 +516,7 @@ def search_queue(queue, criterion, timeout=None):
             queue.put(item)
 
 
-def write_synapses_from_queue(queue, output_path, skeleton, last_node_id, synapse_output_dir, relabeler=None):
+def write_synapses_from_queue(queue, output_path, skeleton, last_node_idx, synapse_output_dir, relabeler=None):
     """
     Relabel synapses if they are multi-labelled, write out the HDF5 of the synapse segmentation, and write synapses
     to a CSV.
@@ -534,20 +525,20 @@ def write_synapses_from_queue(queue, output_path, skeleton, last_node_id, synaps
     ----------
     queue
     output_path
-    skeleton : TransformedSkeleton
-    last_node_id
+    skeleton : Skeleton
+    last_node_idx
     synapse_output_dir
     relabeler : SynapseSliceRelabeler
 
     """
-    sought_node = 0
+    sought_node_idx = 0
     with open(output_path, "w") as fout:
         csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
         csv_writer.writeheader()
 
-        while sought_node <= last_node_id:
+        while sought_node_idx <= last_node_idx:
             node_overall_index, node_info, roi_radius_px, predictions_xyc, synapse_cc_xy, segmentation_xy = search_queue(
-                queue, lambda x: x.node_overall_index == sought_node
+                queue, lambda x: x.node_overall_index == sought_node_idx
             )
 
             roi_xyz = roi_around_node(node_info, roi_radius_px)

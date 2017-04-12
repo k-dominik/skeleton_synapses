@@ -102,7 +102,7 @@ def topleft_to_bounding_box(center, side_length):
     }
 
 
-def ensure_volume_exists(volume_path, description, force=False):
+def ensure_volume_exists(volume_path, stack_info, force=False):
     """
     If the volume HDF5 file does not exist, or create it
 
@@ -110,8 +110,8 @@ def ensure_volume_exists(volume_path, description, force=False):
     ----------
     volume_path : str
         Path to HDF5 volume file
-    description : dict
-        Ilastik-style stack description dictionary
+    stack_info : dict
+        Stack description as returned by CATMAID
     force : bool
         Whether to delete and recreate an empty HDF5 volume file if it already exists
 
@@ -120,16 +120,20 @@ def ensure_volume_exists(volume_path, description, force=False):
 
     """
     if force or not os.path.isfile(volume_path):
+        dimension = [stack_info['dimension'][dim] for dim in 'zyx']
+
         with h5py.File(volume_path, 'w') as volume_file:
             volume = volume_file.create_dataset(
                 'volume',
-                reorder(description['bounds_zyx'], [1, 2, 0]),  # zyx -> yxz
+                dimension,  # zyx
                 chunks=CHUNK_SHAPE,
                 fillvalue=UNKNOWN_LABEL,
                 dtype=DTYPE
             )
             volume.attrs['unknown'] = UNKNOWN_LABEL
             volume.attrs['background'] = BACKGROUND_LABEL
+            for key in ['translation', 'dimension', 'resolution']:
+                volume.attrs[key] = json.dumps(stack_info[key])
 
             logging.debug('Creating synapse CSV array of shape {}'.format((0, len(CSV_HEADERS))))
             synapse_info = volume_file.create_dataset(
@@ -145,11 +149,11 @@ def ensure_volume_exists(volume_path, description, force=False):
 def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_PATH,
          volume_hdf5_path=VOLUME_HDF5_PATH, force=REFRESH):
     catmaid = CatmaidAPI.from_json(credential_path)
-    description = catmaid.get_stack_description(stack_id)
+    stack_info = catmaid.get_stack_info(stack_id)
 
     ensure_volume_exists(
         volume_hdf5_path,
-        description,
+        stack_info,
         force
     )
 
@@ -164,7 +168,6 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
         synapse_info = volume_file['synapse_info']
 
         max_id = synapse_info.attrs['max_id']
-        next_max_id = max_id
         background_label = volume.attrs['background']
         filenames = os.listdir(skeleton_hdf5_path)
         for idx, filename in enumerate(filenames, 1):
@@ -179,7 +182,7 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
                 slice_data[slice_data == 0] = background_label
 
                 # slice_data is in [x, y], where it needs to be in [y, x]
-                volume[bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1], bbox['z']] = slice_data.T
+                volume[bbox['z'], bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1]] = slice_data.T
 
         headers = synapse_info.attrs['headers']
 
@@ -201,7 +204,7 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
         )
 
         synapse_info.attrs['headers'] = headers
-        synapse_info.attrs['max_id'] = next_max_id
+        synapse_info.attrs['max_id'] = synapse_csv['synapse_id'].max()
 
 
 if __name__ == '__main__':
