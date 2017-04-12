@@ -168,7 +168,6 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
         synapse_info = volume_file['synapse_info']
 
         max_id = synapse_info.attrs['max_id']
-        next_max_id = max_id
         background_label = volume.attrs['background']
         filenames = os.listdir(skeleton_hdf5_path)
         for idx, filename in enumerate(filenames, 1):
@@ -205,7 +204,7 @@ def main(credential_path, stack_id, skel_id, ilastik_output_path=ILASTIK_OUTPUT_
         )
 
         synapse_info.attrs['headers'] = headers
-        synapse_info.attrs['max_id'] = next_max_id
+        synapse_info.attrs['max_id'] = synapse_csv['synapse_id'].max()
 
 
 if __name__ == '__main__':
