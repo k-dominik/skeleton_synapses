@@ -39,21 +39,33 @@ def parse_skeleton_swc(swc_path, x_res, y_res, z_res):
             node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )    
     return node_infos
 
-def parse_skeleton_json(json_path, x_res, y_res, z_res):
+
+def parse_skeleton_json_file(json_path, x_res, y_res, z_res):
     """
-    Parse the given json file and return a list of NodeInfo tuples.
+        Parse the given json file and return a list of NodeInfo tuples.
+        Coordinates are converted from nm to pixels.
+
+        Note: Mimicking the conventions above for swc files, 
+              a parentless node will be assigned parent_id = -1    
+        """
+    assert os.path.splitext(json_path)[1] == '.json', "Skeleton file must end with .json"
+
+    with open(json_path, 'r') as json_file:
+        json_data = json.load(json_file)
+
+    return parse_skeleton_json_data(json_data, x_res, y_res, z_res)
+
+
+def parse_skeleton_json_data(json_data, x_res, y_res, z_res):
+    """
+    Parse the given json data and return a list of NodeInfo tuples.
     Coordinates are converted from nm to pixels.
     
     Note: Mimicking the conventions above for swc files, 
           a parentless node will be assigned parent_id = -1    
     """
-    assert os.path.splitext(json_path)[1] == '.json', \
-        "Skeleton file must end with .json"
-    
     node_infos = []
-    with open(json_path, 'r') as json_file:
-        json_data = json.load(json_file)
-    
+
     if len(json_data['skeletons']) == 0:
         raise Exception("File '{}' does not contain any skeleton data.".format( json_path ))
     if len(json_data['skeletons']) > 1:
@@ -88,14 +100,33 @@ def parse_skeleton_ids( json_path ):
         json_data = json.load(json_file)
     return json_data['skeletons'].keys()
 
-# Note that in ConnectorInfos, we keep the coordinates in nanometers!
+# Note that in ConnectorInfos, we do not transform the coordinates!
 ConnectorInfo = collections.namedtuple('ConnectorInfo', 'id x_nm y_nm z_nm incoming_nodes outgoing_nodes')
-def parse_connectors( json_path ):
+
+
+def parse_connectors_from_file(json_path):
+    """
+        Parses skeleton files as returned by the CATMAID
+        export widget's "Treenode and connector geometry" format.
+
+        Read the skeleton json file and return:
+        - A list of ConnectorInfo tuples
+        - A dict of node -> connectors (regardless of whether the node is incoming or outgoing for the connector:
+          { node : [connector_id, connector_id, ...] }
+
+        """
+    with open(json_path, 'r') as json_file:
+        json_data = json.load(json_file)
+
+    return parse_connectors_from_data(json_data)
+
+
+def parse_connectors_from_data( json_data ):
     """
     Parses skeleton files as returned by the CATMAID
     export widget's "Treenode and connector geometry" format.
     
-    Read the skeleton json file and return:
+    Read the skeleton json data and return:
     - A list of ConnectorInfo tuples
     - A dict of node -> connectors (regardless of whether the node is incoming or outgoing for the connector:
       { node : [connector_id, connector_id, ...] }
@@ -103,8 +134,6 @@ def parse_connectors( json_path ):
     """
     connector_infos = []
     node_to_connector = {}
-    with open(json_path, 'r') as json_file:
-        json_data = json.load(json_file)
 
     if len(json_data['skeletons']) == 0:
         raise Exception("File '{}' does not contain any skeleton data.".format( json_path ))
@@ -192,7 +221,7 @@ def nodes_and_rois_for_tree(tree, radius):
 
 
 class TransformedSkeleton(object):
-    def __init__(self, json_path, resolution_xyz):
+    def __init__(self, json_path_or_data, resolution_xyz):
         """
         JSON should be in project coordinates. This transforms nodes into coordinates at stack scale, but still using 
         the project origin. Connector coordinates are not transformed
@@ -202,8 +231,13 @@ class TransformedSkeleton(object):
         json_path
         resolution_xyz
         """
-        skeleton_id, node_infos = parse_skeleton_json( json_path, *resolution_xyz )
-        connector_infos_list, node_to_connector = parse_connectors(json_path)
+
+        if isinstance(json_path_or_data, str):
+            skeleton_id, node_infos = parse_skeleton_json_file( json_path_or_data, *resolution_xyz )
+            connector_infos_list, node_to_connector = parse_connectors_from_file(json_path_or_data)
+        else:
+            skeleton_id, node_infos = parse_skeleton_json_data(json_path_or_data, *resolution_xyz)
+            connector_infos_list, node_to_connector = parse_connectors_from_data(json_path_or_data)
         
         self.skeleton_id = skeleton_id
         self.connector_infos = { info.id : info for info in connector_infos_list }
@@ -222,8 +256,8 @@ class Skeleton(TransformedSkeleton):
     """
     Coordinates are not transformed in any way.
     """
-    def __init__(self, json_path):
-        super(Skeleton, self).__init__(json_path, (1, 1, 1))
+    def __init__(self, json_path_or_data):
+        super(Skeleton, self).__init__(json_path_or_data, (1, 1, 1))
 
     @classmethod
     def from_catmaid(cls, catmaid, skeleton_id, stack_id_or_title=None, save_path=None):
@@ -235,25 +269,19 @@ class Skeleton(TransformedSkeleton):
         skeleton_id
         stack_id_or_title : int | str
             If set, coordinates will be transformed into stack coordinates. If not, project coordinates will be used.
+        save_path : str
+            If set, the treenode and connector geometry fetched from catmaid will be saved to this path
             
         Returns
         -------
         Skeleton
         """
-        if save_path:
-            handle, path = tempfile.mkstemp('.json', 'ilastik_skel')
-            os.close(handle)
-        else:
-            path = save_path
-
         geom = catmaid.get_treenode_and_connector_geometry(skeleton_id, stack_id_or_title)
-        with open(path, 'w') as f:
-            json.dump(geom, f, sort_keys=True, indent=2)
+        if save_path:
+            with open(save_path, 'w') as f:
+                json.dump(geom, f, sort_keys=True, indent=2)
 
-        if not save_path:
-            os.remove(path)
-
-        return cls(path)
+        return cls(geom)
 
 
 if __name__ == "__main__":
