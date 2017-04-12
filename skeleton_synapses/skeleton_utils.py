@@ -241,8 +241,8 @@ class Skeleton(TransformedSkeleton):
         Skeleton
         """
         if save_path:
-            f, path = tempfile.mkstemp('.json', 'ilastik_skel')
-            f.close()
+            handle, path = tempfile.mkstemp('.json', 'ilastik_skel')
+            os.close(handle)
         else:
             path = save_path
 
