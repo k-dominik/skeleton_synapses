@@ -32,7 +32,6 @@ from scipy.spatial.distance import euclidean
 
 from lazyflow.graph import Graph
 from lazyflow.utility import PathComponents, isUrl, Timer
-from lazyflow.utility.io_util import TiledVolume
 from lazyflow.request import Request
 
 import ilastik_main
@@ -517,7 +516,7 @@ def search_queue(queue, criterion, timeout=None):
             queue.put(item)
 
 
-def write_synapses_from_queue(queue, output_path, skeleton, last_node_id, synapse_output_dir, relabeler=None):
+def write_synapses_from_queue(queue, output_path, skeleton, last_node_idx, synapse_output_dir, relabeler=None):
     """
     Relabel synapses if they are multi-labelled, write out the HDF5 of the synapse segmentation, and write synapses
     to a CSV.
@@ -527,19 +526,19 @@ def write_synapses_from_queue(queue, output_path, skeleton, last_node_id, synaps
     queue
     output_path
     skeleton : Skeleton
-    last_node_id
+    last_node_idx
     synapse_output_dir
     relabeler : SynapseSliceRelabeler
 
     """
-    sought_node = 0
+    sought_node_idx = 0
     with open(output_path, "w") as fout:
         csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
         csv_writer.writeheader()
 
-        while sought_node <= last_node_id:
+        while sought_node_idx <= last_node_idx:
             node_overall_index, node_info, roi_radius_px, predictions_xyc, synapse_cc_xy, segmentation_xy = search_queue(
-                queue, lambda x: x.node_overall_index == sought_node
+                queue, lambda x: x.node_overall_index == sought_node_idx
             )
 
             roi_xyz = roi_around_node(node_info, roi_radius_px)
@@ -555,10 +554,10 @@ def write_synapses_from_queue(queue, output_path, skeleton, last_node_id, synaps
             )
 
             logger.debug('PROGRESS: Written CSV for node {} of {}'.format(
-                sought_node, last_node_id
+                sought_node_idx, last_node_idx
             ))
 
-            sought_node += 1
+            sought_node_idx += 1
 
             fout.flush()
 
