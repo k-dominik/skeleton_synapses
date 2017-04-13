@@ -307,16 +307,12 @@ if __name__ == "__main__":
         parser.add_argument('project_dir',
                             help="A directory containing project files in ./projects, and which output files will be "
                                  "dropped into.")
-        parser.add_argument('progress_port', nargs='?', type=int, default=0,
-                            help="An http server will be launched on the given port (if nonzero), "
-                                 "which can be queried to give information about progress.")
         parser.add_argument('-f', '--force', type=int, default=0,
                             help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
 
         args = parser.parse_args()
         args_list = [
-            args.credentials_path, args.stack_id, args.skeleton_id, args.project_dir, args.roi_radius_px,
-            args.progress_port, args.force
+            args.credentials_path, args.stack_id, args.skeleton_id, args.project_dir, args.roi_radius_px, args.force
         ]
         kwargs_dict = {}  # must be empty
 
