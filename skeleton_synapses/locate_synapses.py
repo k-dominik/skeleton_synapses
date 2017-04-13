@@ -570,8 +570,7 @@ def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     raw_xy = raw_xyzc[:,:,0,0]
     return raw_xy
 
-# opThreshold is global so we don't waste time initializing it repeatedly.
-opThreshold = OpThresholdTwoLevels(graph=Graph())
+
 def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     """
     Run classification on the given node with the given operator.
@@ -590,7 +589,8 @@ def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     write_output_image(output_dir, predictions_xyc, "predictions", roi_name, mode='slices')
     return predictions_xyc
 
-
+# opThreshold is global so we don't waste time initializing it repeatedly.
+opThreshold = OpThresholdTwoLevels(graph=Graph())
 def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, relabeler=None):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
@@ -606,7 +606,7 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, r
     opThreshold.InputImage.meta.drange = (0.0, 1.0)
     synapse_cc_xy = opThreshold.Output[:].wait()[...,0]
     synapse_cc_xy = vigra.taggedView(synapse_cc_xy, 'xy')
-    
+
     # Relabel for consistency with previous slice
     if relabeler:
         synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
@@ -625,7 +625,7 @@ def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw
     opDataExport.OutputAxisOrder.setValue('xy')
 
     role_data_dict = OrderedDict([ ("Raw Data", [ DatasetInfo(preloaded_array=raw_xy) ]),
-                                   ("Probabilities", [ DatasetInfo(preloaded_array=predictions_xyc) ])]) 
+                                   ("Probabilities", [ DatasetInfo(preloaded_array=predictions_xyc) ])])
     batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
     assert len(batch_results) == 1
     segmentation_xy = batch_results[0]
@@ -664,8 +664,8 @@ def append_lane(workflow, input_filepath, axisorder=None):
 
     comp = PathComponents(input_filepath)
 
-    # Convert all (non-url) paths to absolute 
-    # (otherwise they are relative to the project file, which probably isn't what the user meant)        
+    # Convert all (non-url) paths to absolute
+    # (otherwise they are relative to the project file, which probably isn't what the user meant)
     if not isUrl(input_filepath):
         comp.externalPath = os.path.abspath(comp.externalPath)
         info.filePath = comp.totalPath()
@@ -681,7 +681,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
     num_lanes = len( opDataSelection.DatasetGroup )+1
     logger.debug( "num_lanes: {}".format( num_lanes ) )
     opDataSelection.DatasetGroup.resize( num_lanes )
-    
+
     # Configure it.
     role_index = 0 # raw data
     opDataSelection.DatasetGroup[-1][role_index].setValue( info )
@@ -699,10 +699,10 @@ def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacke
     global initialized_files
     if not output_dir:
         return
-    
+
     # Insert a Z-axis
     image_xyzc = vigra.taggedView(image_xyc[:,:,None,:], 'xyzc')
-    
+
     if mode == "slices":
         output_subdir = os.path.join(output_dir, name)
         mkdir_p(output_subdir)
@@ -736,7 +736,7 @@ def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacke
                 f.create_dataset('data', shape=image_xyzc.shape, maxshape=tuple(maxshape), dtype=image_xyzc.dtype)
                 f['data'].attrs['axistags'] = image_xyzc.axistags.toJSON()
                 f['data'].attrs['slice-names'] = []
-    
+
             # Write onto the end of the stack.
             f['data'][:, :, -1:, :] = image_xyzc
 
@@ -781,7 +781,7 @@ class SynapseSliceRelabeler(object):
             current_roi_2d = current_roi[:, :-1]
             previous_roi_2d = previous_roi[:, :-1]
             intersection_roi, current_intersection_roi, prev_intersection_roi = intersection( current_roi_2d, previous_roi_2d )
-    
+
         current_unique_labels = unique(current_slice)
         assert current_unique_labels[0] == 0, "This function assumes that not all pixels belong to detections."
         if len(current_unique_labels) == 1:
@@ -805,33 +805,33 @@ class SynapseSliceRelabeler(object):
             self.previous_roi = current_roi
             self.previous_slice = relabeled_slice
             return relabeled_slice
-        
+
         # Extract the intersecting region from the current/prev slices,
         #  so its easy to compare corresponding pixels
         current_intersection_slice = current_slice[slicing(current_intersection_roi)]
         prev_intersection_slice = self.previous_slice[slicing(prev_intersection_roi)]
-    
+
         # omit label 0
         previous_slice_objects = unique(self.previous_slice)[1:]
         current_slice_objects = unique(current_slice)[1:]
         max_current_object = max(0, *current_slice_objects)
         relabel = np.zeros((max_current_object+1,), dtype=np.uint32)
-        
+
         for cc in previous_slice_objects:
             current_labels = unique(current_intersection_slice[prev_intersection_slice==cc])
             for cur_label in current_labels:
                 relabel[cur_label] = cc
-        
+
         new_max_label = self.max_label
         for cur_object in current_slice_objects:
             if relabel[cur_object] == 0:
                 relabel[cur_object] = new_max_label+1
                 new_max_label = new_max_label+1
-    
+
         # Relabel the entire current slice
         relabel[0] = 0
         relabeled_slice = relabel[current_slice]
-    
+
         self.max_label = new_max_label
         self.previous_roi = current_roi
         self.previous_slice = relabeled_slice
@@ -846,7 +846,7 @@ def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, pred
     # Node is always located in the middle pixel, by definition.
     center_coord = np.array(segmentation_xy.shape) / 2
     node_segment = segmentation_xy[tuple(center_coord)]
-    
+
     synapseIds = unique(synapse_cc_xy)
     for sid in synapseIds[1:]: # skip 0
         # find the pixel positions of this synapse
