@@ -20,7 +20,7 @@ echo `git rev-parse HEAD` > ${log_dir}/version.txt
 
 echo "Started at ${timestamp}" > ${log_dir}/time.txt
 
-./locate_synapses.py ${cred_path} ${stack_id} ${skel_id} ${project_dir} -f ${force} 2>&1 | tee ${log_dir}/locate_synapses.txt;
+./locate_syn_parallel.py ${cred_path} ${stack_id} ${skel_id} ${project_dir} -f ${force} 2>&1 | tee ${log_dir}/locate_synapses.txt;
 
 echo "Segmentation finished at $(date +"%Y-%m-%d_%H:%M:%S")" >> ${log_dir}/time.txt
 
