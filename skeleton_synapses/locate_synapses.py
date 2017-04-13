@@ -31,8 +31,7 @@ from vigra.analysis import unique
 from scipy.spatial.distance import euclidean
 
 from lazyflow.graph import Graph
-from lazyflow.utility import PathComponents, isUrl, Timer
-from lazyflow.request import Request
+from lazyflow.utility import PathComponents, isUrl
 
 import ilastik_main
 from ilastik.shell.headless.headlessShell import HeadlessShell
@@ -45,8 +44,6 @@ from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutoconte
 from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutWorkflow
 
 from skeleton_utils import Skeleton, roi_around_node
-from progress_server import ProgressInfo, ProgressServer
-from skeleton_utils import CSV_FORMAT
 from catmaid_interface import CatmaidAPI
 
 # Import requests in advance so we can silence its log messages.
@@ -143,163 +140,6 @@ def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=Fals
     return volume_description_path, skel_output_dir, skeleton
 
 
-def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
-    volume_description_path, skel_output_dir, skeleton = setup_files(
-        credentials_path, stack_id, skeleton_id, project_dir, force
-    )
-
-    progress_server = None
-    progress_callback = lambda p: None
-    if progress_port is not None:
-        # Start a server for others to poll progress.
-        progress_server = ProgressServer.create_and_start( "localhost", progress_port )
-        progress_callback = progress_server.update_progress
-    try:
-        autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
-        multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
-
-        # locate_synapses( autocontext_project,
-        #                  multicut_project,
-        #                  volume_description_path,
-        #                  skel_output_dir,
-        #                  skeleton,
-        #                  roi_radius_px,
-        #                  progress_callback )
-
-        locate_synapses_parallel(
-            autocontext_project,
-            multicut_project,
-            volume_description_path,
-            skel_output_dir,
-            skeleton,
-            roi_radius_px
-        )
-    finally:
-        if progress_server:
-            progress_server.shutdown()
-
-
-def locate_synapses(autocontext_project_path,
-                    multicut_project,
-                    input_filepath,
-                    skel_output_dir,
-                    skeleton,
-                    roi_radius_px,
-                    progress_callback=lambda p: None):
-    """
-    autocontext_project_path: Path to .ilp file.  Must use axis order 'xytc'.
-    """
-    output_path = skel_output_dir + "/skeleton-{}-synapses.csv".format(skeleton.skeleton_id)
-    skeleton_branch_count = len(skeleton.branches)
-    skeleton_node_count = sum(map(len, skeleton.branches))
-
-    opPixelClassification, multicut_shell = setup_classifier_and_multicut(
-        input_filepath, autocontext_project_path, multicut_project
-    )
-
-    timing_logger = logging.getLogger(__name__ + '.timing')
-    timing_logger.setLevel(logging.INFO)
-
-    relabeler = SynapseSliceRelabeler()
-
-    with open(output_path, "w") as fout:
-        csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
-        csv_writer.writeheader()
-
-        node_overall_index = -1
-        for branch_index, branch in enumerate(skeleton.branches):
-            for node_index_in_branch, node_info in enumerate(branch):
-                with Timer() as node_timer:
-                    node_overall_index += 1
-                    roi_xyz = roi_around_node(node_info, roi_radius_px)
-                    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
-                    logger.debug("skeleton point: {}".format( skeleton_coord ))
-
-                    predictions_xyc, synapse_cc_xy, segmentation_xy = perform_segmentation(
-                        node_info, roi_radius_px, skel_output_dir, opPixelClassification,
-                        multicut_shell.workflow
-                    )
-
-                    write_synapses( csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy, node_overall_index )
-                    fout.flush()
-
-                timing_logger.info( "NODE TIMER: {}".format( node_timer.seconds() ) )
-
-                progress = 100*float(node_overall_index)/skeleton_node_count
-                logger.debug("PROGRESS: node {}/{} ({:.1f}%) ({} detections)"
-                             .format(node_overall_index, skeleton_node_count, progress, relabeler.max_label))
-
-                # Progress: notify client
-                progress_callback( ProgressInfo( node_overall_index,
-                                                 skeleton_node_count,
-                                                 branch_index,
-                                                 skeleton_branch_count,
-                                                 node_index_in_branch,
-                                                 len(branch),
-                                                 relabeler.max_label ) )
-    logger.info("DONE with skeleton.")
-
-
-def locate_synapses_parallel(autocontext_project_path,
-                            multicut_project,
-                            input_filepath,
-                            skel_output_dir,
-                            skeleton,
-                            roi_radius_px
-                        ):
-    """
-
-    Parameters
-    ----------
-    autocontext_project_path : str
-        .ilp file path
-    multicut_project : str
-        .ilp file path
-    input_filepath : str
-        Stack description JSON file
-    skel_output_dir : str
-        {project_dir}/skeletons/{skel_id}/
-    skeleton : Skeleton
-    roi_radius_px : int
-        Default 150
-
-    Returns
-    -------
-
-    """
-    output_path = skel_output_dir + "/skeleton-{}-synapses.csv".format(skeleton.skeleton_id)
-
-    node_queue, result_queue = mp.Queue(), mp.Queue()
-
-    node_overall_index = -1
-    for branch_index, branch in enumerate(skeleton.branches):
-        for node_index_in_branch, node_info in enumerate(branch):
-            node_overall_index += 1
-
-            node_queue.put(SegmenterInput(node_overall_index, node_info, roi_radius_px))
-
-    logger.debug('{} nodes queued'.format(node_overall_index))
-
-    segmenter_containers = [
-        SegmenterCaretaker(
-            node_queue, result_queue, input_filepath, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes=NODES_PER_PROCESS, max_ram_MB=RAM_MB_PER_PROCESS, debug=False
-        )
-        for _ in range(THREADS)
-    ]
-
-    for idx, segmenter_container in enumerate(segmenter_containers):
-        segmenter_container.start()
-
-    relabeler = SynapseSliceRelabeler()
-    write_synapses_from_queue(result_queue, output_path, skeleton, node_overall_index, skel_output_dir, relabeler)
-
-    for segmenter_container in segmenter_containers:
-        segmenter_container.join()
-
-    logger.info("DONE with skeleton.")
-
-
 def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClassification, multicut_workflow,
                          relabeler=None):
     """
@@ -392,131 +232,6 @@ class DebuggableProcess(mp.Process):
             super(DebuggableProcess, self).start()
 
 
-class SegmenterCaretaker(DebuggableProcess):
-    """
-    Process which takes care of spawning a SegmenterProcess, pruning it when it terminates, and starting a new one if
-    there are still items remaining in the input queue.
-    """
-    def __init__(
-            self, input_queue, output_queue, description_file, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes=0, max_ram_MB=0, debug=False
-    ):
-        super(SegmenterCaretaker, self).__init__(debug)
-        self.segmenter_args = (input_queue, output_queue, description_file, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes, max_ram_MB, debug)
-
-        self.input_queue = input_queue
-
-    def run(self):
-        while not self.input_queue.empty():
-            segmenter = SegmenterProcess(*self.segmenter_args)
-            logger.debug('Starting {}'.format(segmenter.name))
-            segmenter.start()
-            segmenter.join()
-            del segmenter
-
-
-class SegmenterProcess(DebuggableProcess):
-    """
-    Process which creates its own pixel classifier and multicut workflow, pulls jobs from one queue and returns
-    outputs to another queue.
-    """
-    def __init__(
-            self, input_queue, output_queue, description_file, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes=0, max_ram_MB=0, debug=False
-    ):
-        """
-
-        Parameters
-        ----------
-        input_queue : mp.Queue
-        output_queue : mp.Queue
-        description_file : str
-            path
-        autocontext_project_path
-        multicut_project : str
-            path
-        skel_output_dir : str
-        debug : bool
-            Whether to instantiate a serial version for debugging purposes
-        """
-        super(SegmenterProcess, self).__init__(debug)
-        self.input_queue = input_queue
-        self.output_queue = output_queue
-
-        logger.debug('Segmenter process {} instantiated'.format(self.name))
-
-        self.timing_logger = logging.getLogger(__name__ + '.timing')
-        self.timing_logger.setLevel(logging.INFO)
-
-        self.skel_output_dir = skel_output_dir
-
-        self.count = float('-inf')
-
-        self.count = 0
-        self.max_nodes = max_nodes
-        self.max_ram_MB = max_ram_MB
-
-        self.opPixelClassification = self.multicut_shell = None
-        self.setup_args = (description_file, autocontext_project_path, multicut_project)
-
-        if not max_nodes and not max_ram_MB:
-            warnings.warn('If segmenter processes are not pruned using the max_nodes or max_ram_MB argument, '
-                          'the program may crash due to a memory leak in ilastik')
-
-        self.psutil_process = None
-
-    def run(self):
-        """
-        Pull node information from the input queue, generate pixel predictions, synapse labels and cell
-        segmentations, and put them on the output queue.
-        """
-        self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
-            *self.setup_args
-        )
-
-        self.psutil_process = [proc for proc in psutil.process_iter() if proc.pid == self.pid][0]
-        Request.reset_thread_pool(1)
-        while not self.input_queue.empty():
-            if self.needs_pruning():
-                return
-
-            node_overall_index, node_info, roi_radius_px = self.input_queue.get()
-
-            logger.debug("{} PROGRESS: addressing node {}, {} nodes remaining"
-                         .format(self.name.upper(), node_overall_index, self.input_queue.qsize()))
-
-            with Timer() as node_timer:
-                predictions_xyc, synapse_cc_xy, segmentation_xy = perform_segmentation(
-                    node_info, roi_radius_px, self.skel_output_dir, self.opPixelClassification,
-                    self.multicut_shell.workflow
-                )
-                self.timing_logger.info("NODE TIMER: {}".format(node_timer.seconds()))
-
-            logger.debug("{} PROGRESS: segmented area around node {}, {} nodes remaining"
-                         .format(self.name.upper(), node_overall_index, self.input_queue.qsize()))
-
-            self.output_queue.put(SegmenterOutput(node_overall_index, node_info, roi_radius_px, predictions_xyc,
-                                                  synapse_cc_xy, segmentation_xy))
-
-    def needs_pruning(self):
-        """
-        Return True if either the maximum number of nodes is exceeded, or the total RAM usage is
-
-        Returns
-        -------
-        bool
-            Whether the process should gracefully quit
-        """
-        self.count += 1
-        if self.max_nodes and self.count > self.max_nodes:
-            return True
-        elif self.max_ram_MB and self.psutil_process.memory_info().rss >= self.max_ram_MB * 1024 * 1024:
-            return True
-        else:
-            return False
-
-
 def search_queue(queue, criterion, timeout=None):
     """
     Get the first item of the queue for which criterion(item) is truthy: items found before this one are returned
@@ -537,52 +252,6 @@ def search_queue(queue, criterion, timeout=None):
             return item
         else:
             queue.put(item)
-
-
-def write_synapses_from_queue(queue, output_path, skeleton, last_node_idx, synapse_output_dir, relabeler=None):
-    """
-    Relabel synapses if they are multi-labelled, write out the HDF5 of the synapse segmentation, and write synapses
-    to a CSV.
-
-    Parameters
-    ----------
-    queue
-    output_path
-    skeleton : Skeleton
-    last_node_idx
-    synapse_output_dir
-    relabeler : SynapseSliceRelabeler
-
-    """
-    sought_node_idx = 0
-    with open(output_path, "w") as fout:
-        csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
-        csv_writer.writeheader()
-
-        while sought_node_idx <= last_node_idx:
-            node_overall_index, node_info, roi_radius_px, predictions_xyc, synapse_cc_xy, segmentation_xy = search_queue(
-                queue, lambda x: x.node_overall_index == sought_node_idx
-            )
-
-            roi_xyz = roi_around_node(node_info, roi_radius_px)
-
-            roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
-            if relabeler:
-                synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
-            write_output_image(synapse_output_dir, synapse_cc_xy[..., None], "synapse_cc", roi_name, mode="slices")
-
-            write_synapses(
-                csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy,
-                node_overall_index
-            )
-
-            logger.debug('PROGRESS: Written CSV for node {} of {}'.format(
-                sought_node_idx, last_node_idx
-            ))
-
-            sought_node_idx += 1
-
-            fout.flush()
 
 
 def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
@@ -612,8 +281,11 @@ def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     write_output_image(output_dir, predictions_xyc, "predictions", roi_name, mode='slices')
     return predictions_xyc
 
+
 # opThreshold is global so we don't waste time initializing it repeatedly.
 opThreshold = OpThresholdTwoLevels(graph=Graph())
+
+
 def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, relabeler=None):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
@@ -635,6 +307,7 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, r
         synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
         write_output_image(output_dir, synapse_cc_xy[..., None], "synapse_cc", roi_name, mode="slices")
     return synapse_cc_xy
+
 
 def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw_xy, predictions_xyc):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
@@ -711,6 +384,8 @@ def append_lane(workflow, input_filepath, axisorder=None):
 
 
 initialized_files = set()
+
+
 def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacked"):
     """
     Write the given image to an hdf5 file.
@@ -951,11 +626,13 @@ def intersection(roi_a, roi_b):
     out_within_b = out - roi_b[0]
     return out, out_within_a, out_within_b
 
+
 def slicing(roi):
     """
     Convert the roi to a slicing that can be used with ndarray.__getitem__()
     """
     return tuple( starmap( slice, zip(*roi) ) )
+
 
 def mkdir_p(path):
     """
@@ -968,42 +645,3 @@ def mkdir_p(path):
             pass
         else:
             raise
-
-if __name__=="__main__":
-    DEBUGGING = False
-    if DEBUGGING:
-        from os.path import dirname, abspath
-        print("USING DEBUG ARGUMENTS")
-
-        SKELETON_ID = '11524047'
-        # SKELETON_ID = '18531735'
-        L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
-        args_list = ['credentials_dev.json', 1, SKELETON_ID, L1_CNS]
-        kwargs_dict = {'force': True}
-    else:
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--roi-radius-px', default=DEFAULT_ROI_RADIUS,
-                            help='The radius (in pixels) around each skeleton node to search for synapses')
-        parser.add_argument('credentials_path',
-                            help='Path to a JSON file containing CATMAID credentials (see credentials.jsonEXAMPLE)')
-        parser.add_argument('stack_id',
-                            help='ID or name of image stack in CATMAID')
-        parser.add_argument('skeleton_id',
-                            help="A skeleton ID in CATMAID")
-        parser.add_argument('project_dir',
-                            help="A directory containing project files in ./projects, and which output files will be "
-                                 "dropped into.")
-        parser.add_argument('progress_port', nargs='?', type=int, default=0,
-                            help="An http server will be launched on the given port (if nonzero), "
-                                 "which can be queried to give information about progress.")
-        parser.add_argument('-f', '--force', type=int, default=0,
-                            help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
-
-        args = parser.parse_args()
-        args_list = [
-            args.credentials_path, args.stack_id, args.skeleton_id, args.project_dir, args.roi_radius_px,
-            args.progress_port, args.force
-        ]
-        kwargs_dict = {}  # must be empty
-
-    sys.exit( main(*args_list, **kwargs_dict) )
