@@ -117,10 +117,6 @@ def ensure_volume_exists(volume_path, stack_info, force=False):
         Stack description as returned by CATMAID
     force : bool
         Whether to delete and recreate an empty HDF5 volume file if it already exists
-
-    Returns
-    -------
-
     """
     if force or not os.path.isfile(volume_path):
         dimension = [stack_info['dimension'][dim] for dim in 'zyx']
@@ -214,9 +210,8 @@ class IntersectionDetector(object):
                 # slice_data is in [x, y], where it needs to be in [y, x]
                 self.volume[bbox['z'], bbox['y'][0]:bbox['y'][1], bbox['x'][0]:bbox['x'][1]] = slice_data.T
 
-        # todo: clear rows of table if their bounding box has been entirely replaced? Not necessary if versioning
-
-
+        # todo: clear rows of table if their bounding box has been entirely replaced?
+        # Might be replaced by > 1 slice
 
     def _get_id_mapping(self):
         mappings = dict()

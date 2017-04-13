@@ -554,10 +554,10 @@ def write_synapses_from_queue(queue, output_path, skeleton, last_node_idx, synap
             )
 
             logger.debug('PROGRESS: Written CSV for node {} of {}'.format(
-                sought_node, last_node_id
+                sought_node_idx, last_node_idx
             ))
 
-            sought_node += 1
+            sought_node_idx += 1
 
             fout.flush()
 
