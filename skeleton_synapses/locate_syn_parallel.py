@@ -18,7 +18,7 @@ from locate_synapses import (
     OUTPUT_COLUMNS, PROJECT_NAME, DEFAULT_ROI_RADIUS, logger,
     # functions
     setup_files, setup_classifier_and_multicut, roi_around_node, write_synapses, perform_segmentation,
-    get_and_print_env, write_output_image,
+    get_and_print_env, write_output_image, search_queue,
     # classes
     SynapseSliceRelabeler, DebuggableProcess
 )

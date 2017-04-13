@@ -94,11 +94,6 @@ def get_and_print_env(name, default, constructor=str):
     return constructor(val)
 
 
-THREADS = get_and_print_env('SYNAPSE_DETECTION_THREADS', 3, int)
-NODES_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500, int)
-RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000, int)
-
-
 def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=False):
     """
     
