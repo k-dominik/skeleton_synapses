@@ -107,9 +107,13 @@ def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=Fals
 
     Returns
     -------
-    tuple of (str, str, skeleton_utils.Skeleton)
+    tuple of (str, str, str, str, skeleton_utils.Skeleton)
         (volume_description_path, skel_output_dir, skeleton)
     """
+
+    autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
+    multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
+
     catmaid = CatmaidAPI.from_json(credentials_path)
 
     include_offset = False
@@ -132,7 +136,7 @@ def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=Fals
     skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
     skeleton = Skeleton.from_catmaid(catmaid, skeleton_id, stack_id, skel_path)
 
-    return volume_description_path, skel_output_dir, skeleton
+    return autocontext_project, multicut_project, volume_description_path, skel_output_dir, skeleton
 
 
 def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClassification, multicut_workflow,

@@ -19,7 +19,7 @@ from locate_synapses import (
 
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
-    volume_description_path, skel_output_dir, skeleton = setup_files(
+    autocontext_project, multicut_project, volume_description_path, skel_output_dir, skeleton = setup_files(
         credentials_path, stack_id, skeleton_id, project_dir, force
     )
 
@@ -30,9 +30,6 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
         progress_server = ProgressServer.create_and_start( "localhost", progress_port )
         progress_callback = progress_server.update_progress
     try:
-        autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
-        multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
-
         locate_synapses_serial(
             autocontext_project,
             multicut_project,

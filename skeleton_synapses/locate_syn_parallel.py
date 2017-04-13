@@ -34,12 +34,9 @@ SegmenterOutput = namedtuple('SegmenterOutput', ['node_overall_index', 'node_inf
 
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, force=False):
-    volume_description_path, skel_output_dir, skeleton = setup_files(
+    autocontext_project, multicut_project, volume_description_path, skel_output_dir, skeleton = setup_files(
         credentials_path, stack_id, skeleton_id, project_dir, force
     )
-
-    autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
-    multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
 
     locate_synapses_parallel(
         autocontext_project,
