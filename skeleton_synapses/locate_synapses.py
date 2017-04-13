@@ -102,7 +102,22 @@ NODES_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500
 RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000, int)
 
 
-def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
+def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=False):
+    """
+    
+    Parameters
+    ----------
+    credentials_path
+    stack_id
+    skeleton_id
+    project_dir
+    force
+
+    Returns
+    -------
+    tuple of (str, str, skeleton_utils.Skeleton)
+        (volume_description_path, skel_output_dir, skeleton)
+    """
     catmaid = CatmaidAPI.from_json(credentials_path)
 
     include_offset = False
@@ -124,6 +139,14 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
 
     skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
     skeleton = Skeleton.from_catmaid(catmaid, skeleton_id, stack_id, skel_path)
+
+    return volume_description_path, skel_output_dir, skeleton
+
+
+def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, progress_port=None, force=False):
+    volume_description_path, skel_output_dir, skeleton = setup_files(
+        credentials_path, stack_id, skeleton_id, project_dir, force
+    )
 
     progress_server = None
     progress_callback = lambda p: None
