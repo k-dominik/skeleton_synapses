@@ -231,6 +231,75 @@ class DebuggableProcess(mp.Process):
             super(DebuggableProcess, self).start()
 
 
+class CaretakerProcess(DebuggableProcess):
+    """
+    Process which takes care of spawning a process which may have memory leaks, pruning it when it terminates (for 
+    example, if it stops itself due to taking up too much memory), and starting a new one if there are still items 
+    remaining in the input queue.
+    """
+    def __init__(
+            self, constructor, input_queue, max_ram_MB, args_tuple=(), kwargs_dict=None, debug=False
+    ):
+        """
+        
+        Parameters
+        ----------
+        constructor : LeakyProcess constructor
+        input_queue : multiprocessing.Queue
+        max_ram_MB : int
+        args_tuple : array_like
+        kwargs_dict : dict
+        debug : bool
+        """
+        super(CaretakerProcess, self).__init__(debug)
+        self.constructor = constructor
+        self.input_queue = input_queue
+        self.max_ram_MB = max_ram_MB
+        self.args_tuple = args_tuple
+        self.kwargs_dict = kwargs_dict or dict()
+        self.kwargs_dict['debug'] = debug
+
+    def run(self):
+        while not self.input_queue.empty():
+            inner_process = self.constructor(self.input_queue, self.max_ram_MB, *self.args_tuple, **self.kwargs_dict)
+            logger.debug('Starting {}'.format(inner_process.name))
+            inner_process.start()
+            inner_process.join()
+            del inner_process
+
+
+class LeakyProcess(DebuggableProcess):
+    """
+    To be subclassed by actual processes with memory leaks.
+    
+    Override setup() and execute() for functions which should be run once per process just as it spawns, or every 
+    iteration of a loop which will terminate when the input queue is empty or the process exceeds the specified RAM limit
+    """
+    def __init__(self, input_queue, max_ram_MB=0, debug=False):
+        super(LeakyProcess, self).__init__(debug)
+        self.input_queue = input_queue
+        self.max_ram_MB = max_ram_MB
+        self.psutil_process = None
+
+    def run(self):
+        self.setup()
+        self.psutil_process = [proc for proc in psutil.process_iter() if proc.pid == self.pid][0]
+
+        while not self.needs_pruning():
+            self.execute()
+
+    def execute(self):
+        pass
+
+    def setup(self):
+        pass
+
+    def needs_pruning(self):
+        return self.input_queue.empty() or (
+            self.max_ram_MB and self.psutil_process.memory_info().rss >= self.max_ram_MB * 1024 * 1024
+        )
+
+
 def search_queue(queue, criterion, timeout=None):
     """
     Get the first item of the queue for which criterion(item) is truthy: items found before this one are returned
