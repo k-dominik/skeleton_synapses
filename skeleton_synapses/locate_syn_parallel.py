@@ -1,11 +1,8 @@
 #!/usr/bin/env python
 import logging
 import csv
-import os
 import multiprocessing as mp
 from collections import namedtuple
-import warnings
-import psutil
 import argparse
 import sys
 
@@ -15,12 +12,12 @@ from lazyflow.request import Request
 from skeleton_utils import CSV_FORMAT
 from locate_synapses import (
     # constants/singletons
-    OUTPUT_COLUMNS, PROJECT_NAME, DEFAULT_ROI_RADIUS, logger,
+    OUTPUT_COLUMNS, DEFAULT_ROI_RADIUS, logger,
     # functions
     setup_files, setup_classifier_and_multicut, roi_around_node, write_synapses, perform_segmentation,
     get_and_print_env, write_output_image, search_queue,
     # classes
-    SynapseSliceRelabeler, DebuggableProcess
+    SynapseSliceRelabeler, CaretakerProcess, LeakyProcess
 )
 
 THREADS = get_and_print_env('SYNAPSE_DETECTION_THREADS', 3, int)
@@ -90,9 +87,9 @@ def locate_synapses_parallel(
     logger.debug('{} nodes queued'.format(node_overall_index))
 
     segmenter_containers = [
-        SegmenterCaretaker(
-            node_queue, result_queue, input_filepath, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes=NODES_PER_PROCESS, max_ram_MB=RAM_MB_PER_PROCESS, debug=False
+        CaretakerProcess(
+            SegmenterProcess, node_queue, RAM_MB_PER_PROCESS,
+            (result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir)
         )
         for _ in range(THREADS)
     ]
@@ -109,38 +106,14 @@ def locate_synapses_parallel(
     logger.info("DONE with skeleton.")
 
 
-class SegmenterCaretaker(DebuggableProcess):
-    """
-    Process which takes care of spawning a SegmenterProcess, pruning it when it terminates, and starting a new one if
-    there are still items remaining in the input queue.
-    """
-    def __init__(
-            self, input_queue, output_queue, description_file, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes=0, max_ram_MB=0, debug=False
-    ):
-        super(SegmenterCaretaker, self).__init__(debug)
-        self.segmenter_args = (input_queue, output_queue, description_file, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes, max_ram_MB, debug)
-
-        self.input_queue = input_queue
-
-    def run(self):
-        while not self.input_queue.empty():
-            segmenter = SegmenterProcess(*self.segmenter_args)
-            logger.debug('Starting {}'.format(segmenter.name))
-            segmenter.start()
-            segmenter.join()
-            del segmenter
-
-
-class SegmenterProcess(DebuggableProcess):
+class SegmenterProcess(LeakyProcess):
     """
     Process which creates its own pixel classifier and multicut workflow, pulls jobs from one queue and returns
     outputs to another queue.
     """
     def __init__(
-            self, input_queue, output_queue, description_file, autocontext_project_path, multicut_project,
-            skel_output_dir, max_nodes=0, max_ram_MB=0, debug=False
+            self, input_queue, max_ram_MB, output_queue, description_file, autocontext_project_path, multicut_project,
+            skel_output_dir, debug=False
     ):
         """
 
@@ -157,8 +130,7 @@ class SegmenterProcess(DebuggableProcess):
         debug : bool
             Whether to instantiate a serial version for debugging purposes
         """
-        super(SegmenterProcess, self).__init__(debug)
-        self.input_queue = input_queue
+        super(SegmenterProcess, self).__init__(input_queue, max_ram_MB, debug)
         self.output_queue = output_queue
 
         logger.debug('Segmenter process {} instantiated'.format(self.name))
@@ -168,70 +140,34 @@ class SegmenterProcess(DebuggableProcess):
 
         self.skel_output_dir = skel_output_dir
 
-        self.count = float('-inf')
-
-        self.count = 0
-        self.max_nodes = max_nodes
-        self.max_ram_MB = max_ram_MB
-
         self.opPixelClassification = self.multicut_shell = None
         self.setup_args = (description_file, autocontext_project_path, multicut_project)
 
-        if not max_nodes and not max_ram_MB:
-            warnings.warn('If segmenter processes are not pruned using the max_nodes or max_ram_MB argument, '
-                          'the program may crash due to a memory leak in ilastik')
-
-        self.psutil_process = None
-
-    def run(self):
-        """
-        Pull node information from the input queue, generate pixel predictions, synapse labels and cell
-        segmentations, and put them on the output queue.
-        """
+    def setup(self):
         self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
             *self.setup_args
         )
 
-        self.psutil_process = [proc for proc in psutil.process_iter() if proc.pid == self.pid][0]
         Request.reset_thread_pool(1)
-        while not self.input_queue.empty():
-            if self.needs_pruning():
-                return
 
-            node_overall_index, node_info, roi_radius_px = self.input_queue.get()
+    def execute(self):
+        node_overall_index, node_info, roi_radius_px = self.input_queue.get()
 
-            logger.debug("{} PROGRESS: addressing node {}, {} nodes remaining"
-                         .format(self.name.upper(), node_overall_index, self.input_queue.qsize()))
+        logger.debug("{} PROGRESS: addressing node {}, {} nodes remaining"
+                     .format(self.name.upper(), node_overall_index, self.input_queue.qsize()))
 
-            with Timer() as node_timer:
-                predictions_xyc, synapse_cc_xy, segmentation_xy = perform_segmentation(
-                    node_info, roi_radius_px, self.skel_output_dir, self.opPixelClassification,
-                    self.multicut_shell.workflow
-                )
-                self.timing_logger.info("NODE TIMER: {}".format(node_timer.seconds()))
+        with Timer() as node_timer:
+            predictions_xyc, synapse_cc_xy, segmentation_xy = perform_segmentation(
+                node_info, roi_radius_px, self.skel_output_dir, self.opPixelClassification,
+                self.multicut_shell.workflow
+            )
+            self.timing_logger.info("NODE TIMER: {}".format(node_timer.seconds()))
 
-            logger.debug("{} PROGRESS: segmented area around node {}, {} nodes remaining"
-                         .format(self.name.upper(), node_overall_index, self.input_queue.qsize()))
+        logger.debug("{} PROGRESS: segmented area around node {}, {} nodes remaining"
+                     .format(self.name.upper(), node_overall_index, self.input_queue.qsize()))
 
-            self.output_queue.put(SegmenterOutput(node_overall_index, node_info, roi_radius_px, predictions_xyc,
-                                                  synapse_cc_xy, segmentation_xy))
-
-    def needs_pruning(self):
-        """
-        Return True if either the maximum number of nodes is exceeded, or the total RAM usage is
-
-        Returns
-        -------
-        bool
-            Whether the process should gracefully quit
-        """
-        self.count += 1
-        if self.max_nodes and self.count > self.max_nodes:
-            return True
-        elif self.max_ram_MB and self.psutil_process.memory_info().rss >= self.max_ram_MB * 1024 * 1024:
-            return True
-        else:
-            return False
+        self.output_queue.put(SegmenterOutput(node_overall_index, node_info, roi_radius_px, predictions_xyc,
+                                              synapse_cc_xy, segmentation_xy))
 
 
 def write_synapses_from_queue(queue, output_path, skeleton, last_node_idx, synapse_output_dir, relabeler=None):
