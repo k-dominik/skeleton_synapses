@@ -466,6 +466,22 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, r
 
 
 def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw_xy, predictions_xyc):
+    """
+    
+    Parameters
+    ----------
+    node_info : NodeInfo
+        Optional, for logging purposes
+    roi_xyz
+    output_dir
+    multicut_workflow
+    raw_xy
+    predictions_xyc
+
+    Returns
+    -------
+
+    """
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
     logger.debug("skeleton point: {}".format( skeleton_coord ))
