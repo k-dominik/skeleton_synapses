@@ -372,7 +372,8 @@ def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     raw_xyzc = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1]).wait()
     raw_xyzc = vigra.taggedView(raw_xyzc, 'xyzc')
-    write_output_image(output_dir, raw_xyzc[:,:,0,:], "raw", roi_name, 'slices')
+    if output_dir:
+        write_output_image(output_dir, raw_xyzc[:,:,0,:], "raw", roi_name, 'slices')
     raw_xy = raw_xyzc[:,:,0,0]
     return raw_xy
 
@@ -410,7 +411,8 @@ def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     predictions_xyzc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_xyzc).wait()
     predictions_xyzc = vigra.taggedView( predictions_xyzc, "xyzc" )
     predictions_xyc = predictions_xyzc[:,:,0,:]
-    write_output_image(output_dir, predictions_xyc, "predictions", roi_name, mode='slices')
+    if output_dir:
+        write_output_image(output_dir, predictions_xyc, "predictions", roi_name, mode='slices')
     return predictions_xyc
 
 
@@ -458,7 +460,8 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, r
     if relabeler:
         synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
 
-    write_output_image(output_dir, synapse_cc_xy[..., None], "synapse_cc", roi_name, mode="slices")
+    if output_dir:
+        write_output_image(output_dir, synapse_cc_xy[..., None], "synapse_cc", roi_name, mode="slices")
     return synapse_cc_xy
 
 
@@ -478,7 +481,8 @@ def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw
     batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
     assert len(batch_results) == 1
     segmentation_xy = batch_results[0]
-    write_output_image(output_dir, segmentation_xy[:,:,None], "segmentation", roi_name, 'slices')
+    if output_dir:
+        write_output_image(output_dir, segmentation_xy[:, :, None], "segmentation", roi_name, 'slices')
     return segmentation_xy
 
 
