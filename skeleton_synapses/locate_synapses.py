@@ -172,6 +172,32 @@ def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClass
     return predictions_xyc, synapse_cc_xy, segmentation_xy
 
 
+def setup_classifier(description_file, autocontext_project_path):
+    autocontext_shell = open_project(autocontext_project_path, init_logging=True)
+    assert isinstance(autocontext_shell, HeadlessShell)
+    assert isinstance(autocontext_shell.workflow, NewAutocontextWorkflowBase)
+
+    append_lane(autocontext_shell.workflow, description_file, 'xyt')
+
+    # We only use the final stage predictions
+    opPixelClassification = autocontext_shell.workflow.pcApplets[-1].topLevelOperator
+
+    # Sanity checks
+    assert isinstance(opPixelClassification, OpPixelClassification)
+    assert opPixelClassification.Classifier.ready()
+    assert opPixelClassification.HeadlessPredictionProbabilities[-1].meta.drange == (0.0, 1.0)
+
+    return opPixelClassification
+
+
+def setup_multicut(multicut_project):
+    multicut_shell = open_project(multicut_project, init_logging=False)
+    assert isinstance(multicut_shell, HeadlessShell)
+    assert isinstance(multicut_shell.workflow, EdgeTrainingWithMulticutWorkflow)
+
+    return multicut_shell
+
+
 def setup_classifier_and_multicut(description_file, autocontext_project_path, multicut_project):
     """
     Boilerplate for getting the requisite ilastik interface objects and sanity-checking them
@@ -189,23 +215,8 @@ def setup_classifier_and_multicut(description_file, autocontext_project_path, mu
     (OpPixelClassification, HeadlessShell)
         opPixelClassification, multicut_shell
     """
-    autocontext_shell = open_project(autocontext_project_path, init_logging=True)
-    assert isinstance(autocontext_shell, HeadlessShell)
-    assert isinstance(autocontext_shell.workflow, NewAutocontextWorkflowBase)
-
-    append_lane(autocontext_shell.workflow, description_file, 'xyt')
-
-    # We only use the final stage predictions
-    opPixelClassification = autocontext_shell.workflow.pcApplets[-1].topLevelOperator
-
-    # Sanity checks
-    assert isinstance(opPixelClassification, OpPixelClassification)
-    assert opPixelClassification.Classifier.ready()
-    assert opPixelClassification.HeadlessPredictionProbabilities[-1].meta.drange == (0.0, 1.0)
-
-    multicut_shell = open_project(multicut_project, init_logging=False)
-    assert isinstance(multicut_shell, HeadlessShell)
-    assert isinstance(multicut_shell.workflow, EdgeTrainingWithMulticutWorkflow)
+    opPixelClassification = setup_classifier(description_file, autocontext_project_path)
+    multicut_shell = setup_multicut(multicut_project)
 
     return opPixelClassification, multicut_shell
 
@@ -322,7 +333,42 @@ def search_queue(queue, criterion, timeout=None):
             queue.put(item)
 
 
+def fetch_raw_and_predict_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
+    """
+    
+    Parameters
+    ----------
+    node_info : NodeInfo
+        Optional, for logging purposes
+    roi_xyz
+    output_dir
+    opPixelClassification
+
+    Returns
+    -------
+    array-like
+        Pixel predictions, xyc
+    """
+    raw_data_for_node(None, roi_xyz, output_dir, opPixelClassification)
+    return predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification)
+
+
 def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
+    """
+    DEPRECATED. This should only be called through fetch_raw_and_predict_for_node.
+    
+    Parameters
+    ----------
+    node_info : None
+        Not required
+    roi_xyz
+    output_dir
+    opPixelClassification
+
+    Returns
+    -------
+
+    """
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     raw_xyzc = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1]).wait()
     raw_xyzc = vigra.taggedView(raw_xyzc, 'xyzc')
@@ -333,12 +379,30 @@ def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
 
 def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     """
+    DEPRECATED. This should only be called through fetch_raw_and_predict_for_node.
+    
     Run classification on the given node with the given operator.
-    Returns: predictions_xyc
+    
+    Parameters
+    ----------
+    node_info : NodeInfo
+        Optional, for logging purposes
+    roi_xyz : array-like
+    output_dir : str
+        Directory in which data should be dumped
+    opPixelClassification
+
+    Returns
+    -------
+    array-like
+        Pixel predictions, xyc
     """
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
-    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
-    logger.debug("skeleton point: {}".format( skeleton_coord ))
+    if node_info:
+        skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
+        logger.debug("skeleton point: {}".format( skeleton_coord ))
+    else:
+        logger.debug('roi name: {}'.format(roi_name))
 
     # Predict
     num_classes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.shape[-1]
@@ -355,9 +419,29 @@ opThreshold = OpThresholdTwoLevels(graph=Graph())
 
 
 def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, relabeler=None):
+    """
+    
+    Parameters
+    ----------
+    node_info : NodeInfo
+        Optional, for logging purposes
+    roi_xyz : array-like
+    output_dir : str
+        Directory in which data should be dumped
+    predictions_xyc
+    relabeler : SynapseSliceRelabeler
+
+    Returns
+    -------
+    array-like
+        Numpy array of synapse labels, xy
+    """
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
-    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
-    logger.debug("skeleton point: {}".format( skeleton_coord ))
+    if node_info:
+        skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
+        logger.debug("skeleton point: {}".format( skeleton_coord ))
+    else:
+        logger.debug('roi name: {}'.format(roi_name))
 
     # Threshold synapses
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
@@ -373,7 +457,8 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, r
     # Relabel for consistency with previous slice
     if relabeler:
         synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
-        write_output_image(output_dir, synapse_cc_xy[..., None], "synapse_cc", roi_name, mode="slices")
+
+    write_output_image(output_dir, synapse_cc_xy[..., None], "synapse_cc", roi_name, mode="slices")
     return synapse_cc_xy
 
 
