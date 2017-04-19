@@ -23,9 +23,9 @@ from locate_synapses import (
     # constants/singletons
     OUTPUT_COLUMNS, DEFAULT_ROI_RADIUS, logger,
     # functions
-    setup_files, setup_classifier, setup_multicut, roi_around_node, write_synapses, perform_segmentation,
-    get_and_print_env, write_output_image, search_queue, fetch_raw_and_predict_for_node,
-    labeled_synapses_for_node,
+    setup_files, setup_classifier, setup_classifier_and_multicut, roi_around_node, write_synapses, perform_segmentation,
+    get_and_print_env, write_output_image, search_queue, fetch_raw_and_predict_for_node, raw_data_for_node,
+    labeled_synapses_for_node, segmentation_for_node,
     # classes
     SynapseSliceRelabeler, CaretakerProcess, LeakyProcess
 )
@@ -48,11 +48,6 @@ ALGO_VERSION = 1
 THREADS = get_and_print_env('SYNAPSE_DETECTION_THREADS', 3, int)
 NODES_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500, int)
 RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000, int)
-
-
-SegmenterInput = namedtuple('SegmenterInput', ['node_overall_index', 'node_info', 'roi_radius_px'])
-SegmenterOutput = namedtuple('SegmenterOutput', ['node_overall_index', 'node_info', 'roi_radius_px', 'predictions_xyc',
-                                                 'synapse_cc_xy', 'segmentation_xy'])
 
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, force=False):
@@ -95,7 +90,7 @@ def ensure_tables(force=False):
           x_tile_idx INTEGER NOT NULL,
           y_tile_idx INTEGER NOT NULL,
           z_tile_idx INTEGER NOT NULL,
-          bounding_box GEOMETRY NOT NULL,
+          convex_hull_2d GEOMETRY NOT NULL,
           algo_version INTEGER NOT NULL,
           size_px INTEGER NOT NULL,
           uncertainty REAL NOT NULL,
@@ -125,7 +120,9 @@ def ensure_tables(force=False):
         CREATE TABLE IF NOT EXISTS synapse_slice_skeleton (
           id SERIAL PRIMARY KEY,
           synapse_slice_id INTEGER REFERENCES synapse_slice (id) ON DELETE CASCADE,
-          skeleton INTEGER
+          skeleton_id INTEGER,
+          node_id INTEGER,
+          algo_version INTEGER
         );
     """)
     conn.commit()
@@ -176,7 +173,7 @@ def ensure_hdf5(stack_info, force=False):
 TileIndex = namedtuple('TileIndex', 'z_idx y_idx x_idx')
 
 
-def node_info_to_tiles(skeleton, mirror_info, minimum_radius=DEFAULT_ROI_RADIUS):
+def skeleton_to_tiles(skeleton, mirror_info, minimum_radius=DEFAULT_ROI_RADIUS):
     """
     
     Parameters
@@ -244,7 +241,7 @@ def locate_synapses_tilewise(
     """
     tile_queue, tile_result_queue = mp.Queue(), mp.Queue()
 
-    tile_set = node_info_to_tiles(skeleton, stack_info, roi_radius_px)
+    tile_set = skeleton_to_tiles(skeleton, stack_info, roi_radius_px)
     with h5py.File(HDF5_PATH, 'r') as f:
         algo_versions = f['algo_versions']
         for tile_idx in tile_set:
@@ -270,10 +267,64 @@ def locate_synapses_tilewise(
 
         commit_tilewise_results_from_queue(tile_result_queue, HDF5_PATH, total_tiles, mirror_info, algo_version)
 
-        for detector_containers in detector_containers:
-            detector_containers.join()
+        for detector_container in detector_containers:
+            detector_container.join()
 
     # todo: segmentation
+    node_queue, node_result_queue = mp.Queue(), mp.Queue()
+    node_id_to_seg_input = dict()
+    node_overall_index = -1
+    for branch_index, branch in enumerate(skeleton.branches):
+        for node_index_in_branch, node_info in enumerate(branch):
+            node_overall_index += 1
+            node_id_to_seg_input[node_info.id] = NeuronSegmenterInput(node_info, roi_radius_px)
+
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    cursor = conn.cursor()
+    node_ids_str = ', '.join(node_id_to_seg_input)
+
+    # delete rows associated with this skeleton from an earlier algorithm
+    cursor.execute("""
+        DELETE FROM synapse_slice_skeleton
+          WHERE algo_version != %s AND skeleton_id = %s;
+    """, algo_version, skeleton.skeleton_id)
+
+    # fetch nodes which have been addressed by this algorithm
+    cursor.execute("""
+        SELECT node_id FROM synapse_slice_skeleton
+          WHERE algo_version = %s AND node_id IN (%s);
+    """, algo_version, node_ids_str)
+
+    nodes_to_exclude = cursor.fetchall()
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    for node_tup in nodes_to_exclude:
+        del node_id_to_seg_input[node_tup[0]]
+
+    if node_id_to_seg_input:
+        for seg_input in node_id_to_seg_input.values():
+            node_queue.put(seg_input)
+
+        total_nodes = node_queue.qsize()
+
+        neuron_seg_containers = [
+            CaretakerProcess(
+                NeuronSegmenterProcess, tile_queue, RAM_MB_PER_PROCESS,
+                (node_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir)
+            )
+            for _ in range(THREADS)
+        ]
+
+        for neuron_seg_container in neuron_seg_containers:
+            neuron_seg_container.start()
+
+        commit_node_association_results_from_queue(node_result_queue, skeleton.skeleton_id, total_nodes, algo_version)
+
+        for neuron_seg_container in neuron_seg_containers:
+            neuron_seg_container.join()
 
     logger.info("DONE with skeleton.")
 
@@ -328,6 +379,89 @@ class DetectorProcess(LeakyProcess):
         self.output_queue.put(DetectorOutput(tile_idx, predictions_xyc, synapse_cc_xy))
 
 
+NeuronSegmenterInput = namedtuple('SegmenterInput', ['node_info', 'roi_radius_px'])
+NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', 'node_info synapse_slice_id')
+
+
+class NeuronSegmenterProcess(LeakyProcess):
+    """
+    Process which creates its own pixel classifier and multicut workflow, pulls jobs from one queue and returns
+    outputs to another queue.
+    """
+    def __init__(
+            self, input_queue, max_ram_MB, output_queue, description_file, autocontext_project_path, multicut_project,
+            skel_output_dir, debug=False
+    ):
+        """
+
+        Parameters
+        ----------
+        input_queue : mp.Queue
+        output_queue : mp.Queue
+        description_file : str
+            path
+        autocontext_project_path
+        multicut_project : str
+            path
+        skel_output_dir : str
+        debug : bool
+            Whether to instantiate a serial version for debugging purposes
+        """
+        super(NeuronSegmenterProcess, self).__init__(input_queue, max_ram_MB, debug)
+        self.output_queue = output_queue
+
+        logger.debug('Segmenter process {} instantiated'.format(self.name))
+
+        self.timing_logger = logging.getLogger(__name__ + '.timing')
+        self.timing_logger.setLevel(logging.INFO)
+
+        self.skel_output_dir = skel_output_dir
+
+        self.opPixelClassification = self.multicut_shell = None
+        self.setup_args = (description_file, autocontext_project_path, multicut_project)
+
+    def setup(self):
+        self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
+            *self.setup_args
+        )
+
+        Request.reset_thread_pool(1)
+
+    def execute(self):
+        node_info, roi_radius_px = self.input_queue.get()
+
+        logger.debug("{} PROGRESS: addressing node {}, {} nodes remaining"
+                     .format(self.name.upper(), node_info.id, self.input_queue.qsize()))
+
+        with Timer() as node_timer:
+            roi_xyz = roi_around_node(node_info, roi_radius_px)
+            raw_xy = raw_data_for_node(node_info, roi_xyz, None, self.opPixelClassification)
+
+            # convert roi into a tuple of slice objects which can be used by numpy for indexing
+            roi_slices = (roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 2], roi_xyz[1, 2]))
+
+            # N.B. might involve parallel reads - consider a single reader process
+            with h5py.File(HDF5_PATH, 'r') as f:
+                synapse_cc_xy = np.array(f['slice_labels'][roi_slices]).T
+                predictions_xyc = np.array(f['pixel_predictions'][roi_slices]).transpose((1, 0, 2))
+
+            segmentation_xy = segmentation_for_node(
+                node_info, roi_xyz, self.skel_output_dir, self.multicut_shell.workflow, raw_xy, predictions_xyc
+            )
+
+            center_coord = np.array(segmentation_xy.shape) // 2
+            node_segment = segmentation_xy[tuple(center_coord)]
+            for syn_id in np.unique(synapse_cc_xy)[1:]:
+                overlapping_segments = np.unique(segmentation_xy[synapse_cc_xy == syn_id])
+                if node_segment in overlapping_segments:
+                    self.output_queue.put(NeuronSegmenterOutput(node_info, syn_id))
+
+            self.timing_logger.info("NODE TIMER: {}".format(node_timer.seconds()))
+
+        logger.debug("{} PROGRESS: segmented area around node {}, {} nodes remaining"
+                     .format(self.name.upper(), node_info.id, self.input_queue.qsize()))
+
+
 def write_synapses_from_queue(queue, output_path, skeleton, last_node_idx, synapse_output_dir, relabeler=None):
     """
     Relabel synapses if they are multi-labelled, write out the HDF5 of the synapse segmentation, and write synapses
@@ -374,8 +508,25 @@ def write_synapses_from_queue(queue, output_path, skeleton, last_node_idx, synap
             fout.flush()
 
 
-def roi_to_wkt(roi_xyz):
-    raise NotImplementedError
+def syn_coords_to_geom_str(x_coords, y_coords):
+    """
+    String which PostGIS will interpret as a 2D convex hull of the coordinates
+    
+    Parameters
+    ----------
+    syn_coords : array-like
+        Result of np.where(synapse_cc_xy == slice_label) plus top left corner of panel
+
+    Returns
+    -------
+    str
+        String to be interpolated into SQL query
+    """
+    # todo: include all points +(1,1) to make overlap detection easier?
+    coords_str = ','.join('{} {}'.format(x_coord, y_coord) for x_coord, y_coord in zip(x_coords, y_coords))
+    # could use scipy to find contour to reduce workload on database, or concave hull
+    # todo: simplify geometry?
+    return "ST_ConvexHull(ST_GeomFromText('MULTIPOINT({})'))".format(coords_str)
 
 
 def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_tiles, mirror_info, algo_version=ALGO_VERSION):
@@ -399,14 +550,11 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
 
             synapse_cc_yx = synapse_cc_xy.T
 
-            for slice_label in np.unique(synapse_cc_yx):
-                if slice_label == 0:
-                    continue
-
+            for slice_label in np.unique(synapse_cc_yx)[1:]:
                 syn_pixel_coords = np.where(synapse_cc_xy == slice_label)
                 size_px = len(syn_pixel_coords[0])
-                x_centroid_px = np.average(syn_pixel_coords[1]) + bounds_xyz[0, 0]
                 y_centroid_px = np.average(syn_pixel_coords[0]) + bounds_xyz[0, 1]
+                x_centroid_px = np.average(syn_pixel_coords[1]) + bounds_xyz[0, 0]
 
                 # Determine average uncertainty
                 # Get probabilities for this synapse's pixels
@@ -424,23 +572,27 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
                       WHERE z_tile_idx = %s AND y_tile_idx = %s AND x_tile_idx = %s;
                 """, tile_idx)
 
+                geom_str = syn_coords_to_geom_str(
+                    syn_pixel_coords[1] + bounds_xyz[0, 0], syn_pixel_coords[0] + bounds_xyz[0, 1]
+                )
+
                 cursor.execute("""
                     INSERT INTO synapse_slice (
                       x_tile_idx,
                       y_tile_idx,
                       z_tile_idx,
-                      bounding_box,
+                      convex_hull_2d,
                       algo_version,
                       size_px,
                       uncertainty,
                       x_centroid_px,
                       y_centroid_px
                     ) VALUES (
-                      %s, %s, %s, ST_GeomFromEWKT(%s), %s, %s, %s, %s, %s
+                      %s, %s, %s, %s, %s, %s, %s, %s, %s
                     ) RETURNING id;
                 """,
                 (
-                    tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx, roi_to_wkt(bounds_xyz), algo_version, size_px,
+                    tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx, geom_str, algo_version, size_px,
                     uncertainty, x_centroid_px, y_centroid_px
                 )
                 )
@@ -451,12 +603,36 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
 
                 synapse_cc_yx[synapse_cc_yx == slice_label] = new_id
 
+                # todo: run queries to find intersections, cache results, resolve them after loop has run?
+
             slice_labels_zyx[
                 bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
             ] = synapse_cc_yx
 
         cursor.close()
         conn.close()
+
+
+def commit_node_association_results_from_queue(node_result_queue, skeleton_id, total_nodes, algo_version):
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    cursor = conn.cursor()
+
+    for _ in range(total_nodes):
+        node_info, synapse_slice_id = node_result_queue.get()
+        cursor.execute("""
+            INSERT INTO synapse_slice_skeleton (
+              synapse_slice_id,
+              skeleton_id,
+              node_id,
+              algo_version
+            ) VALUES (
+              %s, %s, %s, %s
+            );
+        """.format(synapse_slice_id, skeleton_id, node_info.id, algo_version))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 
 if __name__ == "__main__":
