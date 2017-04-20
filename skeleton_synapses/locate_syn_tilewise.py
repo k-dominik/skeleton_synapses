@@ -7,17 +7,18 @@ from collections import namedtuple
 import argparse
 import sys
 import os
+import json
+from itertools import product
+
 import psycopg2
 import h5py
 import numpy as np
-import json
 from six.moves import range
-from itertools import product
+import networkx as nx
 
 from lazyflow.utility import Timer
 from lazyflow.request import Request
 
-from skeleton_utils import CSV_FORMAT
 from catmaid_interface import CatmaidAPI
 from locate_synapses import (
     # constants/singletons
@@ -40,6 +41,7 @@ MIRROR = 0
 DTYPE = np.uint32  # can only store up to 2^24
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
+MIRROR_ID = 1
 TILE_SIDE = 512  # todo: get this from catmaid
 CHUNK_SHAPE = (1, TILE_SIDE, TILE_SIDE)  # yxz
 
@@ -58,6 +60,9 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
     catmaid = CatmaidAPI.from_json(credentials_path)
     stack_info = catmaid.get_stack_info(stack_id)
 
+    ensure_tables(force)
+    ensure_hdf5(stack_info, force)
+
     locate_synapses_tilewise(
         autocontext_project,
         multicut_project,
@@ -72,21 +77,22 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
 
 def ensure_tables(force=False):
     if force:
-        conn = psycopg2.connect("dbname={} user={}".format('postgres', POSTGRES_USER))
+        conn = psycopg2.connect("dbname={} user={}".format('postgres', POSTGRES_USER), autocommit=True)
         cursor = conn.cursor()
         cursor.execute('DROP DATABASE %s;', POSTGRES_DB)
         cursor.execute('CREATE DATABASE %s;', POSTGRES_DB)
-        conn.commit()
         cursor.close()
         conn.close()
 
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER), autocommit=True)
     cursor = conn.cursor()
+
+    # todo: postgres optimisation (index statistics, shared memory etc.)
     cursor.execute("""
         CREATE EXTENSION IF NOT EXISTS postgis;
         
         CREATE TABLE IF NOT EXISTS synapse_slice (
-          id SERIAL PRIMARY KEY,
+          id BIGSERIAL PRIMARY KEY,
           x_tile_idx INTEGER NOT NULL,
           y_tile_idx INTEGER NOT NULL,
           z_tile_idx INTEGER NOT NULL,
@@ -98,13 +104,16 @@ def ensure_tables(force=False):
           y_centroid_px INTEGER NOT NULL
         );
         
+        CREATE INDEX IF NOT EXISTS synapse_slice_z_tile_idx ON synapse_slice (z_tile_idx);
+        CREATE INDEX IF NOT EXISTS synapse_slice_convex_hull_2d ON synapse_slice USING GIST (convex_hull_2d);
+        
         -- set ID sequence to start at 1, or 1 + the highest ID
         SELECT setval(
           'synapse_slice_id_seq',(SELECT GREATEST(MAX(id)+1,nextval('synapse_slice_id_seq')) FROM synapse_slice)
         );
         
         CREATE TABLE IF NOT EXISTS synapse_object (
-          id SERIAL PRIMARY KEY
+          id BIGSERIAL PRIMARY KEY
         );
         
         SELECT setval(
@@ -112,20 +121,22 @@ def ensure_tables(force=False):
         );
         
         CREATE TABLE IF NOT EXISTS synapse_slice_synapse_object (
-          id SERIAL PRIMARY KEY,
-          synapse_slice_id INTEGER UNIQUE REFERENCES synapse_slice (id) ON DELETE CASCADE,
-          synapse_object_id INTEGER REFERENCES synapse_object (id) ON DELETE CASCADE
+          id BIGSERIAL PRIMARY KEY,
+          synapse_slice_id BIGINT UNIQUE REFERENCES synapse_slice (id) ON DELETE CASCADE,
+          synapse_object_id BIGINT REFERENCES synapse_object (id) ON DELETE CASCADE
         );
         
+        -- index synapse_slice_synapse_object_synapse_slice_id?
+        
         CREATE TABLE IF NOT EXISTS synapse_slice_skeleton (
-          id SERIAL PRIMARY KEY,
-          synapse_slice_id INTEGER REFERENCES synapse_slice (id) ON DELETE CASCADE,
-          skeleton_id INTEGER,
-          node_id INTEGER,
+          id BIGSERIAL PRIMARY KEY,
+          synapse_slice_id BIGINT REFERENCES synapse_slice (id) ON DELETE CASCADE,
+          skeleton_id BIGINT,
+          node_id BIGINT,
           algo_version INTEGER
         );
     """)
-    conn.commit()
+
     cursor.close()
     conn.close()
 
@@ -161,7 +172,7 @@ def ensure_hdf5(stack_info, force=False):
     if force or not os.path.isfile(HDF5_PATH):
         with h5py.File(HDF5_PATH) as f:
             create_label_volume(stack_info, f, 'slice_labels')
-            create_label_volume(stack_info, f, 'object_labels')
+            # create_label_volume(stack_info, f, 'object_labels')  # todo
             create_label_volume(stack_info, f, 'pixel_predictions', 3)
             f.create_dataset(
                 'algo_versions',
@@ -270,7 +281,6 @@ def locate_synapses_tilewise(
         for detector_container in detector_containers:
             detector_container.join()
 
-    # todo: segmentation
     node_queue, node_result_queue = mp.Queue(), mp.Queue()
     node_id_to_seg_input = dict()
     node_overall_index = -1
@@ -279,25 +289,20 @@ def locate_synapses_tilewise(
             node_overall_index += 1
             node_id_to_seg_input[node_info.id] = NeuronSegmenterInput(node_info, roi_radius_px)
 
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER), autocommit=True)
     cursor = conn.cursor()
-    node_ids_str = ', '.join(node_id_to_seg_input)
-
-    # delete rows associated with this skeleton from an earlier algorithm
-    cursor.execute("""
-        DELETE FROM synapse_slice_skeleton
-          WHERE algo_version != %s AND skeleton_id = %s;
-    """, algo_version, skeleton.skeleton_id)
+    node_ids_str = ', '.join('({})'.format(node_id) for node_id in node_id_to_seg_input)
 
     # fetch nodes which have been addressed by this algorithm
+    # todo: check this
     cursor.execute("""
-        SELECT node_id FROM synapse_slice_skeleton
-          WHERE algo_version = %s AND node_id IN (%s);
-    """, algo_version, node_ids_str)
+        SELECT synapse_slice_skeleton.node_id FROM synapse_slice_skeleton
+          INNER JOIN ( VALUES %s ) node (id) ON (node.id = synapse_slice_skeleton.node_id)
+          WHERE synapse_slice_skeleton.algo_version = %s;
+    """, (node_ids_str, algo_version))
 
     nodes_to_exclude = cursor.fetchall()
 
-    conn.commit()
     cursor.close()
     conn.close()
 
@@ -379,7 +384,7 @@ class DetectorProcess(LeakyProcess):
         self.output_queue.put(DetectorOutput(tile_idx, predictions_xyc, synapse_cc_xy))
 
 
-NeuronSegmenterInput = namedtuple('SegmenterInput', ['node_info', 'roi_radius_px'])
+NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['node_info', 'roi_radius_px'])
 NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', 'node_info synapse_slice_id')
 
 
@@ -462,52 +467,6 @@ class NeuronSegmenterProcess(LeakyProcess):
                      .format(self.name.upper(), node_info.id, self.input_queue.qsize()))
 
 
-def write_synapses_from_queue(queue, output_path, skeleton, last_node_idx, synapse_output_dir, relabeler=None):
-    """
-    Relabel synapses if they are multi-labelled, write out the HDF5 of the synapse segmentation, and write synapses
-    to a CSV.
-
-    Parameters
-    ----------
-    queue
-    output_path
-    skeleton : Skeleton
-    last_node_idx
-    synapse_output_dir
-    relabeler : SynapseSliceRelabeler
-
-    """
-    sought_node_idx = 0
-    with open(output_path, "w") as fout:
-        csv_writer = csv.DictWriter(fout, OUTPUT_COLUMNS, **CSV_FORMAT)
-        csv_writer.writeheader()
-
-        while sought_node_idx <= last_node_idx:
-            node_overall_index, node_info, roi_radius_px, predictions_xyc, synapse_cc_xy, segmentation_xy = search_queue(
-                queue, lambda x: x.node_overall_index == sought_node_idx
-            )
-
-            roi_xyz = roi_around_node(node_info, roi_radius_px)
-
-            roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
-            if relabeler:
-                synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
-            write_output_image(synapse_output_dir, synapse_cc_xy[..., None], "synapse_cc", roi_name, mode="slices")
-
-            write_synapses(
-                csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy,
-                node_overall_index
-            )
-
-            logger.debug('PROGRESS: Written CSV for node {} of {}'.format(
-                sought_node_idx, last_node_idx
-            ))
-
-            sought_node_idx += 1
-
-            fout.flush()
-
-
 def syn_coords_to_geom_str(x_coords, y_coords):
     """
     String which PostGIS will interpret as a 2D convex hull of the coordinates
@@ -522,16 +481,17 @@ def syn_coords_to_geom_str(x_coords, y_coords):
     str
         String to be interpolated into SQL query
     """
-    # todo: include all points +(1,1) to make overlap detection easier?
     coords_str = ','.join('{} {}'.format(x_coord, y_coord) for x_coord, y_coord in zip(x_coords, y_coords))
-    # could use scipy to find contour to reduce workload on database, or concave hull
-    # todo: simplify geometry?
+    # could use scipy to find contour to reduce workload on database, or SQL concave hull, or SQL simplify geometry
     return "ST_ConvexHull(ST_GeomFromText('MULTIPOINT({})'))".format(coords_str)
 
 
 def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_tiles, mirror_info, algo_version=ALGO_VERSION):
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER), autocommit=True)
     cursor = conn.cursor()
+
+    geometry_adjacencies = nx.Graph()
+
     with h5py.File(output_path, 'r+') as f:
         pixel_predictions_zyx = f['pixel_predictions']
         slice_labels_zyx = f['slice_labels']
@@ -550,6 +510,11 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
 
             synapse_cc_yx = synapse_cc_xy.T
 
+            cursor.execute("""
+                DELETE FROM synapse_slice 
+                  WHERE z_tile_idx = %s AND y_tile_idx = %s AND x_tile_idx = %s;
+            """, tile_idx)
+
             for slice_label in np.unique(synapse_cc_yx)[1:]:
                 syn_pixel_coords = np.where(synapse_cc_xy == slice_label)
                 size_px = len(syn_pixel_coords[0])
@@ -566,15 +531,19 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
                 avg_certainty = np.mean(certainties)
                 uncertainty = 1.0 - avg_certainty
 
-
-                cursor.execute("""
-                    DELETE FROM synapse_slice 
-                      WHERE z_tile_idx = %s AND y_tile_idx = %s AND x_tile_idx = %s;
-                """, tile_idx)
-
                 geom_str = syn_coords_to_geom_str(
                     syn_pixel_coords[1] + bounds_xyz[0, 0], syn_pixel_coords[0] + bounds_xyz[0, 1]
                 )
+
+                # todo: temporary table?
+                cursor.execute("""
+                    SELECT id FROM synapse_slice
+                      WHERE z_tile_idx BETWEEN %s AND %s 
+                      AND
+                      ST_DWithin(%s, convex_hull_2d, 1.1);
+                """, (tile_idx.z_idx - 1, tile_idx.z_idx + 1, geom_str))
+
+                intersecting_id_tups = cursor.fetchall()
 
                 cursor.execute("""
                     INSERT INTO synapse_slice (
@@ -597,40 +566,89 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
                 )
                 )
 
-                conn.commit()
-
-                new_id = cursor.fetchone()
-
+                new_id = cursor.fetchone()[0]
                 synapse_cc_yx[synapse_cc_yx == slice_label] = new_id
+                geometry_adjacencies.add_node(new_id)  # in case there are no edges
 
-                # todo: run queries to find intersections, cache results, resolve them after loop has run?
+                for intersecting_id_tup in intersecting_id_tups:
+                    geometry_adjacencies.add_edge(new_id, intersecting_id_tup[0])
 
             slice_labels_zyx[
                 bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
             ] = synapse_cc_yx
+
+        # get existing mapping of synapse slices associated with new synapse slices, to synapse objects
+        syn_slice_str = ', '.join('({})'.format(syn_sl_id) for syn_sl_id in geometry_adjacencies.nodes_iter())
+        cursor.execute("""
+            SELECT sl_obj.synapse_slice_id, sl_obj.synapse_object_id FROM synapse_slice_synapse_object sl_obj
+              INNER JOIN (VALUES %s) syn_sl (id) ON (syn_sl.id = sl_obj.synapse_slice_id);
+        """, (syn_slice_str, ))
+        syn_slice_to_obj = dict(*cursor.fetchall())
+
+        new_mappings = []
+        obsolete_objects_strs = []
+
+        for syn_slice_group in nx.connected_components(geometry_adjacencies):
+            syn_obj_ids = {syn_slice_to_obj[slice_id] for slice_id in syn_slice_group if slice_id in syn_slice_to_obj}
+
+            if len(syn_obj_ids) == 0:
+                # create new synapse object
+                cursor.execute("""
+                    INSERT INTO synapse_object DEFAULT VALUES RETURNING id;
+                """)
+                obj_id = cursor.fetchone()[0]
+            else:
+                # decide which synapse object ID to use
+                obj_id = min(syn_obj_ids)
+                other_obj_ids = [other_obj_id for other_obj_id in syn_obj_ids if other_obj_id != obj_id]
+
+                if other_obj_ids:
+                    other_obj_ids_str = ', '.join(other_obj_ids)
+                    obsolete_objects_strs.append(other_obj_ids_str)
+
+                    # remap all synapse slices mapped to objects with larger IDs, and delete those objects
+                    cursor.execute("""
+                        UPDATE synapse_slice_synapse_object
+                          SET synapse_object_id = %s WHERE synapse_object_id IN (%s);
+                    """, (obj_id, other_obj_ids_str))
+
+            new_mappings.extend((slice_id, obj_id) for slice_id in syn_obj_ids)
+
+        # delete obsolete objects and insert slice -> object mappings for all new synapse slices
+        # todo: delete objects with no slices?
+        cursor.execute("""
+            DELETE FROM synapse_object
+              WHERE id IN (%s);
+            INSERT INTO synapse_slice_synapse_object (synapse_slice_id, synapse_object_id)
+              VALUES %s;
+        """, (
+            ', '.join(obsolete_objects_strs),
+            ', '.join('({}, {})'.format(slice_id, obj_id) for slice_id, obj_id in new_mappings)
+        ))
 
         cursor.close()
         conn.close()
 
 
 def commit_node_association_results_from_queue(node_result_queue, skeleton_id, total_nodes, algo_version):
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER), autocommit=True)
     cursor = conn.cursor()
 
-    for _ in range(total_nodes):
-        node_info, synapse_slice_id = node_result_queue.get()
-        cursor.execute("""
-            INSERT INTO synapse_slice_skeleton (
-              synapse_slice_id,
-              skeleton_id,
-              node_id,
-              algo_version
-            ) VALUES (
-              %s, %s, %s, %s
-            );
-        """.format(synapse_slice_id, skeleton_id, node_info.id, algo_version))
+    result_generator = (node_result_queue.get() for _ in range(total_nodes))
+    values_to_insert = ', '.join(
+        '({}, {}, {}, {})'.format(result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version)
+        for result in result_generator
+    )
 
-    conn.commit()
+    cursor.execute("""
+        INSERT INTO synapse_slice_skeleton (
+          synapse_slice_id,
+          skeleton_id,
+          node_id,
+          algo_version
+        ) VALUES %s;
+    """, (values_to_insert, ))
+
     cursor.close()
     conn.close()
 
