@@ -22,13 +22,12 @@ from lazyflow.request import Request
 from catmaid_interface import CatmaidAPI
 from locate_synapses import (
     # constants/singletons
-    OUTPUT_COLUMNS, DEFAULT_ROI_RADIUS, logger,
+    DEFAULT_ROI_RADIUS, logger,
     # functions
-    setup_files, setup_classifier, setup_classifier_and_multicut, roi_around_node, write_synapses, perform_segmentation,
-    get_and_print_env, write_output_image, search_queue, fetch_raw_and_predict_for_node, raw_data_for_node,
-    labeled_synapses_for_node, segmentation_for_node,
+    setup_files, setup_classifier, setup_classifier_and_multicut, roi_around_node, get_and_print_env,
+    fetch_raw_and_predict_for_node, raw_data_for_node, labeled_synapses_for_node, segmentation_for_node,
     # classes
-    SynapseSliceRelabeler, CaretakerProcess, LeakyProcess
+    CaretakerProcess, LeakyProcess
 )
 
 HDF5_PATH = 'image_store.hdf5'
@@ -36,14 +35,10 @@ HDF5_PATH = 'image_store.hdf5'
 POSTGRES_USER = 'cbarnes'
 POSTGRES_DB = 'synapse_detection'
 
-MIRROR = 0
-
 DTYPE = np.uint32  # can only store up to 2^24
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
-MIRROR_ID = 1
-TILE_SIDE = 512  # todo: get this from catmaid
-CHUNK_SHAPE = (1, TILE_SIDE, TILE_SIDE)  # yxz
+MIRROR_ID = 4
 
 ALGO_VERSION = 1
 
@@ -141,15 +136,23 @@ def ensure_tables(force=False):
     conn.close()
 
 
+def get_stack_mirror(stack_info, mirror_id=MIRROR_ID):
+    for mirror in stack_info['mirrors']:
+        if mirror['id'] == mirror_id:
+            return mirror
+
+
 def create_label_volume(stack_info, hdf5_file, name, extra_dim=None):
     dimension = [stack_info['dimension'][dim] for dim in 'zyx']
     if extra_dim is not None:
         dimension += [extra_dim]
 
+    mirror = get_stack_mirror(stack_info)
+
     labels = hdf5_file.create_dataset(
         name,
         dimension,  # zyx
-        chunks=CHUNK_SHAPE,
+        chunks=[1, mirror['tile_height'], mirror['tile_width']],  # zyx
         fillvalue=0,
         dtype=DTYPE
     )
@@ -161,25 +164,30 @@ def create_label_volume(stack_info, hdf5_file, name, extra_dim=None):
 
 
 def get_tile_counts_zyx(stack_info):
+    mirror = get_stack_mirror(stack_info)
     tile_size = {'z': 1}
-    tile_size['y'], tile_size['x'] = [
-        stack_info['mirrors'][MIRROR]['tile_{}'.format(dim)] for dim in ['height', 'width']
-    ]
+    tile_size['y'], tile_size['x'] = [mirror['tile_{}'.format(dim)] for dim in ['height', 'width']]
     return [int(stack_info['dimension'][dim] / tile_size[dim]) for dim in 'zyx']
 
 
 def ensure_hdf5(stack_info, force=False):
     if force or not os.path.isfile(HDF5_PATH):
         with h5py.File(HDF5_PATH) as f:
+            f.attrs['project_id'] = stack_info['pid']
+            f.attrs['source_stack_id'] = stack_info['sid']
+            f.attrs['source_mirror_id'] = get_stack_mirror(stack_info)['id']
+
             create_label_volume(stack_info, f, 'slice_labels')
             # create_label_volume(stack_info, f, 'object_labels')  # todo
             create_label_volume(stack_info, f, 'pixel_predictions', 3)
+
             f.create_dataset(
                 'algo_versions',
                 get_tile_counts_zyx(stack_info),
                 fillvalue=0,
                 dtype=DTYPE
             )
+
 
 TileIndex = namedtuple('TileIndex', 'z_idx y_idx x_idx')
 
@@ -263,7 +271,7 @@ def locate_synapses_tilewise(
     logger.debug('{} tiles queued'.format(total_tiles))
 
     if total_tiles:
-        mirror_info = stack_info['mirrors'][MIRROR]
+        mirror_info = get_stack_mirror(stack_info)
 
         detector_containers = [
             CaretakerProcess(
