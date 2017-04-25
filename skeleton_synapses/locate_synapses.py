@@ -128,7 +128,7 @@ def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=Fals
             json.dump(volume_description_dict, f, sort_keys=True, indent=2)
 
     # Name the output directory with the skeleton id
-    skel_output_dir = os.path.join(project_dir, 'skeletons', skeleton_id)
+    skel_output_dir = os.path.join(project_dir, 'skeletons', str(skeleton_id))
     if force:
         shutil.rmtree(skel_output_dir, ignore_errors=True)
     mkdir_p(skel_output_dir)
