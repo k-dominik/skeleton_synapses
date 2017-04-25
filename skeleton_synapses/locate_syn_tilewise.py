@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 from __future__ import division
 import logging
-import csv
 import multiprocessing as mp
 from collections import namedtuple
 import argparse
 import sys
 import os
 import json
-from itertools import product
+from itertools import product, chain
+from types import StringTypes
+from string import Formatter
 
 import psycopg2
 import h5py
@@ -22,7 +23,7 @@ from lazyflow.request import Request
 from catmaid_interface import CatmaidAPI
 from locate_synapses import (
     # constants/singletons
-    DEFAULT_ROI_RADIUS, logger,
+    DEFAULT_ROI_RADIUS,
     # functions
     setup_files, setup_classifier, setup_classifier_and_multicut, roi_around_node, get_and_print_env,
     fetch_raw_and_predict_for_node, raw_data_for_node, labeled_synapses_for_node, segmentation_for_node,
@@ -30,7 +31,12 @@ from locate_synapses import (
     CaretakerProcess, LeakyProcess
 )
 
-HDF5_PATH = 'image_store.hdf5'
+logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
+STACK_PATH = "../projects-2017/L1-CNS/synapse_volume.hdf5"
 
 POSTGRES_USER = 'cbarnes'
 POSTGRES_DB = 'synapse_detection'
@@ -45,6 +51,8 @@ ALGO_VERSION = 1
 THREADS = get_and_print_env('SYNAPSE_DETECTION_THREADS', 3, int)
 NODES_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500, int)
 RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000, int)
+
+DEBUG = True
 
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, force=False):
@@ -69,19 +77,34 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
         stack_info
     )
 
+    link_images(force=True)
+
+
+def link_images(existing_path=HDF5_PATH, new_path=STACK_PATH, force=False):
+    if force or not os.path.isfile(new_path):
+        os.remove(new_path)
+        os.link(existing_path, new_path)
+        with h5py.File(existing_path, 'r+') as f:
+            f['volume'] = f['slice_labels']
+
 
 def ensure_tables(force=False):
     if force:
-        conn = psycopg2.connect("dbname={} user={}".format('postgres', POSTGRES_USER), autocommit=True)
+        logger.info('Dropping and recreating database %s', POSTGRES_DB)
+        conn = psycopg2.connect("dbname={} user={}".format('postgres', POSTGRES_USER))
         cursor = conn.cursor()
-        cursor.execute('DROP DATABASE %s;', POSTGRES_DB)
-        cursor.execute('CREATE DATABASE %s;', POSTGRES_DB)
+        conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+        cursor.execute('DROP DATABASE IF EXISTS {};'.format(POSTGRES_DB))  # TODO: CHANGE THIS
+        conn.commit()
+        cursor.execute('CREATE DATABASE {};'.format(POSTGRES_DB))  # TODO: CHANGE THIS
+        conn.commit()
         cursor.close()
         conn.close()
 
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER), autocommit=True)
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
     cursor = conn.cursor()
 
+    logger.debug('Ensuring tables and indices exist')
     # todo: postgres optimisation (index statistics, shared memory etc.)
     cursor.execute("""
         CREATE EXTENSION IF NOT EXISTS postgis;
@@ -132,27 +155,33 @@ def ensure_tables(force=False):
         );
     """)
 
+    conn.commit()
     cursor.close()
     conn.close()
 
 
 def get_stack_mirror(stack_info, mirror_id=MIRROR_ID):
+    if DEBUG:
+        mirror_id = 5
     for mirror in stack_info['mirrors']:
         if mirror['id'] == mirror_id:
             return mirror
 
 
 def create_label_volume(stack_info, hdf5_file, name, extra_dim=None):
+    mirror = get_stack_mirror(stack_info)
+
     dimension = [stack_info['dimension'][dim] for dim in 'zyx']
+    chunksize = (1, mirror['tile_height'], mirror['tile_width'])
+
     if extra_dim is not None:
         dimension += [extra_dim]
-
-    mirror = get_stack_mirror(stack_info)
+        chunksize += (extra_dim, )
 
     labels = hdf5_file.create_dataset(
         name,
-        dimension,  # zyx
-        chunks=[1, mirror['tile_height'], mirror['tile_width']],  # zyx
+        dimension,  # zyx(c)
+        chunks=chunksize,  # zyx(c)
         fillvalue=0,
         dtype=DTYPE
     )
@@ -172,12 +201,14 @@ def get_tile_counts_zyx(stack_info):
 
 def ensure_hdf5(stack_info, force=False):
     if force or not os.path.isfile(HDF5_PATH):
-        with h5py.File(HDF5_PATH) as f:
+        logger.info('Creating HDF5 volumes in %s', HDF5_PATH)
+        with h5py.File(HDF5_PATH, 'w') as f:
             f.attrs['project_id'] = stack_info['pid']
             f.attrs['source_stack_id'] = stack_info['sid']
             f.attrs['source_mirror_id'] = get_stack_mirror(stack_info)['id']
 
             create_label_volume(stack_info, f, 'slice_labels')
+            f['volume'] = f['slice_labels']  # for compatibility with _parallel and _serial
             # create_label_volume(stack_info, f, 'object_labels')  # todo
             create_label_volume(stack_info, f, 'pixel_predictions', 3)
 
@@ -208,11 +239,13 @@ def skeleton_to_tiles(skeleton, mirror_info, minimum_radius=DEFAULT_ROI_RADIUS):
     tile_set = set()
     tile_size_xyz = [mirror_info['tile_{}'.format(dim)] for dim in ['width', 'height']] + [1]
 
+    logger.info('Getting tile set for %', skeleton.skeleton_id)
+
     for branch in skeleton.branches:
         for node_info in branch:
             bounds_xyz = roi_around_node(node_info, minimum_radius)
             tile_idxs = (bounds_xyz / tile_size_xyz).astype(int)
-            tile_set.update(TileIndex(idxs) for idxs in product(
+            tile_set.update(TileIndex(*idxs) for idxs in product(
                 [node_info.z_px],  # z index
                 range(tile_idxs[0, 1], tile_idxs[1, 1] + 1),  # all tile y indices
                 range(tile_idxs[0, 0], tile_idxs[1, 0] + 1)  # all tile x indices
@@ -223,8 +256,94 @@ def skeleton_to_tiles(skeleton, mirror_info, minimum_radius=DEFAULT_ROI_RADIUS):
 
 def tile_index_to_bounds(tile_index, mirror_info):
     tile_size_xyz = [mirror_info['tile_{}'.format(dim)] for dim in ['width', 'height']] + [1]
-    topleft = np.array([tile_index.x_index, tile_index.y_index, tile_index.z_index], dtype=int)
+    topleft = np.array([tile_index.x_idx, tile_index.y_idx, tile_index.z_idx], dtype=int)
     return np.stack((topleft, topleft+1)) * tile_size_xyz  # todo: might need to -1 to bottom row
+
+
+def flatten(arg):
+    elements = []
+    if isinstance(arg, StringTypes):
+        elements.append(arg)
+    else:
+        try:
+            for item in arg:
+                elements.extend(flatten(item))
+        except TypeError:
+            elements.append(arg)
+    return elements
+
+
+def list_into_query(query, arg_lst, fmt='%s'):
+    """
+    Convert simple query with list of arguments into mogrifier-friendly form
+    
+    Parameters
+    ----------
+    query : str
+        A string with a single {} in it
+    arg_lst : array-like
+        List of arguments to supply to SQL
+    fmt : str
+        Placeholder to use for each element (e.g. use this to wrap stuff in brackets), or to account for tuples
+
+    Returns
+    -------
+    (str, array-like)
+        The two arguments to pass to cursor.execute
+        
+    Examples
+    --------
+    >>> list_into_query("DELETE FROM table_name WHERE id IN ({})", [1, 2, 3])
+    >>> ("DELETE FROM table_name WHERE id IN (%s, %s, %s)", (1, 2, 3))
+    
+    >>> list_into_query("INSERT INTO table_name (a, b) VALUES ({})", [[1, 2], [3, 4]], fmt='(%s, %s)')
+    >>> ("INSERT INTO table_name (a, b) VALUES ((%s, %s), (%s, %s))", (1, 2, 3, 4))
+    """
+    assert set(fmt).issubset(',()%s ')
+
+    arg_str = ', '.join(fmt for _ in arg_lst)
+    return query.format(arg_str), tuple(flatten(arg_lst))
+
+
+def list_into_query_multi(query, fmt=None, **kwargs):
+    """
+    Convert complex query with several lists of arguments into mogrifier-friendly form
+    
+    Parameters
+    ----------
+    query : str
+        Format string using keyword format, e.g. 'Hi, my name is {name} and I am {age} years old'
+    fmt : dict
+        Mapping from keywords to SQL-friendly format strings (defaults to '%s' for everything)
+    kwargs : dict
+        Mapping from keywords to argument lists
+
+    Returns
+    -------
+    (str, array-like)
+        The two arguments to pass to cursor.execute
+        
+    Examples
+    --------
+    >>> query = "INSERT INTO table_name1 (a, b) VALUES ({first}); INSERT INTO table_name2 (a, b) VALUES ({second});"
+    >>> list_into_query_multi(query, fmt={'second': '(%s, %s)'}, first=[1, 2, 3], second=[[1,2], [3,4]])
+    >>> ('INSERT INTO table_name1 (a, b) VALUES (%s, %s, %s); INSERT INTO table_name2 (a, b) VALUES ((%s, %s), (%s, %s));',
+    >>>     [1, 2, 3, 1, 2, 3, 4])
+    """
+    if fmt is None:
+        fmt = dict()
+    assert all(set(value).issubset(',()%s ') for value in fmt.values())
+
+    formatter = Formatter()
+    arg_order = [arg_name for _, arg_name, _, _ in formatter.parse(query) if arg_name]
+    arg_strs = {
+        arg_name: ', '.join(fmt.get(arg_name, '%s') for _ in arg_list)
+        for arg_name, arg_list in kwargs.items()
+    }
+    final_args = flatten(kwargs[arg_name] for arg_name in arg_order)
+    final_query = query.format(**arg_strs)
+
+    return final_query, tuple(final_args)
 
 
 def locate_synapses_tilewise(
@@ -260,7 +379,11 @@ def locate_synapses_tilewise(
     """
     tile_queue, tile_result_queue = mp.Queue(), mp.Queue()
 
-    tile_set = skeleton_to_tiles(skeleton, stack_info, roi_radius_px)
+    mirror_info = get_stack_mirror(stack_info)
+
+    logger.info('Populating tile queue')
+
+    tile_set = skeleton_to_tiles(skeleton, mirror_info, roi_radius_px)
     with h5py.File(HDF5_PATH, 'r') as f:
         algo_versions = f['algo_versions']
         for tile_idx in tile_set:
@@ -271,6 +394,7 @@ def locate_synapses_tilewise(
     logger.debug('{} tiles queued'.format(total_tiles))
 
     if total_tiles:
+        logger.info('Classifying pixels in tilewise')
         mirror_info = get_stack_mirror(stack_info)
 
         detector_containers = [
@@ -288,21 +412,28 @@ def locate_synapses_tilewise(
 
         for detector_container in detector_containers:
             detector_container.join()
+    else:
+        logger.debug('No tiles found (probably already processed)')
 
     node_queue, node_result_queue = mp.Queue(), mp.Queue()
     node_id_to_seg_input = dict()
-    node_overall_index = -1
-    for branch_index, branch in enumerate(skeleton.branches):
-        for node_index_in_branch, node_info in enumerate(branch):
-            node_overall_index += 1
+    for branch in skeleton.branches:
+        for node_info in branch:
             node_id_to_seg_input[node_info.id] = NeuronSegmenterInput(node_info, roi_radius_px)
 
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER), autocommit=True)
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
     cursor = conn.cursor()
     node_ids_str = ', '.join('({})'.format(node_id) for node_id in node_id_to_seg_input)
 
+    logger.debug('Finding which node windows do not need re-segmenting')
     # fetch nodes which have been addressed by this algorithm
     # todo: check this
+    # query, args = list_into_query_multi("""
+    #     SELECT synapse_slice_skeleton.node_id FROM synapse_slice_skeleton
+    #       INNER JOIN ( VALUES {node_ids} ) node (id) ON (node.id = synapse_slice_skeleton.node_id)
+    #       WHERE synapse_slice_skeleton.algo_version = {algo_version};
+    # """, node_ids=list(node_id_to_seg_input), algo_version=algo_version)
+    # cursor.execute(query, args)
     cursor.execute("""
         SELECT synapse_slice_skeleton.node_id FROM synapse_slice_skeleton
           INNER JOIN ( VALUES %s ) node (id) ON (node.id = synapse_slice_skeleton.node_id)
@@ -318,6 +449,8 @@ def locate_synapses_tilewise(
         del node_id_to_seg_input[node_tup[0]]
 
     if node_id_to_seg_input:
+        logger.info('Segmenting node windows')
+
         for seg_input in node_id_to_seg_input.values():
             node_queue.put(seg_input)
 
@@ -338,6 +471,8 @@ def locate_synapses_tilewise(
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.join()
+    else:
+        logger.debug('No nodes required re-segmenting')
 
     logger.info("DONE with skeleton.")
 
@@ -366,7 +501,7 @@ class DetectorProcess(LeakyProcess):
         self.setup_args = (description_file, autocontext_project_path)
 
     def setup(self):
-        self.opPixelClassification = setup_classifier
+        self.opPixelClassification = setup_classifier(*self.setup_args)
         Request.reset_thread_pool(1)
 
     def execute(self):
@@ -447,7 +582,7 @@ class NeuronSegmenterProcess(LeakyProcess):
                      .format(self.name.upper(), node_info.id, self.input_queue.qsize()))
 
         with Timer() as node_timer:
-            roi_xyz = roi_around_node(node_info, roi_radius_px)
+            roi_xyz = roi_around_node(node_info, roi_radius_px).astype(int)
             raw_xy = raw_data_for_node(node_info, roi_xyz, None, self.opPixelClassification)
 
             # convert roi into a tuple of slice objects which can be used by numpy for indexing
@@ -469,13 +604,13 @@ class NeuronSegmenterProcess(LeakyProcess):
                 if node_segment in overlapping_segments:
                     self.output_queue.put(NeuronSegmenterOutput(node_info, syn_id))
 
-            self.timing_logger.info("NODE TIMER: {}".format(node_timer.seconds()))
+            self.timing_logger.info("TILE TIMER: {}".format(node_timer.seconds()))
 
         logger.debug("{} PROGRESS: segmented area around node {}, {} nodes remaining"
                      .format(self.name.upper(), node_info.id, self.input_queue.qsize()))
 
 
-def syn_coords_to_geom_str(x_coords, y_coords):
+def syn_coords_to_wkt_str(x_coords, y_coords):
     """
     String which PostGIS will interpret as a 2D convex hull of the coordinates
     
@@ -491,14 +626,16 @@ def syn_coords_to_geom_str(x_coords, y_coords):
     """
     coords_str = ','.join('{} {}'.format(x_coord, y_coord) for x_coord, y_coord in zip(x_coords, y_coords))
     # could use scipy to find contour to reduce workload on database, or SQL concave hull, or SQL simplify geometry
-    return "ST_ConvexHull(ST_GeomFromText('MULTIPOINT({})'))".format(coords_str)
+    return "MULTIPOINT({})".format(coords_str)
 
 
 def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_tiles, mirror_info, algo_version=ALGO_VERSION):
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER), autocommit=True)
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
     cursor = conn.cursor()
 
     geometry_adjacencies = nx.Graph()
+
+    logger.info('Starting to commit tile classification results')
 
     with h5py.File(output_path, 'r+') as f:
         pixel_predictions_zyx = f['pixel_predictions']
@@ -506,8 +643,10 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
         algo_versions_zyx = f['algo_versions']
         # object_labels_zyx = f['object_labels']  # todo
 
-        for _ in range(total_tiles):
+        for tile_count in range(total_tiles):
             tile_idx, predictions_xyc, synapse_cc_xy = tile_result_queue.get()
+            tilename = 'z{}-y{}-x{}'.format(*tile_idx)
+            logger.debug('Committing results from tile {}, {} of {}'.format(tilename, tile_count, total_tiles))
             bounds_xyz = tile_index_to_bounds(tile_idx, mirror_info)
 
             pixel_predictions_zyx[
@@ -518,12 +657,21 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
 
             synapse_cc_yx = synapse_cc_xy.T
 
+            log_prefix = 'Tile {} ({}/{}): '.format(tilename, tile_count, total_tiles)
+
+            logger.debug('%sDeleting synapse slices associated with old tile', log_prefix)
             cursor.execute("""
                 DELETE FROM synapse_slice 
                   WHERE z_tile_idx = %s AND y_tile_idx = %s AND x_tile_idx = %s;
             """, tile_idx)
 
+            conn.commit()
+
             for slice_label in np.unique(synapse_cc_yx)[1:]:
+                slice_prefix = log_prefix + '[{}]'.format(slice_label)
+
+                logger.debug('%sProcessing slice label'.format(slice_label), slice_prefix)
+
                 syn_pixel_coords = np.where(synapse_cc_xy == slice_label)
                 size_px = len(syn_pixel_coords[0])
                 y_centroid_px = np.average(syn_pixel_coords[0]) + bounds_xyz[0, 1]
@@ -539,20 +687,22 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
                 avg_certainty = np.mean(certainties)
                 uncertainty = 1.0 - avg_certainty
 
-                geom_str = syn_coords_to_geom_str(
+                wkt_str = syn_coords_to_wkt_str(
                     syn_pixel_coords[1] + bounds_xyz[0, 0], syn_pixel_coords[0] + bounds_xyz[0, 1]
                 )
 
+                logger.debug('%sGetting intersecting geometries', slice_prefix)
                 # todo: temporary table?
                 cursor.execute("""
                     SELECT id FROM synapse_slice
                       WHERE z_tile_idx BETWEEN %s AND %s 
                       AND
-                      ST_DWithin(%s, convex_hull_2d, 1.1);
-                """, (tile_idx.z_idx - 1, tile_idx.z_idx + 1, geom_str))
+                      ST_DWithin(ST_ConvexHull(ST_GeomFromText(%s)), convex_hull_2d, 1.1);
+                """, (tile_idx.z_idx - 1, tile_idx.z_idx + 1, wkt_str))
 
                 intersecting_id_tups = cursor.fetchall()
 
+                logger.debug('%sInserting new row', slice_prefix)
                 cursor.execute("""
                     INSERT INTO synapse_slice (
                       x_tile_idx,
@@ -565,81 +715,100 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
                       x_centroid_px,
                       y_centroid_px
                     ) VALUES (
-                      %s, %s, %s, %s, %s, %s, %s, %s, %s
+                      %s, %s, %s, ST_ConvexHull(ST_GeomFromText(%s)), %s, %s, %s, %s, %s
                     ) RETURNING id;
                 """,
                 (
-                    tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx, geom_str, algo_version, size_px,
+                    tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx, wkt_str, algo_version, size_px,
                     uncertainty, x_centroid_px, y_centroid_px
                 )
                 )
 
+                conn.commit()
+
                 new_id = cursor.fetchone()[0]
                 synapse_cc_yx[synapse_cc_yx == slice_label] = new_id
+
+                logger.debug('%sUpdating adjacency graph', slice_prefix)
                 geometry_adjacencies.add_node(new_id)  # in case there are no edges
 
                 for intersecting_id_tup in intersecting_id_tups:
                     geometry_adjacencies.add_edge(new_id, intersecting_id_tup[0])
 
+            logger.debug('%sInserting new label data into volume', log_prefix)
             slice_labels_zyx[
                 bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
             ] = synapse_cc_yx
 
-        # get existing mapping of synapse slices associated with new synapse slices, to synapse objects
-        syn_slice_str = ', '.join('({})'.format(syn_sl_id) for syn_sl_id in geometry_adjacencies.nodes_iter())
-        cursor.execute("""
-            SELECT sl_obj.synapse_slice_id, sl_obj.synapse_object_id FROM synapse_slice_synapse_object sl_obj
-              INNER JOIN (VALUES %s) syn_sl (id) ON (syn_sl.id = sl_obj.synapse_slice_id);
-        """, (syn_slice_str, ))
-        syn_slice_to_obj = dict(*cursor.fetchall())
+    logger.info('Getting slice:object mapping')
+    # get existing mapping of synapse slices associated with new synapse slices, to synapse objects
+    syn_slice_container_str = ', '.join('(%s)' for _ in range(geometry_adjacencies.number_of_nodes()))
+    cursor.execute("""
+        SELECT sl_obj.synapse_slice_id, sl_obj.synapse_object_id FROM synapse_slice_synapse_object sl_obj
+          INNER JOIN (VALUES {}) syn_sl (id) ON (syn_sl.id = sl_obj.synapse_slice_id);
+    """.format(syn_slice_container_str), geometry_adjacencies.nodes())
+    existing_syn_slice_to_obj = dict(cursor.fetchall())
 
-        new_mappings = []
-        obsolete_objects_strs = []
+    new_mappings = []
+    obsolete_objects = []
 
-        for syn_slice_group in nx.connected_components(geometry_adjacencies):
-            syn_obj_ids = {syn_slice_to_obj[slice_id] for slice_id in syn_slice_group if slice_id in syn_slice_to_obj}
+    for syn_slice_group in nx.connected_components(geometry_adjacencies):
+        syn_obj_ids = {
+            existing_syn_slice_to_obj[slice_id] for slice_id in syn_slice_group if slice_id in existing_syn_slice_to_obj
+        }
 
-            if len(syn_obj_ids) == 0:
-                # create new synapse object
+        if len(syn_obj_ids) == 0:
+            logger.debug('No object found for slice IDs %s, creating new one', repr(sorted(syn_slice_group)))
+            # create new synapse object
+            cursor.execute("""
+                INSERT INTO synapse_object DEFAULT VALUES RETURNING id;
+            """)
+            obj_id = cursor.fetchone()[0]
+            new_mappings.extend((slice_id, obj_id) for slice_id in syn_slice_group)
+        else:
+            # decide which synapse object ID to use
+            obj_id = min(syn_obj_ids)
+            other_obj_ids = [other_obj_id for other_obj_id in syn_obj_ids if other_obj_id != obj_id]
+
+            if other_obj_ids:
+                other_obj_ids_str = ', '.join(other_obj_ids)
+                obsolete_objects.extend(other_obj_ids)
+
+                logger.debug('New synapse slice joins >1 previous synapse objects: merging...')
+                # remap all synapse slices mapped to objects with larger IDs
                 cursor.execute("""
-                    INSERT INTO synapse_object DEFAULT VALUES RETURNING id;
-                """)
-                obj_id = cursor.fetchone()[0]
-            else:
-                # decide which synapse object ID to use
-                obj_id = min(syn_obj_ids)
-                other_obj_ids = [other_obj_id for other_obj_id in syn_obj_ids if other_obj_id != obj_id]
+                    UPDATE synapse_slice_synapse_object
+                      SET synapse_object_id = %s WHERE synapse_object_id IN (%s);
+                """, (obj_id, other_obj_ids_str))
 
-                if other_obj_ids:
-                    other_obj_ids_str = ', '.join(other_obj_ids)
-                    obsolete_objects_strs.append(other_obj_ids_str)
+            new_mappings.extend(
+                (slice_id, obj_id)
+                for slice_id in syn_slice_group
+                if obj_id != existing_syn_slice_to_obj.get(slice_id, None)
+            )
 
-                    # remap all synapse slices mapped to objects with larger IDs, and delete those objects
-                    cursor.execute("""
-                        UPDATE synapse_slice_synapse_object
-                          SET synapse_object_id = %s WHERE synapse_object_id IN (%s);
-                    """, (obj_id, other_obj_ids_str))
-
-            new_mappings.extend((slice_id, obj_id) for slice_id in syn_obj_ids)
-
-        # delete obsolete objects and insert slice -> object mappings for all new synapse slices
-        # todo: delete objects with no slices?
+    if obsolete_objects:  # todo: do this in SQL
+        logger.info('Deleting obsolete synapse objects')
         cursor.execute("""
             DELETE FROM synapse_object
               WHERE id IN (%s);
-            INSERT INTO synapse_slice_synapse_object (synapse_slice_id, synapse_object_id)
-              VALUES %s;
-        """, (
-            ', '.join(obsolete_objects_strs),
-            ', '.join('({}, {})'.format(slice_id, obj_id) for slice_id, obj_id in new_mappings)
-        ))
+        """, (', '.join(obsolete_objects), ))
 
-        cursor.close()
-        conn.close()
+    logger.info('Inserting new slice:object mappings')
+    cursor.execute("""
+        INSERT INTO synapse_slice_synapse_object (synapse_slice_id, synapse_object_id)
+          VALUES {};
+    """.format(', '.join('(%s, %s)' for _ in new_mappings)),
+        tuple(chain(*new_mappings))
+    )
+
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 
 def commit_node_association_results_from_queue(node_result_queue, skeleton_id, total_nodes, algo_version):
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER), autocommit=True)
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
     cursor = conn.cursor()
 
     result_generator = (node_result_queue.get() for _ in range(total_nodes))
@@ -648,6 +817,7 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
         for result in result_generator
     )
 
+    logger.info('Inserting new slice:skeleton mappings')
     cursor.execute("""
         INSERT INTO synapse_slice_skeleton (
           synapse_slice_id,
@@ -657,21 +827,25 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
         ) VALUES %s;
     """, (values_to_insert, ))
 
+    conn.commit()
     cursor.close()
     conn.close()
 
 
 if __name__ == "__main__":
-    DEBUGGING = False
-    if DEBUGGING:
-        from os.path import dirname, abspath
+    if DEBUG:
         print("USING DEBUG ARGUMENTS")
 
-        SKELETON_ID = '11524047'
-        # SKELETON_ID = '18531735'
-        L1_CNS = abspath( dirname(__file__) + '/../projects-2017/L1-CNS' )
-        args_list = ['credentials_dev.json', 1, SKELETON_ID, L1_CNS]
-        kwargs_dict = {'force': True}
+        project_dir = "../projects-2017/L1-CNS"
+        cred_path = "credentials_dev.json"
+        stack_id = 1
+        skel_id = 18531735  # small test skeleton only on CLB's local instance
+        force = 1
+
+        args_list = [
+            cred_path, stack_id, skel_id, project_dir
+        ]
+        kwargs_dict = {'force': force}
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('--roi-radius-px', default=DEFAULT_ROI_RADIUS,
