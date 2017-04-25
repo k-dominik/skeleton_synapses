@@ -7,7 +7,7 @@ import argparse
 import sys
 import os
 import json
-from itertools import product, chain
+from itertools import product
 from types import StringTypes
 from string import Formatter
 
@@ -28,12 +28,18 @@ from locate_synapses import (
     setup_files, setup_classifier, setup_classifier_and_multicut, roi_around_node, get_and_print_env,
     fetch_raw_and_predict_for_node, raw_data_for_node, labeled_synapses_for_node, segmentation_for_node,
     # classes
-    CaretakerProcess, LeakyProcess
+    CaretakerProcess, LeakyProcess, DebuggableProcess
 )
 
-logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
 logger = logging.getLogger(__name__)
+h = logging.StreamHandler()
+h.setLevel(logging.DEBUG)
+f = logging.Formatter(fmt='%(levelname)s %(name)s: %(message)s')
+h.setFormatter(f)
+logger.addHandler(h)
 logger.setLevel(logging.DEBUG)
+
+logger.info('STARTING TILEWISE')
 
 HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
 STACK_PATH = "../projects-2017/L1-CNS/synapse_volume.hdf5"
@@ -44,7 +50,7 @@ POSTGRES_DB = 'synapse_detection'
 DTYPE = np.uint32  # can only store up to 2^24
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
-MIRROR_ID = 4
+MIRROR_ID = 5  # todo: change this to 4 for production
 
 ALGO_VERSION = 1
 
@@ -59,6 +65,8 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
     autocontext_project, multicut_project, volume_description_path, skel_output_dir, skeleton = setup_files(
         credentials_path, stack_id, skeleton_id, project_dir, force
     )
+
+    logger.info("STARTING TILEWISE")
 
     catmaid = CatmaidAPI.from_json(credentials_path)
     stack_info = catmaid.get_stack_info(stack_id)
@@ -239,7 +247,7 @@ def skeleton_to_tiles(skeleton, mirror_info, minimum_radius=DEFAULT_ROI_RADIUS):
     tile_set = set()
     tile_size_xyz = [mirror_info['tile_{}'.format(dim)] for dim in ['width', 'height']] + [1]
 
-    logger.info('Getting tile set for %', skeleton.skeleton_id)
+    logger.info('Getting tile set for %s', skeleton.skeleton_id)
 
     for branch in skeleton.branches:
         for node_info in branch:
@@ -302,7 +310,11 @@ def list_into_query(query, arg_lst, fmt='%s'):
     assert set(fmt).issubset(',()%s ')
 
     arg_str = ', '.join(fmt for _ in arg_lst)
-    return query.format(arg_str), tuple(flatten(arg_lst))
+    final_query = query.format(arg_str)
+    final_args = tuple(flatten(arg_lst))
+
+    logger.debug('Preparing SQL query for form \n%s with arguments %s', final_query, str(final_args))
+    return final_query, final_args
 
 
 def list_into_query_multi(query, fmt=None, **kwargs):
@@ -343,6 +355,7 @@ def list_into_query_multi(query, fmt=None, **kwargs):
     final_args = flatten(kwargs[arg_name] for arg_name in arg_order)
     final_query = query.format(**arg_strs)
 
+    logger.debug('Preparing SQL query for form \n%s \nwith arguments \n%s', final_query, str(final_args))
     return final_query, tuple(final_args)
 
 
@@ -388,7 +401,10 @@ def locate_synapses_tilewise(
         algo_versions = f['algo_versions']
         for tile_idx in tile_set:
             if algo_versions[tile_idx.z_idx, tile_idx.y_idx, tile_idx.x_idx] != algo_version:
+                logging.debug("Tile %s has not been addressed, adding to queue", repr(tile_idx))
                 tile_queue.put(tile_idx)
+            else:
+                logging.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
 
     total_tiles = tile_queue.qsize()
     logger.debug('{} tiles queued'.format(total_tiles))
@@ -423,22 +439,16 @@ def locate_synapses_tilewise(
 
     conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
     cursor = conn.cursor()
-    node_ids_str = ', '.join('({})'.format(node_id) for node_id in node_id_to_seg_input)
 
     logger.debug('Finding which node windows do not need re-segmenting')
     # fetch nodes which have been addressed by this algorithm
     # todo: check this
-    # query, args = list_into_query_multi("""
-    #     SELECT synapse_slice_skeleton.node_id FROM synapse_slice_skeleton
-    #       INNER JOIN ( VALUES {node_ids} ) node (id) ON (node.id = synapse_slice_skeleton.node_id)
-    #       WHERE synapse_slice_skeleton.algo_version = {algo_version};
-    # """, node_ids=list(node_id_to_seg_input), algo_version=algo_version)
-    # cursor.execute(query, args)
-    cursor.execute("""
+    query, cursor_args = list_into_query_multi("""
         SELECT synapse_slice_skeleton.node_id FROM synapse_slice_skeleton
-          INNER JOIN ( VALUES %s ) node (id) ON (node.id = synapse_slice_skeleton.node_id)
-          WHERE synapse_slice_skeleton.algo_version = %s;
-    """, (node_ids_str, algo_version))
+          INNER JOIN ( VALUES {node_ids} ) node (id) ON (node.id = synapse_slice_skeleton.node_id)
+          WHERE synapse_slice_skeleton.algo_version = {algo_version};
+    """, node_ids=list(node_id_to_seg_input), algo_version=[algo_version], fmt={'node_ids': '(%s)'})
+    cursor.execute(query, cursor_args)
 
     nodes_to_exclude = cursor.fetchall()
 
@@ -458,10 +468,11 @@ def locate_synapses_tilewise(
 
         neuron_seg_containers = [
             CaretakerProcess(
-                NeuronSegmenterProcess, tile_queue, RAM_MB_PER_PROCESS,
+                NeuronSegmenterProcess, node_queue, RAM_MB_PER_PROCESS,
                 (node_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir)
             )
-            for _ in range(THREADS)
+            # for _ in range(total_nodes)
+            for _ in range(1)
         ]
 
         for neuron_seg_container in neuron_seg_containers:
@@ -555,7 +566,9 @@ class NeuronSegmenterProcess(LeakyProcess):
         debug : bool
             Whether to instantiate a serial version for debugging purposes
         """
-        super(NeuronSegmenterProcess, self).__init__(input_queue, max_ram_MB, debug)
+        super(NeuronSegmenterProcess, self).__init__(input_queue, max_ram_MB, debug)  # todo
+        # super(NeuronSegmenterProcess, self).__init__(debug)
+        self.input_queue = input_queue
         self.output_queue = output_queue
 
         logger.debug('Segmenter process {} instantiated'.format(self.name))
@@ -567,6 +580,13 @@ class NeuronSegmenterProcess(LeakyProcess):
 
         self.opPixelClassification = self.multicut_shell = None
         self.setup_args = (description_file, autocontext_project_path, multicut_project)
+
+    # # todo: remove this
+    # def run(self):
+    #     self.setup()
+    #
+    #     while not self.input_queue.empty():
+    #         self.execute()
 
     def setup(self):
         self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
@@ -582,11 +602,11 @@ class NeuronSegmenterProcess(LeakyProcess):
                      .format(self.name.upper(), node_info.id, self.input_queue.qsize()))
 
         with Timer() as node_timer:
-            roi_xyz = roi_around_node(node_info, roi_radius_px).astype(int)
+            roi_xyz = roi_around_node(node_info, roi_radius_px)
             raw_xy = raw_data_for_node(node_info, roi_xyz, None, self.opPixelClassification)
 
             # convert roi into a tuple of slice objects which can be used by numpy for indexing
-            roi_slices = (roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 2], roi_xyz[1, 2]))
+            roi_slices = (roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0]))
 
             # N.B. might involve parallel reads - consider a single reader process
             with h5py.File(HDF5_PATH, 'r') as f:
@@ -742,11 +762,13 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
 
     logger.info('Getting slice:object mapping')
     # get existing mapping of synapse slices associated with new synapse slices, to synapse objects
-    syn_slice_container_str = ', '.join('(%s)' for _ in range(geometry_adjacencies.number_of_nodes()))
-    cursor.execute("""
+    query, cursor_args = list_into_query("""
         SELECT sl_obj.synapse_slice_id, sl_obj.synapse_object_id FROM synapse_slice_synapse_object sl_obj
           INNER JOIN (VALUES {}) syn_sl (id) ON (syn_sl.id = sl_obj.synapse_slice_id);
-    """.format(syn_slice_container_str), geometry_adjacencies.nodes())
+    """, geometry_adjacencies.nodes(), fmt='(%s)')
+
+    cursor.execute(query, cursor_args)
+
     existing_syn_slice_to_obj = dict(cursor.fetchall())
 
     new_mappings = []
@@ -771,15 +793,17 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
             other_obj_ids = [other_obj_id for other_obj_id in syn_obj_ids if other_obj_id != obj_id]
 
             if other_obj_ids:
-                other_obj_ids_str = ', '.join(other_obj_ids)
+                # other_obj_ids_str = ', '.join(other_obj_ids)
                 obsolete_objects.extend(other_obj_ids)
 
                 logger.debug('New synapse slice joins >1 previous synapse objects: merging...')
                 # remap all synapse slices mapped to objects with larger IDs
-                cursor.execute("""
+                query, cursor_args = list_into_query_multi("""
                     UPDATE synapse_slice_synapse_object
-                      SET synapse_object_id = %s WHERE synapse_object_id IN (%s);
-                """, (obj_id, other_obj_ids_str))
+                      SET synapse_object_id = {obj_id} WHERE synapse_object_id IN ({other_obj_ids});
+                """, obj_id=[obj_id], other_obj_ids=other_obj_ids)
+
+                cursor.execute(query, cursor_args)
 
             new_mappings.extend(
                 (slice_id, obj_id)
@@ -789,18 +813,16 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
 
     if obsolete_objects:  # todo: do this in SQL
         logger.info('Deleting obsolete synapse objects')
-        cursor.execute("""
-            DELETE FROM synapse_object
-              WHERE id IN (%s);
-        """, (', '.join(obsolete_objects), ))
+        query, cursor_args = list_into_query("DELETE FROM synapse_object WHERE id IN ({});", obsolete_objects)
+        cursor.execute(query, cursor_args)
 
     logger.info('Inserting new slice:object mappings')
-    cursor.execute("""
+    query, cursor_args = list_into_query("""
         INSERT INTO synapse_slice_synapse_object (synapse_slice_id, synapse_object_id)
           VALUES {};
-    """.format(', '.join('(%s, %s)' for _ in new_mappings)),
-        tuple(chain(*new_mappings))
-    )
+    """, new_mappings, fmt='(%s, %s)')
+
+    cursor.execute(query, cursor_args)
 
     conn.commit()
     cursor.close()
@@ -812,20 +834,21 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
     cursor = conn.cursor()
 
     result_generator = (node_result_queue.get() for _ in range(total_nodes))
-    values_to_insert = ', '.join(
-        '({}, {}, {}, {})'.format(result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version)
-        for result in result_generator
-    )
 
-    logger.info('Inserting new slice:skeleton mappings')
-    cursor.execute("""
+    values_to_insert = [(result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version) for result in result_generator]
+
+    query, cursor_args = list_into_query("""
         INSERT INTO synapse_slice_skeleton (
           synapse_slice_id,
           skeleton_id,
           node_id,
           algo_version
-        ) VALUES %s;
-    """, (values_to_insert, ))
+        ) VALUES {};
+    """, values_to_insert, fmt='(%s, %s, %s, %s)')
+
+    logger.info('Inserting new slice:skeleton mappings')
+
+    cursor.execute(query, cursor_args)
 
     conn.commit()
     cursor.close()
@@ -840,7 +863,7 @@ if __name__ == "__main__":
         cred_path = "credentials_dev.json"
         stack_id = 1
         skel_id = 18531735  # small test skeleton only on CLB's local instance
-        force = 1
+        force = 0
 
         args_list = [
             cred_path, stack_id, skel_id, project_dir
