@@ -12,6 +12,7 @@ from types import StringTypes
 from string import Formatter
 
 import psycopg2
+# from psycopg2.extensions import register_adapter, AsIs
 import h5py
 import numpy as np
 from six.moves import range
@@ -31,6 +32,11 @@ from locate_synapses import (
     CaretakerProcess, LeakyProcess, DebuggableProcess
 )
 
+
+# def addapt_numpy_float64(numpy_float64):
+#     return AsIs(numpy_float64)
+# register_adapter(np.float64, addapt_numpy_float64)
+
 logger = logging.getLogger(__name__)
 h = logging.StreamHandler()
 h.setLevel(logging.DEBUG)
@@ -47,7 +53,6 @@ STACK_PATH = "../projects-2017/L1-CNS/synapse_volume.hdf5"
 POSTGRES_USER = 'cbarnes'
 POSTGRES_DB = 'synapse_detection'
 
-DTYPE = np.uint32  # can only store up to 2^24
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
 MIRROR_ID = 5  # todo: change this to 4 for production
@@ -58,7 +63,7 @@ THREADS = get_and_print_env('SYNAPSE_DETECTION_THREADS', 3, int)
 NODES_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500, int)
 RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000, int)
 
-DEBUG = True
+DEBUG = False
 
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, force=False):
@@ -92,8 +97,8 @@ def link_images(existing_path=HDF5_PATH, new_path=STACK_PATH, force=False):
     if force or not os.path.isfile(new_path):
         os.remove(new_path)
         os.link(existing_path, new_path)
-        with h5py.File(existing_path, 'r+') as f:
-            f['volume'] = f['slice_labels']
+        # with h5py.File(existing_path, 'r+') as f:
+        #     f['volume'] = f['slice_labels']
 
 
 def ensure_tables(force=False):
@@ -176,7 +181,7 @@ def get_stack_mirror(stack_info, mirror_id=MIRROR_ID):
             return mirror
 
 
-def create_label_volume(stack_info, hdf5_file, name, extra_dim=None):
+def create_label_volume(stack_info, hdf5_file, name, dtype=np.float64, extra_dim=None):
     mirror = get_stack_mirror(stack_info)
 
     dimension = [stack_info['dimension'][dim] for dim in 'zyx']
@@ -191,7 +196,7 @@ def create_label_volume(stack_info, hdf5_file, name, extra_dim=None):
         dimension,  # zyx(c)
         chunks=chunksize,  # zyx(c)
         fillvalue=0,
-        dtype=DTYPE
+        dtype=dtype
     )
 
     for key in ['translation', 'dimension', 'resolution']:
@@ -215,17 +220,19 @@ def ensure_hdf5(stack_info, force=False):
             f.attrs['source_stack_id'] = stack_info['sid']
             f.attrs['source_mirror_id'] = get_stack_mirror(stack_info)['id']
 
-            create_label_volume(stack_info, f, 'slice_labels')
+            create_label_volume(stack_info, f, 'slice_labels', dtype=np.int64)
             f['volume'] = f['slice_labels']  # for compatibility with _parallel and _serial
-            # create_label_volume(stack_info, f, 'object_labels')  # todo
-            create_label_volume(stack_info, f, 'pixel_predictions', 3)
+            # create_label_volume(stack_info, f, 'object_labels')  # todo?
+            create_label_volume(stack_info, f, 'pixel_predictions', dtype=np.float32, extra_dim=3)
 
             f.create_dataset(
                 'algo_versions',
                 get_tile_counts_zyx(stack_info),
                 fillvalue=0,
-                dtype=DTYPE
+                dtype=int
             )
+
+            f.flush()
 
 
 TileIndex = namedtuple('TileIndex', 'z_idx y_idx x_idx')
@@ -471,17 +478,22 @@ def locate_synapses_tilewise(
                 NeuronSegmenterProcess, node_queue, RAM_MB_PER_PROCESS,
                 (node_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir)
             )
-            # for _ in range(total_nodes)
-            for _ in range(1)
+            for _ in range(THREADS)
+            # for _ in range(1)
         ]
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.start()
+            assert neuron_seg_container.is_alive()
 
         commit_node_association_results_from_queue(node_result_queue, skeleton.skeleton_id, total_nodes, algo_version)
 
         for neuron_seg_container in neuron_seg_containers:
-            neuron_seg_container.join()
+            try:
+                neuron_seg_container.join()
+            except AssertionError, e:
+                if node_queue.qsize():
+                    raise e
     else:
         logger.debug('No nodes required re-segmenting')
 
@@ -542,6 +554,7 @@ NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['node_info', 'roi_rad
 NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', 'node_info synapse_slice_id')
 
 
+# class NeuronSegmenterProcess(DebuggableProcess):
 class NeuronSegmenterProcess(LeakyProcess):
     """
     Process which creates its own pixel classifier and multicut workflow, pulls jobs from one queue and returns
@@ -566,7 +579,7 @@ class NeuronSegmenterProcess(LeakyProcess):
         debug : bool
             Whether to instantiate a serial version for debugging purposes
         """
-        super(NeuronSegmenterProcess, self).__init__(input_queue, max_ram_MB, debug)  # todo
+        super(NeuronSegmenterProcess, self).__init__(input_queue, max_ram_MB, debug)
         # super(NeuronSegmenterProcess, self).__init__(debug)
         self.input_queue = input_queue
         self.output_queue = output_queue
@@ -581,7 +594,7 @@ class NeuronSegmenterProcess(LeakyProcess):
         self.opPixelClassification = self.multicut_shell = None
         self.setup_args = (description_file, autocontext_project_path, multicut_project)
 
-    # # todo: remove this
+    # for debugging
     # def run(self):
     #     self.setup()
     #
@@ -756,6 +769,7 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
                     geometry_adjacencies.add_edge(new_id, intersecting_id_tup[0])
 
             logger.debug('%sInserting new label data into volume', log_prefix)
+            synapse_cc_yx[synapse_cc_yx == 0] = 1
             slice_labels_zyx[
                 bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
             ] = synapse_cc_yx
@@ -833,9 +847,19 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
     conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
     cursor = conn.cursor()
 
+    logger.debug('Committing node association results')
+
     result_generator = (node_result_queue.get() for _ in range(total_nodes))
 
-    values_to_insert = [(result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version) for result in result_generator]
+    logger.debug('Getting node association results')
+    # values_to_insert = [(result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version) for result in result_generator]
+    values_to_insert = []
+    for result in result_generator:
+        result_tuple = (result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version)
+        logger.debug('Appending segmentation result to args: %s', repr(result_tuple))
+        values_to_insert.append(result_tuple)
+
+    logger.debug('Node association results are\n%s', repr(values_to_insert))
 
     query, cursor_args = list_into_query("""
         INSERT INTO synapse_slice_skeleton (
