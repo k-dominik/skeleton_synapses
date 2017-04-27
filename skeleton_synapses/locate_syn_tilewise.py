@@ -17,6 +17,7 @@ import h5py
 import numpy as np
 from six.moves import range
 import networkx as nx
+from skimage.morphology import skeletonize
 
 from lazyflow.utility import Timer
 from lazyflow.request import Request
@@ -164,7 +165,8 @@ def ensure_tables(force=False):
           synapse_slice_id BIGINT REFERENCES synapse_slice (id) ON DELETE CASCADE,
           skeleton_id BIGINT,
           node_id BIGINT,
-          algo_version INTEGER
+          algo_version INTEGER,
+          contact_px INTEGER
         );
     """)
 
@@ -551,7 +553,7 @@ class DetectorProcess(LeakyProcess):
 
 
 NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['node_info', 'roi_radius_px'])
-NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', 'node_info synapse_slice_id')
+NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', ['node_info', 'synapse_slice_id', 'contact_px'])
 
 
 # class NeuronSegmenterProcess(DebuggableProcess):
@@ -632,10 +634,11 @@ class NeuronSegmenterProcess(LeakyProcess):
 
             center_coord = np.array(segmentation_xy.shape) // 2
             node_segment = segmentation_xy[tuple(center_coord)]
-            for syn_id in np.unique(synapse_cc_xy)[1:]:
-                overlapping_segments = np.unique(segmentation_xy[synapse_cc_xy == syn_id])
-                if node_segment in overlapping_segments:
-                    self.output_queue.put(NeuronSegmenterOutput(node_info, syn_id))
+
+            synapse_overlaps = synapse_cc_xy * (segmentation_xy == node_segment)
+            for syn_id in np.unique(synapse_overlaps[synapse_overlaps > 1]):
+                contact_px = skeletonize(synapse_overlaps == syn_id).sum()  # todo: improve this?
+                self.output_queue.put(NeuronSegmenterOutput(node_info, syn_id, contact_px))
 
             self.timing_logger.info("TILE TIMER: {}".format(node_timer.seconds()))
 
@@ -645,17 +648,22 @@ class NeuronSegmenterProcess(LeakyProcess):
 
 def syn_coords_to_wkt_str(x_coords, y_coords):
     """
-    String which PostGIS will interpret as a 2D convex hull of the coordinates
+    Convert arrays of coordinates into a WKT string describing a MultiPoint geometry of those coordinates, 
+    where point i has the coordinates (x_coords[i], y_coords[i]).
+    
+    x_coords, y_coords = np.where(binary_array)
     
     Parameters
     ----------
-    syn_coords : array-like
-        Result of np.where(synapse_cc_xy == slice_label) plus top left corner of panel
+    x_coords : array-like
+        Array of x coordinates
+    y_coords : array-like
+        Array of y coordinates
 
     Returns
     -------
     str
-        String to be interpolated into SQL query
+        MultiPoint geometry expressed as a WKT string
     """
     coords_str = ','.join('{} {}'.format(x_coord, y_coord) for x_coord, y_coord in zip(x_coords, y_coords))
     # could use scipy to find contour to reduce workload on database, or SQL concave hull, or SQL simplify geometry
@@ -701,7 +709,7 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
             conn.commit()
 
             for slice_label in np.unique(synapse_cc_yx)[1:]:
-                slice_prefix = log_prefix + '[{}]'.format(slice_label)
+                slice_prefix = log_prefix + '[{}] '.format(slice_label)
 
                 logger.debug('%sProcessing slice label'.format(slice_label), slice_prefix)
 
@@ -855,7 +863,7 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
     # values_to_insert = [(result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version) for result in result_generator]
     values_to_insert = []
     for result in result_generator:
-        result_tuple = (result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version)
+        result_tuple = (result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version, result.contact_px)
         logger.debug('Appending segmentation result to args: %s', repr(result_tuple))
         values_to_insert.append(result_tuple)
 
@@ -866,9 +874,10 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
           synapse_slice_id,
           skeleton_id,
           node_id,
-          algo_version
+          algo_version,
+          contact_px
         ) VALUES {};
-    """, values_to_insert, fmt='(%s, %s, %s, %s)')
+    """, values_to_insert, fmt='(%s, %s, %s, %s, %s)')
 
     logger.info('Inserting new slice:skeleton mappings')
 
@@ -877,6 +886,25 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
     conn.commit()
     cursor.close()
     conn.close()
+
+
+def get_synapse_objects_for_skel(skel_id=11524047):
+    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT ss_so.synapse_object_id FROM synapse_slice_synapse_object ss_so
+          JOIN synapse_slice_skeleton ss_s ON ss_so.synapse_slice_id = ss_s.synapse_slice_id
+          WHERE ss_s.skeleton_id = %s;
+    """, (skel_id, ))
+
+    results = [tup[0] for tup in cursor.fetchall()]
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return results
 
 
 if __name__ == "__main__":
