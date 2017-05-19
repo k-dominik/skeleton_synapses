@@ -27,10 +27,10 @@ from locate_synapses import (
     # constants/singletons
     DEFAULT_ROI_RADIUS,
     # functions
-    setup_files, setup_classifier, setup_classifier_and_multicut, roi_around_node, get_and_print_env,
+    setup_files, setup_classifier, setup_classifier_and_multicut, roi_around_node,
     fetch_raw_and_predict_for_node, raw_data_for_node, labeled_synapses_for_node, segmentation_for_node,
     # classes
-    CaretakerProcess, LeakyProcess, DebuggableProcess
+    CaretakerProcess, LeakyProcess
 )
 
 
@@ -38,12 +38,9 @@ from locate_synapses import (
 #     return AsIs(numpy_float64)
 # register_adapter(np.float64, addapt_numpy_float64)
 
+logging.basicConfig(level=0, format='%(levelname)s %(name)s: %(message)s')
+
 logger = logging.getLogger(__name__)
-h = logging.StreamHandler()
-h.setLevel(logging.DEBUG)
-f = logging.Formatter(fmt='%(levelname)s %(name)s: %(message)s')
-h.setFormatter(f)
-logger.addHandler(h)
 logger.setLevel(logging.DEBUG)
 
 logger.info('STARTING TILEWISE')
@@ -51,8 +48,13 @@ logger.info('STARTING TILEWISE')
 HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
 STACK_PATH = "../projects-2017/L1-CNS/synapse_volume.hdf5"
 
-POSTGRES_USER = 'cbarnes'
-POSTGRES_DB = 'synapse_detection'
+POSTGRES_CREDENTIALS = {
+    'dbname': os.getenv('SYNSUGG_DB'),
+    'password': os.getenv('SYNSUGG_DB_PASSWORD'),
+    'user': os.getenv('SYNSUGG_DB_USER'),
+    'host': os.getenv('SYNSUGG_DB_HOST', '127.0.0.1'),
+    'port': int(os.getenv('SYNSUGG_DB_PORT', 5432))
+}
 
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
@@ -60,9 +62,9 @@ MIRROR_ID = 5  # todo: change this to 4 for production
 
 ALGO_VERSION = 1
 
-THREADS = get_and_print_env('SYNAPSE_DETECTION_THREADS', 3, int)
-NODES_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500, int)
-RAM_MB_PER_PROCESS = get_and_print_env('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000, int)
+THREADS = int(os.getenv('SYNAPSE_DETECTION_THREADS', 3))
+NODES_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500))
+RAM_MB_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000))
 
 DEBUG = False
 
@@ -104,18 +106,21 @@ def link_images(existing_path=HDF5_PATH, new_path=STACK_PATH, force=False):
 
 def ensure_tables(force=False):
     if force:
-        logger.info('Dropping and recreating database %s', POSTGRES_DB)
-        conn = psycopg2.connect("dbname={} user={}".format('postgres', POSTGRES_USER))
+        # todo: deprecate this
+        logger.info('Dropping and recreating database %s', POSTGRES_CREDENTIALS['dbname'])
+        cred = POSTGRES_CREDENTIALS.copy()
+        cred['dbname'] = 'postgres'
+        conn = psycopg2.connect(**cred)
         cursor = conn.cursor()
         conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-        cursor.execute('DROP DATABASE IF EXISTS {};'.format(POSTGRES_DB))  # TODO: CHANGE THIS
+        cursor.execute('DROP DATABASE IF EXISTS {};'.format(POSTGRES_CREDENTIALS['dbname']))  # TODO: CHANGE THIS
         conn.commit()
-        cursor.execute('CREATE DATABASE {};'.format(POSTGRES_DB))  # TODO: CHANGE THIS
+        cursor.execute('CREATE DATABASE {};'.format(POSTGRES_CREDENTIALS['dbname']))  # TODO: CHANGE THIS
         conn.commit()
         cursor.close()
         conn.close()
 
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect(**POSTGRES_CREDENTIALS)
     cursor = conn.cursor()
 
     logger.debug('Ensuring tables and indices exist')
@@ -446,7 +451,7 @@ def locate_synapses_tilewise(
         for node_info in branch:
             node_id_to_seg_input[node_info.id] = NeuronSegmenterInput(node_info, roi_radius_px)
 
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect(**POSTGRES_CREDENTIALS)
     cursor = conn.cursor()
 
     logger.debug('Finding which node windows do not need re-segmenting')
@@ -513,7 +518,9 @@ class DetectorProcess(LeakyProcess):
         super(DetectorProcess, self).__init__(input_queue, max_ram_MB, debug)
         self.output_queue = output_queue
 
-        logger.debug('Detector process {} instantiated'.format(self.name))
+        self.logger = logging.getLogger('{}.{}'.format(__name__, self.name))
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.debug('Detector process instantiated')
 
         self.timing_logger = logging.getLogger(__name__ + '.timing')
         self.timing_logger.setLevel(logging.INFO)
@@ -532,8 +539,7 @@ class DetectorProcess(LeakyProcess):
     def execute(self):
         tile_idx = self.input_queue.get()
 
-        logger.debug("{} PROGRESS: addressing tile {}, {} tiles remaining"
-                     .format(self.name.upper(), tile_idx, self.input_queue.qsize()))
+        self.logger.debug("Addressing tile {}, {} tiles remaining".format(self.name.upper(), tile_idx, self.input_queue.qsize()))
 
         with Timer() as timer:
             roi_xyz = tile_index_to_bounds(tile_idx, self.mirror_info)
@@ -586,10 +592,12 @@ class NeuronSegmenterProcess(LeakyProcess):
         self.input_queue = input_queue
         self.output_queue = output_queue
 
-        logger.debug('Segmenter process {} instantiated'.format(self.name))
-
-        self.timing_logger = logging.getLogger(__name__ + '.timing')
+        self.timing_logger = logging.getLogger('{}.{}.{}'.format(__name__, self.name, 'timing'))
         self.timing_logger.setLevel(logging.INFO)
+
+        self.logger = logging.getLogger('{}.{}'.format(__name__, self.name))
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.debug('Segmenter process instantiated')
 
         self.skel_output_dir = skel_output_dir
 
@@ -604,17 +612,18 @@ class NeuronSegmenterProcess(LeakyProcess):
     #         self.execute()
 
     def setup(self):
+        self.logger.debug('Setting up opPixelClassification and multicut_shell...')
         self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
             *self.setup_args
         )
+        self.logger.debug('opPixelClassification and multicut_shell set up')
 
         Request.reset_thread_pool(1)
 
     def execute(self):
         node_info, roi_radius_px = self.input_queue.get()
 
-        logger.debug("{} PROGRESS: addressing node {}, {} nodes remaining"
-                     .format(self.name.upper(), node_info.id, self.input_queue.qsize()))
+        self.logger.debug("Addressing node {}, {} nodes remaining".format(node_info.id, self.input_queue.qsize()))
 
         with Timer() as node_timer:
             roi_xyz = roi_around_node(node_info, roi_radius_px)
@@ -642,8 +651,8 @@ class NeuronSegmenterProcess(LeakyProcess):
 
             self.timing_logger.info("TILE TIMER: {}".format(node_timer.seconds()))
 
-        logger.debug("{} PROGRESS: segmented area around node {}, {} nodes remaining"
-                     .format(self.name.upper(), node_info.id, self.input_queue.qsize()))
+        self.logger.debug("PROGRESS: segmented area around node {}, {} nodes remaining"
+                     .format(node_info.id, self.input_queue.qsize()))
 
 
 def syn_coords_to_wkt_str(x_coords, y_coords):
@@ -671,7 +680,7 @@ def syn_coords_to_wkt_str(x_coords, y_coords):
 
 
 def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_tiles, mirror_info, algo_version=ALGO_VERSION):
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect(**POSTGRES_CREDENTIALS)
     cursor = conn.cursor()
 
     geometry_adjacencies = nx.Graph()
@@ -852,7 +861,7 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
 
 
 def commit_node_association_results_from_queue(node_result_queue, skeleton_id, total_nodes, algo_version):
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect(**POSTGRES_CREDENTIALS)
     cursor = conn.cursor()
 
     logger.debug('Committing node association results')
@@ -889,7 +898,7 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
 
 
 def get_synapse_objects_for_skel(skel_id=11524047):
-    conn = psycopg2.connect("dbname={} user={}".format(POSTGRES_DB, POSTGRES_USER))
+    conn = psycopg2.connect(**POSTGRES_CREDENTIALS)
     cursor = conn.cursor()
 
     cursor.execute("""

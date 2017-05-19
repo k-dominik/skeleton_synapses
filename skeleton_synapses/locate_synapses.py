@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore", message='.*second conversion method ignored.',
 
 # Start with a NullHandler to avoid logging configuration
 # warnings before we actually configure logging below.
-logging.getLogger().addHandler(logging.NullHandler())
+# logging.getLogger().addHandler(logging.NullHandler())
 
 import numpy as np
 import h5py
@@ -274,10 +274,12 @@ class CaretakerProcess(DebuggableProcess):
         self.kwargs_dict['debug'] = debug
 
     def run(self):
+        logger = logging.getLogger('{}.{}'.format(__name__, self.name))
         while not self.input_queue.empty():
+            logger.debug('Starting new inner {} process'.format(self.constructor.__name__))
             inner_process = self.constructor(self.input_queue, self.max_ram_MB, *self.args_tuple, **self.kwargs_dict)
-            logger.debug('Starting {}'.format(inner_process.name))
             inner_process.start()
+            logger.debug('Started {}'.format(inner_process.name))
             inner_process.join()
             del inner_process
 
@@ -286,32 +288,72 @@ class LeakyProcess(DebuggableProcess):
     """
     To be subclassed by actual processes with memory leaks.
     
-    Override setup() and execute() for functions which should be run once per process just as it spawns, or every 
-    iteration of a loop which will terminate when the input queue is empty or the process exceeds the specified RAM limit
+    Override methods to determine behaviour: 
+    
+    setup() is run once per process, on run()
+    execute() is run in a while loop for as long as the input queue isn't empty and the RAM limit isn't exceeded
+    teardown() is run before the process is shut down, either when the input queue is empty or the RAM limit is exceeded
     """
+    process_counter = 0
+
     def __init__(self, input_queue, max_ram_MB=0, debug=False):
         super(LeakyProcess, self).__init__(debug)
         self.input_queue = input_queue
         self.max_ram_MB = max_ram_MB
         self.psutil_process = None
+        self.name = '{} {}'.format(type(self).__name__, self.process_counter)
+        self.size_logger_name = '{}.{}.{}'.format(__name__, self.name, 'size')
+        self.execution_counter = 0
+        type(self).process_counter += 1
 
     def run(self):
         self.setup()
         self.psutil_process = [proc for proc in psutil.process_iter() if proc.pid == self.pid][0]
-
+        size_logger = logging.getLogger(self.size_logger_name)
+        size_logger.debug(self.ram_usage_str())
         while not self.needs_pruning():
             self.execute()
+            self.execution_counter += 1
+            size_logger.debug(self.ram_usage_str())
 
-    def execute(self):
-        pass
+        self.teardown()
 
     def setup(self):
         pass
 
+    def execute(self):
+        pass
+
+    def teardown(self):
+        pass
+
+    @property
+    def ram_usage_MB(self):
+        try:
+            return self.psutil_process.memory_info().rss / 1024 / 1024
+        except AttributeError:
+            return None
+
+    def ram_usage_str(self):
+        return 'RAM usage: {:.03f}MB out of {:.03f}MB'.format(self.ram_usage_MB, self.max_ram_MB)
+
     def needs_pruning(self):
-        return self.input_queue.empty() or (
-            self.max_ram_MB and self.psutil_process.memory_info().rss >= self.max_ram_MB * 1024 * 1024
-        )
+        size_logger = logging.getLogger(self.size_logger_name)
+        if self.input_queue.empty():
+            size_logger.info('TERMINATING after {} iterations (input queue empty)'.format(self.execution_counter))
+            return True
+
+        ram_usage_MB = self.ram_usage_MB
+
+        if self.max_ram_MB and ram_usage_MB >= self.max_ram_MB:
+            size_logger.info(
+                'TERMINATING after {} iterations ({}, {} items remaining)'.format(
+                    self.execution_counter, self.ram_usage_str(), self.input_queue.qsize()
+                )
+            )
+            return True
+
+        return False
 
 
 def search_queue(queue, criterion, timeout=None):
