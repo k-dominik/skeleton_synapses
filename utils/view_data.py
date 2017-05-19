@@ -1,10 +1,12 @@
 from __future__ import division
 import h5py
 import numpy as np
+from matplotlib import cm
 from matplotlib import pyplot as plt
 import argparse
 import os
 from nearest_slice import get_filename_for_coords
+from PIL import Image
 
 plt.style.use('ggplot')
 
@@ -51,7 +53,7 @@ def get_shape(number, width, height):
     return nrows, ncols
 
 
-def get_data(file_path, inner_path):
+def get_all_data(file_path, inner_path):
     with h5py.File(file_path, 'r') as f:
         data = np.array(f[inner_path])
 
@@ -67,7 +69,7 @@ def view_data(root_dir, file_name, **kwargs):
 
     for im_type in DIRS:
         file_path = os.path.join(root_dir, im_type, file_name)
-        data = get_data(file_path, inner_path)
+        data = get_all_data(file_path, inner_path)
         ax = ax_dict[im_type]
         ax.set_title(im_type)
 
@@ -83,6 +85,24 @@ def view_data(root_dir, file_name, **kwargs):
     fig.tight_layout()
     # fig.set_size_inches(6, 6)
     plt.show()
+
+
+def dump_data(root_dir, file_name, out_dir, **kwargs):
+    inner_path = kwargs.get('inner_path', DEFAULT_INNER_PATH)
+
+    for im_type in DIRS:
+        file_path = os.path.join(root_dir, im_type, file_name)
+        data = get_all_data(file_path, inner_path)
+        im_arr = np.transpose(data, (1, 0, 2, 3)).squeeze()
+
+        image_args = types_kwargs[im_type]
+        if 'cmap' in image_args:
+            im = Image.fromarray(getattr(cm, image_args['cmap'])(im_arr, bytes=True))
+        else:
+            im = Image.fromarray(np.uint8(im_arr*255))
+
+        out_filename = '{}_{}.png'.format(os.path.splitext(file_name)[0], im_type)
+        im.save(os.path.join(out_dir, out_filename))
 
 
 if __name__ == "__main__":
