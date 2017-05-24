@@ -234,8 +234,8 @@ class DebuggableProcess(mp.Process):
     Classes inheriting from this instead of multiprocessing.Process can use a `debug` parameter to run in serial 
     instead of spawning a new python process, for easier debugging.
     """
-    def __init__(self, debug=False):
-        super(DebuggableProcess, self).__init__()
+    def __init__(self, debug=False, name=None):
+        super(DebuggableProcess, self).__init__(name=name)
         self.debug = debug
 
     def start(self):
@@ -251,8 +251,9 @@ class CaretakerProcess(DebuggableProcess):
     example, if it stops itself due to taking up too much memory), and starting a new one if there are still items 
     remaining in the input queue.
     """
+
     def __init__(
-            self, constructor, input_queue, max_ram_MB, args_tuple=(), kwargs_dict=None, debug=False
+            self, constructor, input_queue, max_ram_MB, args_tuple=(), kwargs_dict=None, debug=False, name=None
     ):
         """
         
@@ -265,7 +266,7 @@ class CaretakerProcess(DebuggableProcess):
         kwargs_dict : dict
         debug : bool
         """
-        super(CaretakerProcess, self).__init__(debug)
+        super(CaretakerProcess, self).__init__(debug, name=name)
         self.constructor = constructor
         self.input_queue = input_queue
         self.max_ram_MB = max_ram_MB
@@ -273,14 +274,27 @@ class CaretakerProcess(DebuggableProcess):
         self.kwargs_dict = kwargs_dict or dict()
         self.kwargs_dict['debug'] = debug
 
+        self.inner_process_counter = 0
+
     def run(self):
         logger = logging.getLogger('{}.{}'.format(__name__, self.name))
         while not self.input_queue.empty():
-            logger.debug('Starting new inner {} process'.format(self.constructor.__name__))
-            inner_process = self.constructor(self.input_queue, self.max_ram_MB, *self.args_tuple, **self.kwargs_dict)
+            logger.debug(
+                'Starting new inner {} process with {} inputs remaining'.format(
+                    self.constructor.__name__, self.input_queue.qsize()
+                )
+            )
+            name = '{}{}({})'.format(self.constructor.__name__, self.inner_process_counter, self.name)
+            self.inner_process_counter += 1
+            kwargs = self.kwargs_dict.copy()
+            kwargs['name'] = name
+            inner_process = self.constructor(
+                self.input_queue, self.max_ram_MB, *self.args_tuple, **kwargs
+            )
             inner_process.start()
-            logger.debug('Started {}'.format(inner_process.name))
+            logger.debug('Started {} with {} inputs remaining'.format(inner_process.name, self.input_queue.qsize()))
             inner_process.join()
+            logger.debug('Stopped {} with {} inputs remaining'.format(inner_process.name, self.input_queue.qsize()))
             del inner_process
 
 
@@ -294,17 +308,13 @@ class LeakyProcess(DebuggableProcess):
     execute() is run in a while loop for as long as the input queue isn't empty and the RAM limit isn't exceeded
     teardown() is run before the process is shut down, either when the input queue is empty or the RAM limit is exceeded
     """
-    process_counter = 0
-
-    def __init__(self, input_queue, max_ram_MB=0, debug=False):
-        super(LeakyProcess, self).__init__(debug)
+    def __init__(self, input_queue, max_ram_MB=0, debug=False, name=None):
+        super(LeakyProcess, self).__init__(debug, name)
         self.input_queue = input_queue
         self.max_ram_MB = max_ram_MB
         self.psutil_process = None
-        self.name = '{} {}'.format(type(self).__name__, self.process_counter)
         self.size_logger_name = '{}.{}.{}'.format(__name__, self.name, 'size')
         self.execution_counter = 0
-        type(self).process_counter += 1
 
     def run(self):
         self.setup()
@@ -492,7 +502,7 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, r
 
     # Threshold synapses
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
-    opThreshold.SingleThreshold.setValue(0.5)
+    opThreshold.LowThreshold.setValue(0.5)
     opThreshold.SmootherSigma.setValue({'x': 3.0, 'y': 3.0, 'z': 1.0})
     opThreshold.MinSize.setValue(100)
     opThreshold.MaxSize.setValue(5000) # This is overshooting a bit.
@@ -551,10 +561,12 @@ def open_project( project_path, init_logging=True ):
     """
     Open a project file and return the HeadlessShell instance.
     """
+    # todo: do not init logging
     parsed_args = ilastik_main.parser.parse_args([])
     parsed_args.headless = True
     parsed_args.project = project_path
     parsed_args.readonly = True
+    parsed_args.debug = True  # possibly delete this?
 
     shell = ilastik_main.main( parsed_args, init_logging=init_logging )
     return shell
