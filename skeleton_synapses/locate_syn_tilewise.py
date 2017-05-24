@@ -436,7 +436,7 @@ def locate_synapses_tilewise(
             else:
                 logging.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
 
-    tile_queue.close()
+    # tile_queue.close()
 
     if not tile_queue.empty():
         logger.info('Classifying pixels in tilewise')
@@ -497,7 +497,7 @@ def locate_synapses_tilewise(
         for seg_input in node_id_to_seg_input.values():
             node_queue.put(seg_input)
 
-        node_queue.close()
+        # node_queue.close()
 
         neuron_seg_containers = [
             CaretakerProcess(
