@@ -1,0 +1,9 @@
+tqdm
+matplotlib
+psycopg2
+numpy
+h5py
+six
+scipy
+scikit-image
+
