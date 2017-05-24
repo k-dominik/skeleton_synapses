@@ -38,7 +38,7 @@ from locate_synapses import (
 #     return AsIs(numpy_float64)
 # register_adapter(np.float64, addapt_numpy_float64)
 
-logging.basicConfig(level=0, format='%(levelname)s %(name)s: %(message)s')
+logging.basicConfig(level=0, format='%(levelname)s %(processName)s(%(process)d) %(name)s: %(message)s')
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -63,8 +63,10 @@ MIRROR_ID = 5  # todo: change this to 4 for production
 ALGO_VERSION = 1
 
 THREADS = int(os.getenv('SYNAPSE_DETECTION_THREADS', 3))
-NODES_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500))
+logger.debug('Parallelising over {} threads'.format(THREADS))
+# NODES_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500))
 RAM_MB_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000))
+logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROCESS))
 
 DEBUG = False
 
@@ -373,6 +375,18 @@ def list_into_query_multi(query, fmt=None, **kwargs):
     return final_query, tuple(final_args)
 
 
+def trim_skeleton(skeleton, max_size=20):
+    """In place"""
+    first_branch = skeleton.branches[0]
+    try:
+        trimmed_branch = first_branch[:max_size]
+    except IndexError:
+        trimmed_branch = first_branch
+    skeleton.branches = [trimmed_branch]
+    logger.warning('Trimmed skeleton for debug purposes, to {} edges'.format(len(trimmed_branch)))
+    return skeleton
+
+
 def locate_synapses_tilewise(
         autocontext_project_path,
         multicut_project,
@@ -410,6 +424,8 @@ def locate_synapses_tilewise(
 
     logger.info('Populating tile queue')
 
+    # trim_skeleton(skeleton)
+
     tile_set = skeleton_to_tiles(skeleton, mirror_info, roi_radius_px)
     with h5py.File(HDF5_PATH, 'r') as f:
         algo_versions = f['algo_versions']
@@ -420,20 +436,23 @@ def locate_synapses_tilewise(
             else:
                 logging.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
 
-    total_tiles = tile_queue.qsize()
-    logger.debug('{} tiles queued'.format(total_tiles))
+    tile_queue.close()
 
-    if total_tiles:
+    if not tile_queue.empty():
         logger.info('Classifying pixels in tilewise')
         mirror_info = get_stack_mirror(stack_info)
 
         detector_containers = [
             CaretakerProcess(
                 DetectorProcess, tile_queue, RAM_MB_PER_PROCESS,
-                (tile_result_queue, input_filepath, autocontext_project_path, skel_output_dir, mirror_info)
+                (tile_result_queue, input_filepath, autocontext_project_path, skel_output_dir, mirror_info),
+                name='CaretakerProcess{}'.format(idx)
             )
-            for _ in range(THREADS)
+            for idx in range(THREADS)
         ]
+
+        total_tiles = tile_queue.qsize()
+        logger.debug('{} tiles queued'.format(total_tiles))
 
         for detector_container in detector_containers:
             detector_container.start()
@@ -478,16 +497,19 @@ def locate_synapses_tilewise(
         for seg_input in node_id_to_seg_input.values():
             node_queue.put(seg_input)
 
-        total_nodes = node_queue.qsize()
+        node_queue.close()
 
         neuron_seg_containers = [
             CaretakerProcess(
                 NeuronSegmenterProcess, node_queue, RAM_MB_PER_PROCESS,
-                (node_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir)
+                (node_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir),
+                name='CaretakerProcess{}'.format(idx)
             )
-            for _ in range(THREADS)
+            for idx in range(THREADS)
             # for _ in range(1)
         ]
+
+        total_nodes = node_queue.qsize()
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.start()
@@ -496,11 +518,7 @@ def locate_synapses_tilewise(
         commit_node_association_results_from_queue(node_result_queue, skeleton.skeleton_id, total_nodes, algo_version)
 
         for neuron_seg_container in neuron_seg_containers:
-            try:
-                neuron_seg_container.join()
-            except AssertionError, e:
-                if node_queue.qsize():
-                    raise e
+            neuron_seg_container.join()
     else:
         logger.debug('No nodes required re-segmenting')
 
@@ -513,16 +531,16 @@ DetectorOutput = namedtuple('DetectorOutput', 'tile_idx predictions_xyc synapse_
 class DetectorProcess(LeakyProcess):
     def __init__(
             self, input_queue, max_ram_MB, output_queue, description_file, autocontext_project_path, skel_output_dir,
-            mirror_info, debug=False
+            mirror_info, debug=False, name=None
     ):
-        super(DetectorProcess, self).__init__(input_queue, max_ram_MB, debug)
+        super(DetectorProcess, self).__init__(input_queue, max_ram_MB, debug, name)
         self.output_queue = output_queue
 
         self.logger = logging.getLogger('{}.{}'.format(__name__, self.name))
         self.logger.setLevel(logging.DEBUG)
         self.logger.debug('Detector process instantiated')
 
-        self.timing_logger = logging.getLogger(__name__ + '.timing')
+        self.timing_logger = logging.getLogger(self.logger.name + '.timing')
         self.timing_logger.setLevel(logging.INFO)
 
         self.skel_output_dir = skel_output_dir
@@ -534,12 +552,12 @@ class DetectorProcess(LeakyProcess):
 
     def setup(self):
         self.opPixelClassification = setup_classifier(*self.setup_args)
-        Request.reset_thread_pool(1)
+        Request.reset_thread_pool(1)  # todo: set to 0?
 
     def execute(self):
         tile_idx = self.input_queue.get()
 
-        self.logger.debug("Addressing tile {}, {} tiles remaining".format(self.name.upper(), tile_idx, self.input_queue.qsize()))
+        self.logger.debug("Addressing tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize()))
 
         with Timer() as timer:
             roi_xyz = tile_index_to_bounds(tile_idx, self.mirror_info)
@@ -552,8 +570,7 @@ class DetectorProcess(LeakyProcess):
             synapse_cc_xy = labeled_synapses_for_node(None, roi_xyz, self.skel_output_dir, predictions_xyc)
             self.timing_logger.info("NODE TIMER: {}".format(timer.seconds()))
 
-        logger.debug("{} PROGRESS: detected synapses in tile {}, {} tiles remaining"
-                     .format(self.name.upper(), tile_idx, self.input_queue.qsize()))
+        self.logger.debug("Detected synapses in tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize()))
 
         self.output_queue.put(DetectorOutput(tile_idx, predictions_xyc, synapse_cc_xy))
 
@@ -570,7 +587,7 @@ class NeuronSegmenterProcess(LeakyProcess):
     """
     def __init__(
             self, input_queue, max_ram_MB, output_queue, description_file, autocontext_project_path, multicut_project,
-            skel_output_dir, debug=False
+            skel_output_dir, debug=False, name=None
     ):
         """
 
@@ -587,17 +604,18 @@ class NeuronSegmenterProcess(LeakyProcess):
         debug : bool
             Whether to instantiate a serial version for debugging purposes
         """
-        super(NeuronSegmenterProcess, self).__init__(input_queue, max_ram_MB, debug)
+        super(NeuronSegmenterProcess, self).__init__(input_queue, max_ram_MB, debug, name)
         # super(NeuronSegmenterProcess, self).__init__(debug)
         self.input_queue = input_queue
         self.output_queue = output_queue
 
-        self.timing_logger = logging.getLogger('{}.{}.{}'.format(__name__, self.name, 'timing'))
-        self.timing_logger.setLevel(logging.INFO)
+        self.logger_name = '{}.{}'.format(__name__, self.name)
+        logger = logging.getLogger(self.logger_name)
+        logger.setLevel(logging.DEBUG)
+        logger.debug('Segmenter process instantiated')
 
-        self.logger = logging.getLogger('{}.{}'.format(__name__, self.name))
-        self.logger.setLevel(logging.DEBUG)
-        self.logger.debug('Segmenter process instantiated')
+        self.timing_logger = logging.getLogger(self.logger_name + '.timing')
+        self.timing_logger.setLevel(logging.INFO)
 
         self.skel_output_dir = skel_output_dir
 
@@ -612,18 +630,21 @@ class NeuronSegmenterProcess(LeakyProcess):
     #         self.execute()
 
     def setup(self):
-        self.logger.debug('Setting up opPixelClassification and multicut_shell...')
+        logger = logging.getLogger(self.logger_name)
+        logger.debug('Setting up opPixelClassification and multicut_shell...')
         self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
             *self.setup_args
         )
-        self.logger.debug('opPixelClassification and multicut_shell set up')
+        logger.debug('opPixelClassification and multicut_shell set up')
 
         Request.reset_thread_pool(1)
 
     def execute(self):
         node_info, roi_radius_px = self.input_queue.get()
 
-        self.logger.debug("Addressing node {}, {} nodes remaining".format(node_info.id, self.input_queue.qsize()))
+        logger = logging.getLogger(self.logger_name)
+
+        logger.debug("Addressing node {}; {} nodes remaining".format(node_info.id, self.input_queue.qsize()))
 
         with Timer() as node_timer:
             roi_xyz = roi_around_node(node_info, roi_radius_px)
@@ -645,14 +666,18 @@ class NeuronSegmenterProcess(LeakyProcess):
             node_segment = segmentation_xy[tuple(center_coord)]
 
             synapse_overlaps = synapse_cc_xy * (segmentation_xy == node_segment)
+            outputs = tuple()
             for syn_id in np.unique(synapse_overlaps[synapse_overlaps > 1]):
                 contact_px = skeletonize(synapse_overlaps == syn_id).sum()  # todo: improve this?
-                self.output_queue.put(NeuronSegmenterOutput(node_info, syn_id, contact_px))
+                outputs += (NeuronSegmenterOutput(node_info, syn_id, contact_px), )
 
             self.timing_logger.info("TILE TIMER: {}".format(node_timer.seconds()))
 
-        self.logger.debug("PROGRESS: segmented area around node {}, {} nodes remaining"
-                     .format(node_info.id, self.input_queue.qsize()))
+        logger.debug('Adding segmentation output of node {} to output queue; {} nodes remaining'.format(
+            node_info.id, self.input_queue.qsize()
+        ))
+
+        self.output_queue.put(outputs)
 
 
 def syn_coords_to_wkt_str(x_coords, y_coords):
@@ -679,11 +704,23 @@ def syn_coords_to_wkt_str(x_coords, y_coords):
     return "MULTIPOINT({})".format(coords_str)
 
 
+def iterate_queue(queue, final_size, queue_name=None):
+    if queue_name is None:
+        queue_name = repr(queue)
+    for idx in range(final_size):
+        logger.debug('Waiting for item {} from queue {} (expect {} more)'.format(idx, queue_name, final_size - idx))
+        item = queue.get()
+        logger.debug('Got item {} from queue {}: {} (expect {} more)'.format(idx, queue_name, item, final_size - idx))
+        yield item
+
+
 def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_tiles, mirror_info, algo_version=ALGO_VERSION):
     conn = psycopg2.connect(**POSTGRES_CREDENTIALS)
     cursor = conn.cursor()
 
     geometry_adjacencies = nx.Graph()
+
+    result_iterator = iterate_queue(tile_result_queue, total_tiles, 'tile_result_queue')
 
     logger.info('Starting to commit tile classification results')
 
@@ -693,8 +730,7 @@ def commit_tilewise_results_from_queue(tile_result_queue, output_path, total_til
         algo_versions_zyx = f['algo_versions']
         # object_labels_zyx = f['object_labels']  # todo
 
-        for tile_count in range(total_tiles):
-            tile_idx, predictions_xyc, synapse_cc_xy = tile_result_queue.get()
+        for tile_count, (tile_idx, predictions_xyc, synapse_cc_xy) in enumerate(result_iterator):
             tilename = 'z{}-y{}-x{}'.format(*tile_idx)
             logger.debug('Committing results from tile {}, {} of {}'.format(tilename, tile_count, total_tiles))
             bounds_xyz = tile_index_to_bounds(tile_idx, mirror_info)
@@ -866,15 +902,16 @@ def commit_node_association_results_from_queue(node_result_queue, skeleton_id, t
 
     logger.debug('Committing node association results')
 
-    result_generator = (node_result_queue.get() for _ in range(total_nodes))
+    result_generator = iterate_queue(node_result_queue, total_nodes, 'node_result_queue')
 
     logger.debug('Getting node association results')
     # values_to_insert = [(result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version) for result in result_generator]
     values_to_insert = []
-    for result in result_generator:
-        result_tuple = (result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version, result.contact_px)
-        logger.debug('Appending segmentation result to args: %s', repr(result_tuple))
-        values_to_insert.append(result_tuple)
+    for node_result in result_generator:
+        for result in node_result:
+            result_tuple = (result.synapse_slice_id, skeleton_id, result.node_info.id, algo_version, result.contact_px)
+            logger.debug('Appending segmentation result to args: %s', repr(result_tuple))
+            values_to_insert.append(result_tuple)
 
     logger.debug('Node association results are\n%s', repr(values_to_insert))
 
