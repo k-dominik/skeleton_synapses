@@ -18,16 +18,9 @@ cp ./set_env_vars.sh ${log_dir}/set_env_vars.sh
 
 echo `git rev-parse HEAD` > ${log_dir}/version.txt
 
-echo "Started at ${timestamp}" > ${log_dir}/time.txt
-
 ./locate_syn_tilewise.py ${cred_path} ${stack_id} ${skel_id} ${project_dir} -f ${force} 2>&1 | tee \
 ${log_dir}/locate_synapses.txt;
 
-echo "Segmentation finished at $(date +"%Y-%m-%d_%H:%M:%S")" >> ${log_dir}/time.txt
-
-#./results_to_volume.py ${cred_path} ${stack_id} ${skel_id} ${project_dir}/skeletons \
-#${project_dir}/synapse_volume.hdf5 -f ${force} 2>&1 | tee ${log_dir}/results_to_volume.txt;
-#
-#echo "Data committing finished at $(date +"%Y-%m-%d_%H:%M:%S")" >> ${log_dir}/time.txt
+grep 'PERFORMANCE_LOGGER' ${log_dir}/locate_synapses.txt > ${log_dir}/timing.txt
 
 echo "FINISHED"

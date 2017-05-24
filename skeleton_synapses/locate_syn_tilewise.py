@@ -10,6 +10,7 @@ import json
 from itertools import product
 from types import StringTypes
 from string import Formatter
+import time
 
 import psycopg2
 # from psycopg2.extensions import register_adapter, AsIs
@@ -43,6 +44,8 @@ logging.basicConfig(level=0, format='%(levelname)s %(processName)s(%(process)d) 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
+
 logger.info('STARTING TILEWISE')
 
 HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
@@ -70,6 +73,13 @@ logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROC
 
 DEBUG = False
 
+last_event = time.time()
+def log_timestamp(msg):
+    global last_event
+    now = time.time()
+    performance_logger.info('{}: {}'.format(now - last_event, msg))
+    last_event = now
+
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, force=False):
     autocontext_project, multicut_project, volume_description_path, skel_output_dir, skeleton = setup_files(
@@ -78,11 +88,17 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
 
     logger.info("STARTING TILEWISE")
 
+    log_timestamp('started setup')
+
     catmaid = CatmaidAPI.from_json(credentials_path)
     stack_info = catmaid.get_stack_info(stack_id)
 
     ensure_tables(force)
     ensure_hdf5(stack_info, force)
+
+    log_timestamp('finished setup')
+
+    performance_logger.info('{}: finished setup')
 
     locate_synapses_tilewise(
         autocontext_project,
@@ -426,6 +442,10 @@ def locate_synapses_tilewise(
 
     # trim_skeleton(skeleton)
 
+    performance_logger.info({})
+
+    log_timestamp('started getting tiles')
+
     tile_set = skeleton_to_tiles(skeleton, mirror_info, roi_radius_px)
     with h5py.File(HDF5_PATH, 'r') as f:
         algo_versions = f['algo_versions']
@@ -435,6 +455,8 @@ def locate_synapses_tilewise(
                 tile_queue.put(tile_idx)
             else:
                 logging.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
+
+    log_timestamp('finished getting tile')
 
     # tile_queue.close()
 
@@ -454,6 +476,8 @@ def locate_synapses_tilewise(
         total_tiles = tile_queue.qsize()
         logger.debug('{} tiles queued'.format(total_tiles))
 
+        log_timestamp('started synapse detection ({} tiles, 512x512 each, {} threads)'.format(total_tiles, THREADS))
+
         for detector_container in detector_containers:
             detector_container.start()
 
@@ -461,9 +485,12 @@ def locate_synapses_tilewise(
 
         for detector_container in detector_containers:
             detector_container.join()
+
+        log_timestamp('finished synapse detection')
     else:
         logger.debug('No tiles found (probably already processed)')
 
+    log_timestamp('started getting nodes')
     node_queue, node_result_queue = mp.Queue(), mp.Queue()
     node_id_to_seg_input = dict()
     for branch in skeleton.branches:
@@ -491,6 +518,8 @@ def locate_synapses_tilewise(
     for node_tup in nodes_to_exclude:
         del node_id_to_seg_input[node_tup[0]]
 
+    log_timestamp('finished getting nodes')
+
     if node_id_to_seg_input:
         logger.info('Segmenting node windows')
 
@@ -511,6 +540,8 @@ def locate_synapses_tilewise(
 
         total_nodes = node_queue.qsize()
 
+        log_timestamp('started segmenting neurons ({} nodes, {} threads)'.format(total_nodes, THREADS))
+
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.start()
             assert neuron_seg_container.is_alive()
@@ -519,6 +550,8 @@ def locate_synapses_tilewise(
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.join()
+
+        log_timestamp('finished segmenting neurons')
     else:
         logger.debug('No nodes required re-segmenting')
 
