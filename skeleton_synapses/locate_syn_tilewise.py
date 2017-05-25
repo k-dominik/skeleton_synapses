@@ -165,7 +165,7 @@ def ensure_tables(force=False):
         -- set ID sequence to start at 1, or 1 + the highest ID
         SELECT setval(
           'synapse_slice_id_seq',(SELECT GREATEST(MAX(id)+1,nextval('synapse_slice_id_seq')) FROM synapse_slice)
-        );log_t
+        );
         
         CREATE TABLE IF NOT EXISTS synapse_object (
           id BIGSERIAL PRIMARY KEY
