@@ -42,9 +42,10 @@ from ilastik.applets.pixelClassification.opPixelClassification import OpPixelCla
 from ilastik.applets.edgeTrainingWithMulticut.opEdgeTrainingWithMulticut import OpEdgeTrainingWithMulticut
 from ilastik.workflows.newAutocontext.newAutocontextWorkflow import NewAutocontextWorkflowBase
 from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutWorkflow
+from catpy import CatmaidClient
 
+from catmaid_interface import CatmaidSynapseSuggestionAPI
 from skeleton_utils import Skeleton, roi_around_node
-from catmaid_interface import CatmaidAPI
 
 # Import requests in advance so we can silence its log messages.
 import requests
@@ -96,7 +97,7 @@ def get_and_print_env(name, default, constructor=str):
 
 def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=False):
     """
-    
+
     Parameters
     ----------
     credentials_path
@@ -114,7 +115,7 @@ def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=Fals
     autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
     multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
 
-    catmaid = CatmaidAPI.from_json(credentials_path)
+    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path))
 
     include_offset = False
 
@@ -231,7 +232,7 @@ SegmenterOutput = namedtuple('SegmenterOutput', ['node_overall_index', 'node_inf
 
 class DebuggableProcess(mp.Process):
     """
-    Classes inheriting from this instead of multiprocessing.Process can use a `debug` parameter to run in serial 
+    Classes inheriting from this instead of multiprocessing.Process can use a `debug` parameter to run in serial
     instead of spawning a new python process, for easier debugging.
     """
     def __init__(self, debug=False, name=None):
@@ -247,8 +248,8 @@ class DebuggableProcess(mp.Process):
 
 class CaretakerProcess(DebuggableProcess):
     """
-    Process which takes care of spawning a process which may have memory leaks, pruning it when it terminates (for 
-    example, if it stops itself due to taking up too much memory), and starting a new one if there are still items 
+    Process which takes care of spawning a process which may have memory leaks, pruning it when it terminates (for
+    example, if it stops itself due to taking up too much memory), and starting a new one if there are still items
     remaining in the input queue.
     """
 
@@ -256,7 +257,7 @@ class CaretakerProcess(DebuggableProcess):
             self, constructor, input_queue, max_ram_MB, args_tuple=(), kwargs_dict=None, debug=False, name=None
     ):
         """
-        
+
         Parameters
         ----------
         constructor : LeakyProcess constructor
@@ -301,9 +302,9 @@ class CaretakerProcess(DebuggableProcess):
 class LeakyProcess(DebuggableProcess):
     """
     To be subclassed by actual processes with memory leaks.
-    
-    Override methods to determine behaviour: 
-    
+
+    Override methods to determine behaviour:
+
     setup() is run once per process, on run()
     execute() is run in a while loop for as long as the input queue isn't empty and the RAM limit isn't exceeded
     teardown() is run before the process is shut down, either when the input queue is empty or the RAM limit is exceeded
@@ -390,7 +391,7 @@ def search_queue(queue, criterion, timeout=None):
 
 def fetch_raw_and_predict_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     """
-    
+
     Parameters
     ----------
     node_info : NodeInfo
@@ -411,7 +412,7 @@ def fetch_raw_and_predict_for_node(node_info, roi_xyz, output_dir, opPixelClassi
 def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     """
     DEPRECATED. This should only be called through fetch_raw_and_predict_for_node.
-    
+
     Parameters
     ----------
     node_info : None
@@ -436,9 +437,9 @@ def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
 def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     """
     DEPRECATED. This should only be called through fetch_raw_and_predict_for_node.
-    
+
     Run classification on the given node with the given operator.
-    
+
     Parameters
     ----------
     node_info : NodeInfo
@@ -477,7 +478,7 @@ opThreshold = OpThresholdTwoLevels(graph=Graph())
 
 def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, relabeler=None):
     """
-    
+
     Parameters
     ----------
     node_info : NodeInfo
@@ -522,7 +523,7 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, r
 
 def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw_xy, predictions_xyc):
     """
-    
+
     Parameters
     ----------
     node_info : NodeInfo
@@ -578,7 +579,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
 
     If axisorder is given, override the default axisorder for
     the file and force the project to use the given one.
-    
+
     Globstrings are supported, in which case the files are converted to HDF5 first.
     """
     # If the filepath is a globstring, convert the stack to h5
@@ -619,7 +620,7 @@ initialized_files = set()
 def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacked"):
     """
     Write the given image to an hdf5 file.
-    
+
     If mode is "slices", create a new file for the image.
     If mode is "stacked", create a new file with 'name' if it doesn't exist yet,
     or append to it if it does.
@@ -691,16 +692,16 @@ class SynapseSliceRelabeler(object):
         """
         When the same synapse appears in two neighboring slices,
         we want it to have the same ID in both slices.
-        
+
         This function will relabel the synapse labels in 'current_slice'
         to be consistent with those in self.previous_slice.
-        
+
         It is not assumed that the two slices are aligned:
         the slices' positions are given by current_roi and self.previous_roi.
-        
+
         Returns:
             (relabeled_slice, new_max_label)
-            
+
         """
         current_roi = np.array(current_roi)
         intersection_roi = None
@@ -769,7 +770,7 @@ class SynapseSliceRelabeler(object):
 def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy, node_overall_index):
     """
     Given a slice of synapse segmentation and prediction images,
-    append a CSV row (using the given writer) for each synapse detection in the slice. 
+    append a CSV row (using the given writer) for each synapse detection in the slice.
     """
     # Node is always located in the middle pixel, by definition.
     center_coord = np.array(segmentation_xy.shape) / 2
@@ -836,7 +837,7 @@ def intersection(roi_a, roi_b):
         - in global coordinates
         - in coordinates relative to A
         - in coordinates relative to B
-    
+
     If they don't overlap at all, returns (None, None, None).
     """
     roi_a = np.asarray(roi_a)
