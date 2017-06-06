@@ -1,8 +1,8 @@
-import requests
 import json
 from collections import defaultdict
-import time
-import math
+
+from catpy.client import CatmaidClientApplication, make_url, CoordinateTransformer
+from catpy.export import ExportWidget
 
 NEUROCEAN_CONSTANTS = {
     'skel_id': 11524047,
@@ -25,7 +25,7 @@ def get_consecutive(lst):
     >>> get_consecutive([2, 4, 1, 5])
     [[1, 2], [4, 5]]
     """
-    sorted_lst = list(sorted(lst))
+    sorted_lst = sorted(lst)
     ret_lst = [[sorted_lst.pop(0)]]
     while sorted_lst:
         if sorted_lst[0] == ret_lst[-1][-1] + 1:
@@ -59,24 +59,6 @@ def extend_slices(broken_slices):
     return [[key, value] for key, value in sorted(d.items(), key=lambda x: x[0])]
 
 
-def make_url(base_url, *args):
-    """
-    Given any number of URL components, join them as if they were a path regardless of trailing and prepending slashes
-
-    >>> make_url('google.com', 'mail')
-    'google.com/mail'
-
-    >>> make_url('google.com/', '/mail')
-    'google.com/mail'
-    """
-    for arg in args:
-        joiner = '' if base_url.endswith('/') else '/'
-        relative = arg[1:] if arg.startswith('/') else arg
-        base_url = requests.compat.urljoin(base_url + joiner, relative)
-
-    return base_url
-
-
 def make_tile_url_template(image_base):
     """
     May not be correct for all bases
@@ -84,209 +66,16 @@ def make_tile_url_template(image_base):
     return make_url(image_base, "{z_index}/0/{y_index}_{x_index}.jpg")
 
 
-class CatmaidAPI(object):
-    """
-    See catpy [1]_ for alternative implementation/ inspiration
-
-    .. [1] https://github.com/ceesem/catpy
-    """
-
-    def __init__(self, base_url, token, auth_name=None, auth_pass=None, project_id_or_title=None):
-        self.base_url = base_url
-
-        self.session = requests.Session()
-        self.session.auth = self.CatmaidAuthToken(token, auth_name, auth_pass)
-
-        if project_id_or_title is None:
-            self.project_id = None
-        else:
-            self.set_project(project_id_or_title)
-
-    class CatmaidAuthToken(requests.auth.HTTPBasicAuth):
-        def __init__(self, token, auth_name=None, auth_pass=None):
-            self.token = token
-            super(CatmaidAPI.CatmaidAuthToken, self).__init__(auth_name, auth_pass)
-
-        def __call__(self, r):
-            r.headers['X-Authorization'] = 'Token {}'.format(self.token)
-            return super(CatmaidAPI.CatmaidAuthToken, self).__call__(r)
-
-    def _make_catmaid_url(self, *args):
-        return make_url(self.base_url, *args)
-
-    def _get_project_id(self, project_id_or_title):
-        try:
-            return int(project_id_or_title)
-        except ValueError:
-            projects = self.get('projects')
-            for project in projects:
-                if project_id_or_title == project['title']:
-                    return project['id']
-            raise ValueError('Project with title {} does not exist'.format(repr(project_id_or_title)))
-
-    def set_project(self, project_id_or_title):
-        self.project_id = self._get_project_id(project_id_or_title)
-
-    @classmethod
-    def from_json(cls, path, with_project_id=True):
-        """
-        Return a CatmaidAPI instance with credentials matching those in a JSON file. Should have the properties:
-
-        base_url, token, auth_name, auth_pass
-
-        And optionally
-
-        project_id
-
-        Parameters
-        ----------
-        path : str
-            Path to the JSON credentials file
-        with_project_id : bool
-            Whether to look for the `project_id` field (it can be set later on the returned CatmaidAPI instance)
-
-        Returns
-        -------
-        CatmaidAPI
-            Authenticated instance of the API
-        """
-        with open(path) as f:
-            credentials = json.load(f)
-        return cls(
-            credentials['base_url'],
-            credentials['token'],
-            credentials['auth_name'],
-            credentials['auth_pass'],
-            credentials['project_id'] if with_project_id else None
-        )
-
-    def get(self, relative_url, params=None, raw=False):
-        """
-        Get data from a running instance of CATMAID.
-
-        Parameters
-        ----------
-        relative_url: str
-            URL to send the request to, relative to the base_url
-        params: dict or str, optional
-            JSON-like key/value data to be included in the get URL (defaults to empty)
-        raw: bool, optional
-            Whether to return the response as a string (defaults to returning a dict)
-
-        Returns
-        -------
-        dict or str
-            Data returned from CATMAID: type depends on the 'raw' parameter.
-        """
-        return self.fetch(relative_url, method='GET', data=params, raw=raw)
-
-    def post(self, relative_url, data=None, raw=False):
-        """
-        Post data to a running instance of CATMAID.
-
-        Parameters
-        ----------
-        relative_url: str
-            URL to send the request to, relative to the base_url
-        data: dict or str, optional
-            JSON-like key/value data to be included in the request as a payload (defaults to empty)
-        raw: bool, optional
-            Whether to return the response as a string (defaults to returning a dict)
-
-        Returns
-        -------
-        dict or str
-            Data returned from CATMAID: type depends on the 'raw' parameter.
-        """
-        return self.fetch(relative_url, method='POST', data=data, raw=raw)
-
-    def fetch(self, relative_url, method='GET', data=None, raw=False):
-        """
-        Interact with the CATMAID server in a manner very similar to the javascript CATMAID.fetch API.
-
-        Parameters
-        ----------
-        relative_url: str
-            URL to send the request to, relative to the base_url
-        method: {'GET', 'POST'}, optional
-            HTTP method to use (the default is 'GET')
-        data: dict or str, optional
-            JSON-like key/value data to be included in the request as a payload (defaults to empty)
-        raw: bool, optional
-            Whether to return the response as a string (defaults to returning a dict)
-
-        Returns
-        -------
-        dict or str
-            Data returned from CATMAID: type depends on the 'raw' parameter.
-        """
-        url = self._make_catmaid_url(relative_url)
-        data = data or dict()
-        if method.upper() == 'GET':
-            response = self.session.get(url, params=data)
-        elif method.upper() == 'POST':
-            response = self.session.post(url, data=data)
-        else:
-            raise ValueError('Unknown HTTP method {}'.format(repr(method)))
-
-        return response.json() if not raw else response.text
-
-    def get_treenode_and_connector_geometry(self, skeleton_id, stack_id_or_title=None):
-        """
-        See CATMAID code [2]_ for original js implementation
-        .. [2] http://github.com/catmaid/CATMAID/blob/master/django/applications/catmaid/static/js/widgets/export
-        -widget.js#L449
-
-        Parameters
-        ----------
-        skeleton_id : int or str
-        stack_id_or_title : int or str
-            By default (= None), geometry will be returned in project coordinates. If a stack_id_or_title is given,
-            they will be transformed into stack coordinates for the given stack.
-        """
-
-        data = self.get('{}/{}/1/0/compact-skeleton'.format(self.project_id, skeleton_id))
-
-        # if stack id is not given, will return a null transformer which does not change its inputs
-        coord_transformer = self.get_coord_transformer(stack_id_or_title)
-
-        skeleton = {
-            'treenodes': dict(),
-            'connectors': dict()
-        }
-
-        for treenode in data[0]:
-            skeleton['treenodes'][treenode[0]] = {
-                'location': [
-                    coord_transformer.project_to_stack_coord(dim, coord) for dim, coord in zip('xyz', treenode[3:6])
-                ],
-                'parent_id': treenode[1]
-            }
-
-        for connector in data[1]:
-            if connector[2] not in [0, 1]:
-                continue
-
-            conn_id = connector[1]
-            if conn_id not in skeleton['connectors']:
-                skeleton['connectors'][conn_id] = {
-                    'presynaptic_to': [],
-                    'postsynaptic_to': []
-                }
-
-            skeleton['connectors'][conn_id]['location'] = [
-                    coord_transformer.project_to_stack_coord(dim, coord) for dim, coord in zip('xyz', connector[3:6])
-                ]
-            relation = 'postsynaptic_to' if connector[2] == 1 else 'presynaptic_to'
-            skeleton['connectors'][conn_id][relation].append(connector[0])
-
-        return {"skeletons": {str(skeleton_id): skeleton}}
+class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
+    def __init__(self, catmaid_client):
+        super(CatmaidSynapseSuggestionAPI, self).__init__(catmaid_client)
+        self.export_widget = ExportWidget(catmaid_client)
 
     def _get_stack_id(self, stack_id_or_title):
         try:
             return int(stack_id_or_title)
         except ValueError:
-            stacks = self.get('{}/stacks'.format(self.project_id))
+            stacks = self.get((self.project_id, 'stacks'))
             for stack in stacks:
                 if stack['title'] == stack_id_or_title:
                     return stack['id']
@@ -380,18 +169,31 @@ class CatmaidAPI(object):
         if date_to:
             params['to'] = date_to.strftime('%Y%m%d')
 
-        return self.get('{}/connector/list/completed'.format(self.project_id), params)
+        return self.get((self.project_id, 'connector/list/completed'), params)
 
     def get_stack_info(self, stack_id_or_title):
         stack_id = self._get_stack_id(stack_id_or_title)
-        return self.get('{}/stack/{}/info'.format(self.project_id, stack_id))
+        return self.get((self.project_id, 'stack', stack_id, 'info'))
 
     def get_coord_transformer(self, stack_id_or_title=None):
         if stack_id_or_title is None:
             return CoordinateTransformer()
         else:
-            stack_info = self.get_stack_info(stack_id_or_title)
-            return CoordinateTransformer.from_stack_info(stack_info)
+            stack_id = self._get_stack_id(stack_id_or_title)
+            return CoordinateTransformer.from_catmaid(self._catmaid, stack_id)
+
+    def get_transformed_treenode_and_connector_geometry(self, stack_id_or_title, *skeleton_ids):
+        transformer = self.get_coord_transformer(stack_id_or_title)
+        data = self.export_widget.get_treenode_and_connector_geometry(*skeleton_ids)
+
+        for skid, skel_data in data.items():
+            for treenode_id, treenode_data in skel_data['treenodes'].items():
+                treenode_data['location'] = tuple(transformer.project_to_stack_array(treenode_data['location']))
+
+            for connector_id, connector_data in skel_data['connectors'].items():
+                connector_data['location'] = tuple(transformer.project_to_stack_array(connector_data['location']))
+
+        return data
 
     # def get_fastest_stack_mirror(self, stack_info):
     #     speeds = dict()
@@ -436,70 +238,7 @@ class CatmaidAPI(object):
             'algo_version': algo_version_id,
             'associations': [json.dumps(association) for association in associations]
         }
-        return self.post('synapsesuggestor/treenode-association/{}/add'.format(self.project_id), data)
+        return self.post(('synapsesuggestor/treenode-association', self.project_id, 'add'), data)
 
     def get_treenode_synapse_association(self, skeleton_id):
-        return self.get('synapsesuggestor/treenode-association/{}/get'.format(self.project_id), {'skid': skeleton_id})
-
-
-class CoordinateTransformer(object):
-    def __init__(self, resolution=None, translation=None):
-        """
-        Helper class for transforming between stack and project coordinates.
-
-        Parameters
-        ----------
-        resolution : dict
-            x, y and z resolution of the stack
-        translation : dict
-            x, y and z the location of the stack's origin (0, 0, 0) in project space
-        """
-        self.resolution = resolution if resolution else {dim: 1 for dim in 'xyz'}
-        self.translation = translation if translation else {dim: 0 for dim in 'xyz'}
-
-    @classmethod
-    def from_stack_info(cls, stack_info):
-        return cls(stack_info['resolution'], stack_info['translation'])
-
-    def project_to_stack_coord(self, dim, project_coord):
-        return (project_coord - self.translation[dim]) / self.resolution[dim]
-
-    def project_to_stack(self, project_coords):
-        """
-        Take a point in project space and transform it into stack space.
-
-        Parameters
-        ----------
-        project_coords : dict
-            x, y, and/or z coordinates in project/ real space
-
-        Returns
-        -------
-        dict
-            coordinates transformed into stack/voxel space
-        """
-        return {dim: self.project_to_stack_coord(dim, proj_coord) for dim, proj_coord in project_coords.items()}
-
-    def stack_to_project_coord(self, dim, stack_coord):
-        return stack_coord * self.resolution[dim] + self.translation[dim]
-
-    def stack_to_project(self, stack_coords):
-        """
-        Take a point in stack space and transform it into project space.
-
-        Parameters
-        ----------
-        stack_coords : dict
-            x, y, and/or z coordinates in stack/ voxel space
-
-        Returns
-        -------
-        dict
-            coordinates transformed into project/ real space
-        """
-        return {dim: self.stack_to_project_coord(dim, stack_coord) for dim, stack_coord in stack_coords.items()}
-
-
-if __name__ == '__main__':
-    import doctest
-    doctest.testmod()
+        return self.get(('synapsesuggestor/treenode-association', self.project_id, 'get'), {'skid': skeleton_id})
