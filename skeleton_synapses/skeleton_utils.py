@@ -15,7 +15,7 @@ def parse_skeleton_swc(swc_path, x_res, y_res, z_res):
     """
     Parse the given swc file into a list of NodeInfo tuples.
     Coordinates are converted from nm to pixels.
-    
+
     Note: In an swc file, a parentless node has parent_id = -1
     """
     node_infos = []
@@ -33,8 +33,8 @@ def parse_skeleton_swc(swc_path, x_res, y_res, z_res):
             x_px = int(x_nm / float(x_res))
             y_px = int(y_nm / float(y_res))
             z_px = int(z_nm / float(z_res))
-            
-            node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )    
+
+            node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )
     return node_infos
 
 
@@ -43,8 +43,8 @@ def parse_skeleton_json_file(json_path, x_res, y_res, z_res):
         Parse the given json file and return a list of NodeInfo tuples.
         Coordinates are converted from nm to pixels.
 
-        Note: Mimicking the conventions above for swc files, 
-              a parentless node will be assigned parent_id = -1    
+        Note: Mimicking the conventions above for swc files,
+              a parentless node will be assigned parent_id = -1
         """
     assert os.path.splitext(json_path)[1] == '.json', "Skeleton file must end with .json"
 
@@ -58,11 +58,11 @@ def parse_skeleton_json_data(json_data, x_res, y_res, z_res):
     """
     Parse the given json data and return a list of NodeInfo tuples.
     Coordinates are converted from nm to pixels.
-    
-    Note: Mimicking the conventions above for swc files, 
-          a parentless node will be assigned parent_id = -1    
+
+    Note: Mimicking the conventions above for swc files,
+          a parentless node will be assigned parent_id = -1
     """
-    
+
     node_infos = []
 
     if len(json_data['skeletons']) == 0:
@@ -84,9 +84,9 @@ def parse_skeleton_json_data(json_data, x_res, y_res, z_res):
         x_px = int(x_nm / float(x_res))
         y_px = int(y_nm / float(y_res))
         z_px = int(z_nm / float(z_res))
-        
+
         node_infos.append( NodeInfo(node_id, x_px, y_px, z_px, parent_id) )
-    
+
     skeleton_id = json_data['skeletons'].keys()[0]
     return skeleton_id, node_infos
 
@@ -124,12 +124,12 @@ def parse_connectors_from_data( json_data ):
     """
     Parses skeleton files as returned by the CATMAID
     export widget's "Treenode and connector geometry" format.
-    
+
     Read the skeleton json data and return:
     - A list of ConnectorInfo tuples
     - A dict of node -> connectors (regardless of whether the node is incoming or outgoing for the connector:
       { node : [connector_id, connector_id, ...] }
-    
+
     """
     connector_infos = []
     node_to_connector = {}
@@ -153,15 +153,15 @@ def parse_connectors_from_data( json_data ):
         #  (not "the connector is presynaptic to the following nodes")
         incoming = map(int, connector_data['presynaptic_to'] )
         outgoing = map(int, connector_data['postsynaptic_to'] )
-        
+
         for node in incoming:
             node_connectors = node_to_connector.setdefault(node, [])
             node_connectors.append(connector_id)
-        
+
         for node in outgoing:
             node_connectors = node_to_connector.setdefault(node, [])
             node_connectors.append(connector_id)
-        
+
         connector_infos.append( ConnectorInfo(connector_id, x_nm, y_nm, z_nm, incoming, outgoing) )
 
     return connector_infos, node_to_connector
@@ -185,7 +185,7 @@ def construct_tree(node_infos):
 
 def roi_around_point(coord_xyz, radius):
     """
-    Produce a 3D roi (start, stop) tuple that surrounds the 
+    Produce a 3D roi (start, stop) tuple that surrounds the
     node coordinates, with Z-thickness of 1.
     """
     coord_xyz = numpy.array(coord_xyz)
@@ -222,9 +222,9 @@ def nodes_and_rois_for_tree(tree, radius):
 class TransformedSkeleton(object):
     def __init__(self, json_path_or_data, resolution_xyz):
         """
-        JSON should be in project coordinates. This transforms nodes into coordinates at stack scale, but still using 
+        JSON should be in project coordinates. This transforms nodes into coordinates at stack scale, but still using
         the project origin. Connector coordinates are not transformed
-        
+
         Parameters
         ----------
         json_path
@@ -237,14 +237,14 @@ class TransformedSkeleton(object):
         else:
             skeleton_id, node_infos = parse_skeleton_json_data(json_path_or_data, *resolution_xyz)
             connector_infos_list, node_to_connector = parse_connectors_from_data(json_path_or_data)
-        
+
         self.skeleton_id = skeleton_id
         self.connector_infos = { info.id : info for info in connector_infos_list }
         self.node_to_connector = node_to_connector
 
         # Construct a networkx tree
         self.tree = construct_tree( node_infos )
-        
+
         # And a list of the branches [[NodeInfo, NodeInfo,...], [NodeInfo, NodeInfo,...],...]
         self.branches = branchwise_node_infos(self.tree)
 
@@ -261,7 +261,7 @@ class Skeleton(TransformedSkeleton):
     @classmethod
     def from_catmaid(cls, catmaid, skeleton_id, stack_id_or_title=None, save_path=None):
         """
-        
+
         Parameters
         ----------
         catmaid : CatmaidAPI
@@ -270,12 +270,12 @@ class Skeleton(TransformedSkeleton):
             If set, coordinates will be transformed into stack coordinates. If not, project coordinates will be used.
         save_path : str
             If set, the treenode and connector geometry fetched from catmaid will be saved to this path
-            
+
         Returns
         -------
         Skeleton
         """
-        geom = catmaid.get_treenode_and_connector_geometry(skeleton_id, stack_id_or_title)
+        geom = catmaid.get_transformed_treenode_and_connector_geometry(stack_id_or_title, skeleton_id)
         if save_path:
             with open(save_path, 'w') as f:
                 json.dump(geom, f, sort_keys=True, indent=2)
@@ -287,9 +287,9 @@ if __name__ == "__main__":
     X_RES = 3.8
     Y_RES = 3.8
     Z_RES = 50.0
-    
+
     ROI_RADIUS = 100
-    
+
     import os
     import skeleton_synapses
     package_dir = os.path.split(skeleton_synapses.__file__)[0]
