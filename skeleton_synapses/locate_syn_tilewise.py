@@ -23,7 +23,8 @@ from skimage.morphology import skeletonize
 from lazyflow.utility import Timer
 from lazyflow.request import Request
 
-from catmaid_interface import CatmaidAPI
+from catpy import CatmaidClient
+from catmaid_interface import CatmaidSynapseSuggestionAPI
 from locate_synapses import (
     # constants/singletons
     DEFAULT_ROI_RADIUS,
@@ -90,7 +91,7 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
 
     log_timestamp('started setup')
 
-    catmaid = CatmaidAPI.from_json(credentials_path)
+    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path))
     stack_info = catmaid.get_stack_info(stack_id)
 
     ensure_tables(force)
@@ -265,7 +266,7 @@ TileIndex = namedtuple('TileIndex', 'z_idx y_idx x_idx')
 
 def skeleton_to_tiles(skeleton, mirror_info, minimum_radius=DEFAULT_ROI_RADIUS):
     """
-    
+
     Parameters
     ----------
     skeleton
@@ -316,7 +317,7 @@ def flatten(arg):
 def list_into_query(query, arg_lst, fmt='%s'):
     """
     Convert simple query with list of arguments into mogrifier-friendly form
-    
+
     Parameters
     ----------
     query : str
@@ -330,12 +331,12 @@ def list_into_query(query, arg_lst, fmt='%s'):
     -------
     (str, array-like)
         The two arguments to pass to cursor.execute
-        
+
     Examples
     --------
     >>> list_into_query("DELETE FROM table_name WHERE id IN ({})", [1, 2, 3])
     >>> ("DELETE FROM table_name WHERE id IN (%s, %s, %s)", (1, 2, 3))
-    
+
     >>> list_into_query("INSERT INTO table_name (a, b) VALUES ({})", [[1, 2], [3, 4]], fmt='(%s, %s)')
     >>> ("INSERT INTO table_name (a, b) VALUES ((%s, %s), (%s, %s))", (1, 2, 3, 4))
     """
@@ -352,7 +353,7 @@ def list_into_query(query, arg_lst, fmt='%s'):
 def list_into_query_multi(query, fmt=None, **kwargs):
     """
     Convert complex query with several lists of arguments into mogrifier-friendly form
-    
+
     Parameters
     ----------
     query : str
@@ -366,7 +367,7 @@ def list_into_query_multi(query, fmt=None, **kwargs):
     -------
     (str, array-like)
         The two arguments to pass to cursor.execute
-        
+
     Examples
     --------
     >>> query = "INSERT INTO table_name1 (a, b) VALUES ({first}); INSERT INTO table_name2 (a, b) VALUES ({second});"
@@ -715,11 +716,11 @@ class NeuronSegmenterProcess(LeakyProcess):
 
 def syn_coords_to_wkt_str(x_coords, y_coords):
     """
-    Convert arrays of coordinates into a WKT string describing a MultiPoint geometry of those coordinates, 
+    Convert arrays of coordinates into a WKT string describing a MultiPoint geometry of those coordinates,
     where point i has the coordinates (x_coords[i], y_coords[i]).
-    
+
     x_coords, y_coords = np.where(binary_array)
-    
+
     Parameters
     ----------
     x_coords : array-like
