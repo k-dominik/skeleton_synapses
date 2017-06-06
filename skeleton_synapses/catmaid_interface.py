@@ -1,6 +1,8 @@
 import json
 from collections import defaultdict
 
+import numpy as np
+
 from catpy.client import CatmaidClientApplication, make_url, CoordinateTransformer
 from catpy.export import ExportWidget
 
@@ -215,6 +217,23 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
     #
     #     fastest_idx = min(speeds.items(), key=lambda x: x[1])[0]
     #     return stack_info['mirrors'][fastest_idx]
+
+    def get_treenode_locations(self, skeleton_id, stack_id_or_title):
+        """
+
+        Parameters
+        ----------
+        skeleton_id
+        stack_id_or_title
+
+        Returns
+        -------
+        numpy.ndarray
+        """
+        transformer = self.get_coord_transformer(stack_id_or_title)
+        treenodes = self.get((self.project_id, 'skeletons', skeleton_id, 'compact-detail'))[0]
+        treenode_locations = np.array(treenodes)[:, 3:6]
+        return transformer.project_to_stack_array(treenode_locations)
 
     def get_detected_tiles(self, workflow_id):
         return self.get('synapsesuggestor/synapse-detection/tiles/detected', {'workflow_id': workflow_id})
