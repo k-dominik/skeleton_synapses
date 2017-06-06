@@ -236,12 +236,12 @@ class CatmaidAPI(object):
         See CATMAID code [2]_ for original js implementation
         .. [2] http://github.com/catmaid/CATMAID/blob/master/django/applications/catmaid/static/js/widgets/export
         -widget.js#L449
-        
+
         Parameters
         ----------
         skeleton_id : int or str
         stack_id_or_title : int or str
-            By default (= None), geometry will be returned in project coordinates. If a stack_id_or_title is given, 
+            By default (= None), geometry will be returned in project coordinates. If a stack_id_or_title is given,
             they will be transformed into stack coordinates for the given stack.
         """
 
@@ -360,7 +360,7 @@ class CatmaidAPI(object):
 
     def get_connectors(self, user_id_or_name, date_from, date_to):
         """
-        
+
         Parameters
         ----------
         user_id_or_name
@@ -414,12 +414,39 @@ class CatmaidAPI(object):
     #     fastest_idx = min(speeds.items(), key=lambda x: x[1])[0]
     #     return stack_info['mirrors'][fastest_idx]
 
+    def get_detected_tiles(self, workflow_id):
+        return self.get('synapsesuggestor/synapse-detection/tiles/detected', {'workflow_id': workflow_id})
+
+    def add_synapse_slices_to_tile(self, workflow_id, synapse_slice_ids, tile_idx):
+        data = {
+            'workflow_id': workflow_id,
+            'synapse_slices': list(synapse_slice_ids),
+            'x_idx': tile_idx[0],
+            'y_idx': tile_idx[1],
+            'z_idx': tile_idx[2]
+        }
+
+        return self.post('synapsesuggestor/synapse-detection/tiles/insert-synapse-slices', data)
+
+    def agglomerate_synapses(self, synapse_slice_ids):
+        return self.get('synapsesuggestor/synapse-detection/agglomerate', {'synapse_slices': list(synapse_slice_ids)})
+
+    def add_treenode_synapse_association(self, algo_version_id, associations):
+        data = {
+            'algo_version': algo_version_id,
+            'associations': [json.dumps(association) for association in associations]
+        }
+        return self.post('synapsesuggestor/treenode-association/{}/add'.format(self.project_id), data)
+
+    def get_treenode_synapse_association(self, skeleton_id):
+        return self.get('synapsesuggestor/treenode-association/{}/get'.format(self.project_id), {'skid': skeleton_id})
+
 
 class CoordinateTransformer(object):
     def __init__(self, resolution=None, translation=None):
         """
         Helper class for transforming between stack and project coordinates.
-        
+
         Parameters
         ----------
         resolution : dict
@@ -440,7 +467,7 @@ class CoordinateTransformer(object):
     def project_to_stack(self, project_coords):
         """
         Take a point in project space and transform it into stack space.
-        
+
         Parameters
         ----------
         project_coords : dict
@@ -459,7 +486,7 @@ class CoordinateTransformer(object):
     def stack_to_project(self, stack_coords):
         """
         Take a point in stack space and transform it into project space.
-        
+
         Parameters
         ----------
         stack_coords : dict
