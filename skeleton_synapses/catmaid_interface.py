@@ -218,6 +218,16 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
     #     fastest_idx = min(speeds.items(), key=lambda x: x[1])[0]
     #     return stack_info['mirrors'][fastest_idx]
 
+    def get_workflow_id(self, stack_id, detection_hash, tile_size=512):
+        params = {'stack_id': stack_id, 'detection_hash': detection_hash, 'tile_size': tile_size}
+        return self.get(('synapsesuggestor/synapse-detection/workflow'), params)['workflow_id']
+
+    def get_project_workflow_id(self, workflow_id, association_hash):
+        params = {'workflow_id': workflow_id, 'association_hash': association_hash}
+        return self.get(
+            ('synapsesuggestor/treenode-association', self.project_id, 'workflow'), params
+        )['project_workflow_id']
+
     def get_treenode_locations(self, skeleton_id, stack_id_or_title):
         """
 
@@ -252,9 +262,9 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
     def agglomerate_synapses(self, synapse_slice_ids):
         return self.get('synapsesuggestor/synapse-detection/agglomerate', {'synapse_slices': list(synapse_slice_ids)})
 
-    def add_treenode_synapse_association(self, algo_version_id, associations):
+    def add_treenode_synapse_association(self, project_workflow_id, associations):
         data = {
-            'algo_version': algo_version_id,
+            'project_workflow_id': project_workflow_id,
             'associations': [json.dumps(association) for association in associations]
         }
         return self.post(('synapsesuggestor/treenode-association', self.project_id, 'add'), data)
