@@ -623,6 +623,7 @@ def commit_tilewise_results_from_queue(
                 )
 
                 synapse_slices.append({
+                    'id': slice_label,
                     'wkt_str': wkt_str,
                     'size_px': size_px,
                     'xs_centroid': x_centroid_px,
