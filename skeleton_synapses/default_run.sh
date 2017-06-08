@@ -18,7 +18,7 @@ cp ./set_env_vars.sh ${log_dir}/set_env_vars.sh
 
 echo `git rev-parse HEAD` > ${log_dir}/version.txt
 
-./locate_syn_tilewise.py ${cred_path} ${stack_id} ${skel_id} ${project_dir} -f ${force} 2>&1 | tee \
+./locate_syn_catmaid.py ${cred_path} ${stack_id} ${skel_id} ${project_dir} -f ${force} 2>&1 | tee \
 ${log_dir}/locate_synapses.txt;
 
 grep 'PERFORMANCE_LOGGER' ${log_dir}/locate_synapses.txt > ${log_dir}/timing.txt
