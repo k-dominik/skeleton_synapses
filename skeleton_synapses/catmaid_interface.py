@@ -190,7 +190,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         transformer = self.get_coord_transformer(stack_id_or_title)
         data = self.export_widget.get_treenode_and_connector_geometry(*skeleton_ids)
 
-        for skid, skel_data in data.items():
+        for skid, skel_data in data['skeletons'].items():
             for treenode_id, treenode_data in skel_data['treenodes'].items():
                 treenode_data['location'] = tuple(transformer.project_to_stack_array(treenode_data['location']))
 
@@ -249,10 +249,10 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         coord_type = int if stack_id_or_title is not None else float
         treenodes = self.get((self.project_id, 'skeletons', skeleton_id, 'compact-detail'))[0]
         treenodes_arr = np.array(treenodes)
-        coords = transformer.project_to_stack_array(treenodes_arr[:, 3:6])
+        coords = transformer.project_to_stack_array(treenodes_arr[:, 3:6].astype(float))
         node_infos = []
-        for (node_id, parent_id), (x, y, z) in zip(treenodes_arr[:2].astype(int), coords.astype(coord_type)):
-            node_infos.append(NodeInfo(node_id, x, y, z, parent_id))
+        for (node_id, parent_id), (x, y, z) in zip(treenodes_arr[:, :2], coords.astype(coord_type)):
+            node_infos.append(NodeInfo(int(node_id), x, y, z, None if parent_id is None else int(parent_id)))
         return node_infos
 
     def get_detected_tiles(self, workflow_id):
@@ -279,7 +279,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         ----------
         workflow_id
         synapse_slices : dict
-            Properties are wkt_str, size_px, xs_centroid, ys_centroid, uncertainty
+            Properties are id, wkt_str, size_px, xs_centroid, ys_centroid, uncertainty
         tile_idx
 
         Returns
