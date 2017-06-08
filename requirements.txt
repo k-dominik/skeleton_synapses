@@ -1,9 +1,2 @@
 tqdm
-matplotlib
-psycopg2
-numpy
-h5py
-six
-scipy
-scikit-image
 git+https://github.com/catmaid/catpy.git@features/export_widget#egg=catpy
