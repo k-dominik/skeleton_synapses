@@ -6,6 +6,8 @@ import numpy as np
 from catpy.client import CatmaidClientApplication, make_url, CoordinateTransformer
 from catpy.export import ExportWidget
 
+from skeleton_utils import NodeInfo
+
 NEUROCEAN_CONSTANTS = {
     'skel_id': 11524047,
     'project_id': 1,
@@ -228,8 +230,10 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
             ('synapsesuggestor/treenode-association', self.project_id, 'workflow'), params
         )['project_workflow_id']
 
-    def get_treenode_locations(self, skeleton_id, stack_id_or_title):
+    def get_treenode_locations(self, skeleton_id, stack_id_or_title=None):
         """
+        Get locations of treenodes as xyz coordinates. If a stack id or title is given, transform the coordinates into
+        stack coords.
 
         Parameters
         ----------
@@ -238,20 +242,53 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
 
         Returns
         -------
-        numpy.ndarray
+        tuple of (array-like, array-like)
+            An M-length array of node IDs and an M*3 array of XYZ coordinates, for M nodes
         """
         transformer = self.get_coord_transformer(stack_id_or_title)
+        coord_type = int if stack_id_or_title is not None else float
         treenodes = self.get((self.project_id, 'skeletons', skeleton_id, 'compact-detail'))[0]
-        treenode_locations = np.array(treenodes)[:, 3:6]
-        return transformer.project_to_stack_array(treenode_locations)
+        treenodes_arr = np.array(treenodes)
+        coords = transformer.project_to_stack_array(treenodes_arr[:, 3:6])
+        node_infos = []
+        for (node_id, parent_id), (x, y, z) in zip(treenodes_arr[:2].astype(int), coords.astype(coord_type)):
+            node_infos.append(NodeInfo(node_id, x, y, z, parent_id))
+        return node_infos
 
     def get_detected_tiles(self, workflow_id):
-        return self.get('synapsesuggestor/synapse-detection/tiles/detected', {'workflow_id': workflow_id})
+        """
+        xyz
 
-    def add_synapse_slices_to_tile(self, workflow_id, synapse_slice_ids, tile_idx):
+        Parameters
+        ----------
+        workflow_id
+
+        Returns
+        -------
+        set of tuple
+            Tuples of tile indices in XYZ order
+        """
+        data = self.get('synapsesuggestor/synapse-detection/tiles/detected', {'workflow_id': workflow_id})
+        return {tuple(item) for item in data}
+
+    def add_synapse_slices_to_tile(self, workflow_id, synapse_slices, tile_idx):
+        """
+
+
+        Parameters
+        ----------
+        workflow_id
+        synapse_slices : dict
+            Properties are wkt_str, size_px, xs_centroid, ys_centroid, uncertainty
+        tile_idx
+
+        Returns
+        -------
+
+        """
         data = {
             'workflow_id': workflow_id,
-            'synapse_slices': list(synapse_slice_ids),
+            'synapse_slices': [json.dumps(synapse_slice) for synapse_slice in synapse_slices],
             'x_idx': tile_idx[0],
             'y_idx': tile_idx[1],
             'z_idx': tile_idx[2]
@@ -262,12 +299,30 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
     def agglomerate_synapses(self, synapse_slice_ids):
         return self.get('synapsesuggestor/synapse-detection/agglomerate', {'synapse_slices': list(synapse_slice_ids)})
 
-    def add_treenode_synapse_association(self, project_workflow_id, associations):
-        data = {
-            'project_workflow_id': project_workflow_id,
-            'associations': [json.dumps(association) for association in associations]
-        }
+    def add_synapse_treenode_associations(self, associations, project_workflow_id=None):
+        """
+
+        Parameters
+        ----------
+        associations : list of tuples
+            [(synapse_slice_id, treenode_id, contact_px), ...]
+        project_workflow_id
+
+        Returns
+        -------
+
+        """
+        data = {'associations': [json.dumps(association) for association in associations]}
+        if project_workflow_id is not None:
+            data['project_workflow_id'] = project_workflow_id
         return self.post(('synapsesuggestor/treenode-association', self.project_id, 'add'), data)
 
-    def get_treenode_synapse_association(self, skeleton_id):
-        return self.get(('synapsesuggestor/treenode-association', self.project_id, 'get'), {'skid': skeleton_id})
+    def get_treenode_synapse_associations(self, skeleton_id, project_workflow_id=None):
+        params = {'skid': skeleton_id}
+        if project_workflow_id is not None:
+            params['project_workflow_id'] = project_workflow_id
+
+        return self.get(
+            ('synapsesuggestor/treenode-association', self.project_id, 'get'),
+            {'skid': skeleton_id, 'project_workflow_id': project_workflow_id}
+        )
