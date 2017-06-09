@@ -46,18 +46,10 @@ logger.setLevel(logging.DEBUG)
 
 performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
 
-logger.info('STARTING TILEWISE')
+logger.info('STARTING CATMAID-COMPATIBLE DETECTION')
 
 HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
 STACK_PATH = "../projects-2017/L1-CNS/synapse_volume.hdf5"
-
-POSTGRES_CREDENTIALS = {
-    'dbname': os.getenv('SYNSUGG_DB'),
-    'password': os.getenv('SYNSUGG_DB_PASSWORD'),
-    'user': os.getenv('SYNSUGG_DB_USER'),
-    'host': os.getenv('SYNSUGG_DB_HOST', '127.0.0.1'),
-    'port': int(os.getenv('SYNSUGG_DB_PORT', 5432))
-}
 
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
@@ -111,7 +103,7 @@ def hash_algorithm(*paths):
 
 
 def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, force=False):
-    autocontext_project, multicut_project, volume_description_path, skel_output_dir, _ = setup_files(
+    autocontext_project, multicut_project, volume_description_path, skel_output_dir = setup_files(
         credentials_path, stack_id, skeleton_id, project_dir, force
     )
     global catmaid
@@ -123,7 +115,6 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
     catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path))
     stack_info = catmaid.get_stack_info(stack_id)
 
-    ensure_tables(force)
     ensure_hdf5(stack_info, force=force)
 
     log_timestamp('finished setup')
@@ -151,10 +142,6 @@ def link_images(existing_path=HDF5_PATH, new_path=STACK_PATH, force=False):
         #     f['volume'] = f['slice_labels']
 
 
-def ensure_tables(force=False):
-    pass
-
-
 def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=np.float64, extra_dim=None):
     dimension = [stack_info['dimension'][dim] for dim in 'zyx']
     chunksize = (1, tile_size, tile_size)
@@ -175,13 +162,6 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
         labels.attrs[key] = json.dumps(stack_info[key])
 
     return labels
-
-
-def get_tile_counts_zyx(stack_info):
-    mirror = get_stack_mirror(stack_info)
-    tile_size = {'z': 1}
-    tile_size['y'], tile_size['x'] = [mirror['tile_{}'.format(dim)] for dim in ['height', 'width']]
-    return [int(stack_info['dimension'][dim] / tile_size[dim]) for dim in 'zyx']
 
 
 def ensure_hdf5(stack_info, force=False):
@@ -598,7 +578,7 @@ def commit_tilewise_results_from_queue(
 
             synapse_slices = []
 
-            for slice_label in np.unique(synapse_cc_yx)[1:]:
+            for slice_label in np.unique(synapse_cc_yx)[1:].astype(int):
                 slice_prefix = log_prefix + '[{}] '.format(slice_label)
 
                 logger.debug('%sProcessing slice label'.format(slice_label), slice_prefix)
@@ -623,11 +603,11 @@ def commit_tilewise_results_from_queue(
                 )
 
                 synapse_slices.append({
-                    'id': slice_label,
+                    'id': int(slice_label),
                     'wkt_str': wkt_str,
-                    'size_px': size_px,
-                    'xs_centroid': x_centroid_px,
-                    'ys_centroid': y_centroid_px,
+                    'size_px': int(size_px),
+                    'xs_centroid': int(x_centroid_px),
+                    'ys_centroid': int(y_centroid_px),
                     'uncertainty': uncertainty
                 })
 
@@ -702,4 +682,4 @@ if __name__ == "__main__":
         ]
         kwargs_dict = {}  # must be empty
 
-    sys.exit( main(*args_list, **kwargs_dict) )
+    sys.exit(main(*args_list, **kwargs_dict))
