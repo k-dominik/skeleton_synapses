@@ -1,5 +1,6 @@
 import json
 from collections import defaultdict
+import logging
 
 import numpy as np
 
@@ -19,6 +20,9 @@ DEV_CONSTANTS = {
     'project_id': 4,
     'image_stack_id': 4
 }
+
+logger = logging.getLogger(__name__)
+api_logger = logging.getLogger(__name__ + '.api')
 
 
 def get_consecutive(lst):
@@ -294,7 +298,12 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
             'z_idx': tile_idx[2]
         }
 
-        return self.post('synapsesuggestor/synapse-detection/tiles/insert-synapse-slices', data)
+        url = 'synapsesuggestor/synapse-detection/tiles/insert-synapse-slices'
+        api_logger.debug('POST to {}\n{}'.format(url, data))
+        response_data = self.post(url, data)
+        api_logger.debug('Returned\n{}'.format(response_data))
+
+        return response_data
 
     def agglomerate_synapses(self, synapse_slice_ids):
         return self.get('synapsesuggestor/synapse-detection/agglomerate', {'synapse_slices': list(synapse_slice_ids)})
