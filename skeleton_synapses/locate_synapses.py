@@ -27,8 +27,6 @@ warnings.filterwarnings("ignore", message='.*second conversion method ignored.',
 import numpy as np
 import h5py
 import vigra
-from vigra.analysis import unique
-from scipy.spatial.distance import euclidean
 
 from lazyflow.graph import Graph
 from lazyflow.utility import PathComponents, isUrl
@@ -45,7 +43,7 @@ from ilastik.workflows.edgeTrainingWithMulticut import EdgeTrainingWithMulticutW
 from catpy import CatmaidClient
 
 from catmaid_interface import CatmaidSynapseSuggestionAPI
-from skeleton_utils import Skeleton, roi_around_node
+from skeleton_utils import roi_around_node
 
 # Import requests in advance so we can silence its log messages.
 import requests
@@ -135,9 +133,11 @@ def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=Fals
     mkdir_p(skel_output_dir)
 
     skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
-    skeleton = Skeleton.from_catmaid(catmaid, skeleton_id, stack_id, skel_path)
+    skel_data = catmaid.get_transformed_treenode_and_connector_geometry(stack_id, skeleton_id)
+    with open(skel_path, 'w') as f:
+        json.dump(skel_data, f)
 
-    return autocontext_project, multicut_project, volume_description_path, skel_output_dir, skeleton
+    return autocontext_project, multicut_project, volume_description_path, skel_output_dir
 
 
 def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClassification, multicut_workflow,
@@ -365,28 +365,6 @@ class LeakyProcess(DebuggableProcess):
             return True
 
         return False
-
-
-def search_queue(queue, criterion, timeout=None):
-    """
-    Get the first item of the queue for which criterion(item) is truthy: items found before this one are returned
-    to the back of the queue.
-
-    Parameters
-    ----------
-    queue
-    criterion : callable
-        A callable which returns a truthy value for wanted items and a falsey value for unwanted items.
-    timeout
-        The timeout in seconds for each separate get operation while the queue is spooling through to
-        find a wanted item.
-    """
-    while True:
-        item = queue.get(timeout=timeout)
-        if criterion(item):
-            return item
-        else:
-            queue.put(item)
 
 
 def fetch_raw_and_predict_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
@@ -680,153 +658,6 @@ def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacke
         raise ValueError('Image write mode {} not recognised.'.format(repr(mode)))
 
     return filepath
-
-
-class SynapseSliceRelabeler(object):
-    def __init__(self):
-        self.max_label = 0
-        self.previous_slice = None
-        self.previous_roi = None
-
-    def normalize_synapse_ids(self, current_slice, current_roi):
-        """
-        When the same synapse appears in two neighboring slices,
-        we want it to have the same ID in both slices.
-
-        This function will relabel the synapse labels in 'current_slice'
-        to be consistent with those in self.previous_slice.
-
-        It is not assumed that the two slices are aligned:
-        the slices' positions are given by current_roi and self.previous_roi.
-
-        Returns:
-            (relabeled_slice, new_max_label)
-
-        """
-        current_roi = np.array(current_roi)
-        intersection_roi = None
-        if self.previous_roi is not None:
-            previous_roi = self.previous_roi
-            current_roi_2d = current_roi[:, :-1]
-            previous_roi_2d = previous_roi[:, :-1]
-            intersection_roi, current_intersection_roi, prev_intersection_roi = intersection( current_roi_2d, previous_roi_2d )
-
-        current_unique_labels = unique(current_slice)
-        assert current_unique_labels[0] == 0, "This function assumes that not all pixels belong to detections."
-        if len(current_unique_labels) == 1:
-            # No objects in this slice.
-            self.previous_slice = None
-            self.previous_roi = None
-            return current_slice
-
-        if intersection_roi is None or self.previous_slice is None or abs(int(current_roi[0,2]) - int(previous_roi[0,2])) > 1:
-            # We want our synapse ids to be consecutive, so we do a proper relabeling.
-            # If we could guarantee that the input slice was already consecutive, we could do this:
-            # relabeled_current = np.where( current_slice, current_slice+previous_max_label, 0 )
-            # ... but that's not the case.
-
-            max_current_label = current_unique_labels[-1]
-            relabel = np.zeros( (max_current_label+1,), dtype=np.uint32 )
-            new_max_label = self.max_label + len(current_unique_labels)-1
-            relabel[(current_unique_labels[1:],)] = np.arange( self.max_label+1, new_max_label+1, dtype=np.uint32 )
-            relabeled_slice = relabel[current_slice]
-            self.max_label = new_max_label
-            self.previous_roi = current_roi
-            self.previous_slice = relabeled_slice
-            return relabeled_slice
-
-        # Extract the intersecting region from the current/prev slices,
-        #  so its easy to compare corresponding pixels
-        current_intersection_slice = current_slice[slicing(current_intersection_roi)]
-        prev_intersection_slice = self.previous_slice[slicing(prev_intersection_roi)]
-
-        # omit label 0
-        previous_slice_objects = unique(self.previous_slice)[1:]
-        current_slice_objects = unique(current_slice)[1:]
-        max_current_object = max(0, *current_slice_objects)
-        relabel = np.zeros((max_current_object+1,), dtype=np.uint32)
-
-        for cc in previous_slice_objects:
-            current_labels = unique(current_intersection_slice[prev_intersection_slice==cc])
-            for cur_label in current_labels:
-                relabel[cur_label] = cc
-
-        new_max_label = self.max_label
-        for cur_object in current_slice_objects:
-            if relabel[cur_object] == 0:
-                relabel[cur_object] = new_max_label+1
-                new_max_label = new_max_label+1
-
-        # Relabel the entire current slice
-        relabel[0] = 0
-        relabeled_slice = relabel[current_slice]
-
-        self.max_label = new_max_label
-        self.previous_roi = current_roi
-        self.previous_slice = relabeled_slice
-        return relabeled_slice
-
-
-def write_synapses(csv_writer, skeleton, node_info, roi_xyz, synapse_cc_xy, predictions_xyc, segmentation_xy, node_overall_index):
-    """
-    Given a slice of synapse segmentation and prediction images,
-    append a CSV row (using the given writer) for each synapse detection in the slice.
-    """
-    # Node is always located in the middle pixel, by definition.
-    center_coord = np.array(segmentation_xy.shape) / 2
-    node_segment = segmentation_xy[tuple(center_coord)]
-
-    synapseIds = unique(synapse_cc_xy)
-    for sid in synapseIds[1:]: # skip 0
-        # find the pixel positions of this synapse
-        syn_pixel_coords = np.where(synapse_cc_xy == sid)
-        synapse_size = len( syn_pixel_coords[0] )
-        syn_average_x = np.average(syn_pixel_coords[0])+roi_xyz[0,0]
-        syn_average_y = np.average(syn_pixel_coords[1])+roi_xyz[0,1]
-
-        # For now, we just compute euclidean distance to the node (in pixels).
-        distance_euclidean = euclidean((syn_average_x, syn_average_y), (node_info.x_px, node_info.y_px))
-
-        # Determine average uncertainty
-        # Get probabilities for this synapse's pixels
-        flat_predictions = predictions_xyc[synapse_cc_xy == sid]
-        # Sort along channel axis
-        flat_predictions.sort(axis=-1)
-        # What's the difference between the highest and second-highest class?
-        certainties = flat_predictions[:,-1] - flat_predictions[:,-2]
-        avg_certainty = np.mean(certainties)
-        avg_uncertainty = 1.0 - avg_certainty
-
-        overlapping_segments = unique(segmentation_xy[synapse_cc_xy == sid])
-
-        fields = {}
-        fields["synapse_id"] = int(sid)
-        fields["x_px"] = int(syn_average_x + 0.5)
-        fields["y_px"] = int(syn_average_y + 0.5)
-        fields["z_px"] = roi_xyz[0,2]
-
-        fields["size_px"] = synapse_size
-        fields["distance_to_node_px"] = distance_euclidean
-        fields["detection_uncertainty"] = avg_uncertainty
-        fields["skeleton_id"] = int(skeleton.skeleton_id)
-        fields["overlaps_node_segment"] = {True: "true", False: "false"}[node_segment in overlapping_segments]
-
-        fields["tile_x_px"] = int(syn_average_x + 0.5) - node_info.x_px + center_coord[0]
-        fields["tile_y_px"] = int(syn_average_y + 0.5) - node_info.y_px + center_coord[1]
-        fields["tile_index"] = node_overall_index
-
-        fields["node_id"] = node_info.id
-        fields["node_x_px"] = node_info.x_px
-        fields["node_y_px"] = node_info.y_px
-        fields["node_z_px"] = node_info.z_px
-
-        fields["xmin"] = np.min(syn_pixel_coords[0]) + roi_xyz[0, 0]
-        fields["xmax"] = np.max(syn_pixel_coords[0]) + roi_xyz[0, 0]
-        fields["ymin"] = np.min(syn_pixel_coords[1]) + roi_xyz[0, 1]
-        fields["ymax"] = np.max(syn_pixel_coords[1]) + roi_xyz[0, 1]
-
-        assert len(fields) == len(OUTPUT_COLUMNS)
-        csv_writer.writerow( fields )
 
 
 def intersection(roi_a, roi_b):
