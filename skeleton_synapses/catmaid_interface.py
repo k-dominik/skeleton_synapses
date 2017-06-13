@@ -306,7 +306,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         return response_data
 
     def agglomerate_synapses(self, synapse_slice_ids):
-        return self.get('synapsesuggestor/synapse-detection/agglomerate', {'synapse_slices': list(synapse_slice_ids)})
+        return self.post('synapsesuggestor/synapse-detection/agglomerate', {'synapse_slices': list(synapse_slice_ids)})
 
     def add_synapse_treenode_associations(self, associations, project_workflow_id=None):
         """
