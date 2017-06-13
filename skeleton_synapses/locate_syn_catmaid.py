@@ -16,6 +16,7 @@ import h5py
 import numpy as np
 from six.moves import range
 from skimage.morphology import skeletonize
+from skimage.measure import find_contours
 
 from lazyflow.utility import Timer
 from lazyflow.request import Request
@@ -285,6 +286,9 @@ def locate_synapses_catmaid(
 
     log_timestamp('finished getting tiles')
 
+    # don't save out individual tiles
+    skel_output_dir = skel_output_dir if DEBUG else None
+
     if not tile_queue.empty():
         logger.info('Classifying pixels in tilewise')
 
@@ -515,7 +519,7 @@ class NeuronSegmenterProcess(LeakyProcess):
         self.output_queue.put(outputs)
 
 
-def syn_coords_to_wkt_str(x_coords, y_coords):
+def coords_to_multipoint_wkt_str(x_coords, y_coords):
     """
     Convert arrays of coordinates into a WKT string describing a MultiPoint geometry of those coordinates,
     where point i has the coordinates (x_coords[i], y_coords[i]).
@@ -549,6 +553,46 @@ def iterate_queue(queue, final_size, queue_name=None):
         yield item
 
 
+def coords_to_polygon_wkt_str(x_coords, y_coords):
+    """
+    x_coords and y_coords must be in anti-clockwise order (e.g. output of
+    skimage.measure.find_contours(binary_im, 0.5)[0]
+    )
+
+    Returns a POLYGON wkt string
+
+    Parameters
+    ----------
+    x_coords : array-like
+    y_coords : array-like
+
+    Returns
+    -------
+    str
+    """
+    coords_str = ','.join('{} {}'.format(x_coord, y_coord) for x_coord, y_coord in zip(x_coords, y_coords))
+    coords_str += ',{} {}'.format(x_coords[0], y_coords[0])
+    return 'POLYGON({})'.format(coords_str)
+
+
+def simplify_image(array, x_offset, y_offset):
+    """
+    Return wkt polygon string of binary image
+
+    Parameters
+    ----------
+    array
+    x_offset
+    y_offset
+
+    Returns
+    -------
+    str
+    """
+    outline_coords_yx = find_contours(array, 0.5)[0]
+    return coords_to_polygon_wkt_str(outline_coords_yx[:, 1] + x_offset, outline_coords_yx[:, 0] + y_offset)
+
+
 def commit_tilewise_results_from_queue(
         tile_result_queue, output_path, total_tiles, tile_size, workflow_id
 ):
@@ -557,13 +601,12 @@ def commit_tilewise_results_from_queue(
 
     logger.info('Starting to commit tile classification results')
 
-    synapse_ids = []
-
     with h5py.File(output_path, 'r+') as f:
         pixel_predictions_zyx = f['pixel_predictions']
         slice_labels_zyx = f['slice_labels']
 
         for tile_count, (tile_idx, predictions_xyc, synapse_cc_xy) in enumerate(result_iterator):
+            synapse_ids = []
             tilename = 'z{}-y{}-x{}'.format(*tile_idx)
             logger.debug('Committing results from tile {}, {} of {}'.format(tilename, tile_count, total_tiles))
             bounds_xyz = tile_index_to_bounds(tile_idx, tile_size)
@@ -583,7 +626,9 @@ def commit_tilewise_results_from_queue(
 
                 logger.debug('%sProcessing slice label'.format(slice_label), slice_prefix)
 
-                syn_pixel_coords = np.where(synapse_cc_xy == slice_label)
+                binary_arr = synapse_cc_xy == slice_label
+
+                syn_pixel_coords = np.where(binary_arr)
                 size_px = len(syn_pixel_coords[0])
                 y_centroid_px = np.average(syn_pixel_coords[0]) + bounds_xyz[0, 1]
                 x_centroid_px = np.average(syn_pixel_coords[1]) + bounds_xyz[0, 0]
@@ -598,9 +643,7 @@ def commit_tilewise_results_from_queue(
                 avg_certainty = np.mean(certainties)
                 uncertainty = 1.0 - avg_certainty
 
-                wkt_str = syn_coords_to_wkt_str(
-                    syn_pixel_coords[1] + bounds_xyz[0, 0], syn_pixel_coords[0] + bounds_xyz[0, 1]
-                )
+                wkt_str = simplify_image(binary_arr, bounds_xyz[0, 0], bounds_xyz[0, 1])
 
                 synapse_slices.append({
                     'id': int(slice_label),
@@ -622,7 +665,7 @@ def commit_tilewise_results_from_queue(
                 bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
             ] = synapse_cc_yx
 
-    catmaid.agglomerate_synapses(synapse_ids)  # maybe do this per tile?
+            catmaid.agglomerate_synapses(synapse_ids)  # maybe do this per larger block?
 
 
 def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id):
@@ -641,7 +684,7 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
             assoc_tuples.append(assoc_tuple)
 
     logger.debug('Node association results are\n%s', repr(assoc_tuples))
-    logger.info('Inserting new slice:skeleton mappings')
+    logger.info('Inserting new slice:treenode mappings')
 
     catmaid.add_synapse_treenode_associations(assoc_tuples, project_workflow_id)
 
