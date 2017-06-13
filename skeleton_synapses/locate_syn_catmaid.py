@@ -572,7 +572,7 @@ def coords_to_polygon_wkt_str(x_coords, y_coords):
     """
     coords_str = ','.join('{} {}'.format(x_coord, y_coord) for x_coord, y_coord in zip(x_coords, y_coords))
     coords_str += ',{} {}'.format(x_coords[0], y_coords[0])
-    return 'POLYGON({})'.format(coords_str)
+    return 'POLYGON(({}))'.format(coords_str)
 
 
 def simplify_image(array, x_offset, y_offset):
