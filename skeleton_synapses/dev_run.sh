@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -e
+
 project_dir="../projects-2017/L1-CNS"
 cred_path="credentials_dev.json"
 stack_id=1
