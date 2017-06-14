@@ -11,6 +11,8 @@ from itertools import product
 import time
 import hashlib
 import subprocess
+import signal
+import psutil
 
 import h5py
 import numpy as np
@@ -689,6 +691,12 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
     catmaid.add_synapse_treenode_associations(assoc_tuples, project_workflow_id)
 
 
+def kill_child_processes(signum=None, frame=None):
+    current_proc = psutil.Process()
+    for child_proc in current_proc.children(recursive=True):
+        child_proc.kill()
+
+
 if __name__ == "__main__":
     if DEBUG:
         print("USING DEBUG ARGUMENTS")
@@ -725,4 +733,13 @@ if __name__ == "__main__":
         ]
         kwargs_dict = {}  # must be empty
 
-    sys.exit(main(*args_list, **kwargs_dict))
+    signal.signal(signal.SIGTERM, kill_child_processes)
+
+    try:
+        main(*args_list, **kwargs_dict)
+    except Exception as e:
+        logger.exception('Errored, killing all child processes and exiting')
+        kill_child_processes()
+        raise
+
+    sys.exit(0)
