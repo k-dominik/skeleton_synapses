@@ -284,7 +284,8 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         workflow_id
         synapse_slices : dict
             Properties are id, wkt_str, size_px, xs_centroid, ys_centroid, uncertainty
-        tile_idx
+        tile_idx : tuple
+            Tile index in ZYX order
 
         Returns
         -------
@@ -293,9 +294,9 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         data = {
             'workflow_id': workflow_id,
             'synapse_slices': [json.dumps(synapse_slice) for synapse_slice in synapse_slices],
-            'x_idx': tile_idx[0],
+            'z_idx': tile_idx[0],
             'y_idx': tile_idx[1],
-            'z_idx': tile_idx[2]
+            'x_idx': tile_idx[2]
         }
 
         url = 'synapsesuggestor/synapse-detection/tiles/insert-synapse-slices'
