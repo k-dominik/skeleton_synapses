@@ -735,11 +735,12 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGTERM, kill_child_processes)
 
+    exit_code = 1
     try:
         main(*args_list, **kwargs_dict)
+        exit_code = 0
     except Exception as e:
         logger.exception('Errored, killing all child processes and exiting')
         kill_child_processes()
-        raise
-
-    sys.exit(0)
+    finally:
+        sys.exit(exit_code)
