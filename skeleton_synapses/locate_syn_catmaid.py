@@ -384,8 +384,6 @@ class DetectorProcess(LeakyProcess):
         super(DetectorProcess, self).__init__(input_queue, max_ram_MB, debug, name)
         self.output_queue = output_queue
 
-        self.timing_logger = logging.getLogger(self.logger.name + '.timing')
-
         self.skel_output_dir = skel_output_dir
         self.tile_size = tile_size
 
