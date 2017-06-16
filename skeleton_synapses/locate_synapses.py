@@ -70,6 +70,7 @@ OUTPUT_COLUMNS = [ "synapse_id", "skeleton_id", "overlaps_node_segment",
                    'xmin', 'xmax', 'ymin', 'ymax']
 
 DEFAULT_ROI_RADIUS = 150
+LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
 
 
 def get_and_print_env(name, default, constructor=str):
@@ -238,12 +239,28 @@ class DebuggableProcess(mp.Process):
     def __init__(self, debug=False, name=None):
         super(DebuggableProcess, self).__init__(name=name)
         self.debug = debug
+        self._inner_logger = None
 
     def start(self):
         if self.debug:
             self.run()
         else:
             super(DebuggableProcess, self).start()
+
+    @property
+    def inner_logger(self):
+        if not self.is_alive():
+            return None
+        if not self._inner_logger:
+            lgr = logging.getLogger('{}.{}'.format(__name__, self.name))
+            lgr.propagate = False
+            lgr.level = lgr.root.level
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(fmt=LOGGER_FORMAT)
+            handler.setFormatter(formatter)
+            lgr.addHandler(handler)
+            self._inner_logger = lgr
+        return self._inner_logger
 
 
 class CaretakerProcess(DebuggableProcess):
@@ -278,7 +295,7 @@ class CaretakerProcess(DebuggableProcess):
         self.inner_process_counter = 0
 
     def run(self):
-        logger = logging.getLogger('{}.{}'.format(__name__, self.name))
+        logger = self.inner_logger
         while not self.input_queue.empty():
             logger.debug(
                 'Starting new inner {} process with {} inputs remaining'.format(
@@ -314,18 +331,25 @@ class LeakyProcess(DebuggableProcess):
         self.input_queue = input_queue
         self.max_ram_MB = max_ram_MB
         self.psutil_process = None
-        self.size_logger_name = '{}.{}.{}'.format(__name__, self.name, 'size')
         self.execution_counter = 0
+        self._size_logger = None
+
+    @property
+    def size_logger(self):
+        if not self._size_logger:
+            self._size_logger = logging.getLogger(self.inner_logger.name + '.size')
+        return self._size_logger
 
     def run(self):
+        inner_logger = self.inner_logger  # ensure that process' root logger is set up, preventing record propagation
+        inner_logger.info('%s started', type(self).__name__)
         self.setup()
         self.psutil_process = [proc for proc in psutil.process_iter() if proc.pid == self.pid][0]
-        size_logger = logging.getLogger(self.size_logger_name)
-        size_logger.debug(self.ram_usage_str())
+        self.size_logger.debug(self.ram_usage_str())
         while not self.needs_pruning():
             self.execute()
             self.execution_counter += 1
-            size_logger.debug(self.ram_usage_str())
+            self.size_logger.debug(self.ram_usage_str())
 
         self.teardown()
 
@@ -349,15 +373,14 @@ class LeakyProcess(DebuggableProcess):
         return 'RAM usage: {:.03f}MB out of {:.03f}MB'.format(self.ram_usage_MB, self.max_ram_MB)
 
     def needs_pruning(self):
-        size_logger = logging.getLogger(self.size_logger_name)
         if self.input_queue.empty():
-            size_logger.info('TERMINATING after {} iterations (input queue empty)'.format(self.execution_counter))
+            self.size_logger.info('TERMINATING after {} iterations (input queue empty)'.format(self.execution_counter))
             return True
 
         ram_usage_MB = self.ram_usage_MB
 
         if self.max_ram_MB and ram_usage_MB >= self.max_ram_MB:
-            size_logger.info(
+            self.size_logger.info(
                 'TERMINATING after {} iterations ({}, {} items remaining)'.format(
                     self.execution_counter, self.ram_usage_str(), self.input_queue.qsize()
                 )
