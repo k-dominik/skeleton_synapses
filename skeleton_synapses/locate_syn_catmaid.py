@@ -28,7 +28,7 @@ from catpy import CatmaidClient
 from catmaid_interface import CatmaidSynapseSuggestionAPI
 from locate_synapses import (
     # constants/singletons
-    DEFAULT_ROI_RADIUS,
+    DEFAULT_ROI_RADIUS, LOGGER_FORMAT,
     # functions
     setup_files, setup_classifier, setup_classifier_and_multicut,
     fetch_raw_and_predict_for_node, raw_data_for_node, labeled_synapses_for_node, segmentation_for_node,
@@ -42,7 +42,7 @@ from skeleton_utils import roi_around_node
 #     return AsIs(numpy_float64)
 # register_adapter(np.float64, addapt_numpy_float64)
 
-logging.basicConfig(level=0, format='%(levelname)s %(processName)s(%(process)d) %(name)s: %(message)s')
+logging.basicConfig(level=0, format=LOGGER_FORMAT)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -66,6 +66,8 @@ RAM_MB_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000)
 logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROCESS))
 
 DEBUG = False
+
+ALGO_HASH = '1'
 
 catmaid = None
 
@@ -101,7 +103,9 @@ def hash_algorithm(*paths):
 
     digest = md5.hexdigest()
     logger.debug('Algorithm hash is %s', digest)
-
+    # todo: remove this
+    logger.warning('Ignoring real algorithm hash, using {}'.format(ALGO_HASH))
+    digest = ALGO_HASH
     return digest
 
 
@@ -168,14 +172,17 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
 
 
 def ensure_hdf5(stack_info, force=False):
-    if force or not os.path.isfile(HDF5_PATH):
+    if force and os.path.isfile(HDF5_PATH):
+        logger.warning('FORCE detected; deleting existing HDF5 file')
+        os.remove(HDF5_PATH)
+
+    if not os.path.isfile(HDF5_PATH):
         logger.info('Creating HDF5 volumes in %s', HDF5_PATH)
         with h5py.File(HDF5_PATH, 'w') as f:
             # f.attrs['workflow_id'] = workflow_id  # todo
             f.attrs['source_stack_id'] = stack_info['sid']
 
             create_label_volume(stack_info, f, 'slice_labels', TILE_SIZE, dtype=np.int64)
-            f['volume'] = f['slice_labels']  # for compatibility with _parallel and _serial
             # create_label_volume(stack_info, f, 'object_labels')  # todo?
             create_label_volume(stack_info, f, 'pixel_predictions', TILE_SIZE, dtype=np.float32, extra_dim=3)
 
@@ -377,12 +384,7 @@ class DetectorProcess(LeakyProcess):
         super(DetectorProcess, self).__init__(input_queue, max_ram_MB, debug, name)
         self.output_queue = output_queue
 
-        self.logger = logging.getLogger('{}.{}'.format(__name__, self.name))
-        self.logger.setLevel(logging.DEBUG)
-        self.logger.debug('Detector process instantiated')
-
         self.timing_logger = logging.getLogger(self.logger.name + '.timing')
-        self.timing_logger.setLevel(logging.INFO)
 
         self.skel_output_dir = skel_output_dir
         self.tile_size = tile_size
@@ -398,7 +400,7 @@ class DetectorProcess(LeakyProcess):
     def execute(self):
         tile_idx = self.input_queue.get()
 
-        self.logger.debug("Addressing tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize()))
+        self.inner_logger.debug("Addressing tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize()))
 
         with Timer() as timer:
             roi_xyz = tile_index_to_bounds(tile_idx, self.tile_size)
@@ -409,9 +411,11 @@ class DetectorProcess(LeakyProcess):
             )
             # DETECT SYNAPSES
             synapse_cc_xy = labeled_synapses_for_node(None, roi_xyz, self.skel_output_dir, predictions_xyc)
-            self.timing_logger.info("NODE TIMER: {}".format(timer.seconds()))
+            logging.getLogger(self.inner_logger.name + '.timing').info("NODE TIMER: {}".format(timer.seconds()))
 
-        self.logger.debug("Detected synapses in tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize()))
+        self.inner_logger.debug(
+            "Detected synapses in tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize())
+        )
 
         self.output_queue.put(DetectorOutput(tile_idx, predictions_xyc, synapse_cc_xy))
 
@@ -450,14 +454,6 @@ class NeuronSegmenterProcess(LeakyProcess):
         self.input_queue = input_queue
         self.output_queue = output_queue
 
-        self.logger_name = '{}.{}'.format(__name__, self.name)
-        logger = logging.getLogger(self.logger_name)
-        logger.setLevel(logging.DEBUG)
-        logger.debug('Segmenter process instantiated')
-
-        self.timing_logger = logging.getLogger(self.logger_name + '.timing')
-        self.timing_logger.setLevel(logging.INFO)
-
         self.skel_output_dir = skel_output_dir
 
         self.opPixelClassification = self.multicut_shell = None
@@ -471,21 +467,18 @@ class NeuronSegmenterProcess(LeakyProcess):
     #         self.execute()
 
     def setup(self):
-        logger = logging.getLogger(self.logger_name)
-        logger.debug('Setting up opPixelClassification and multicut_shell...')
+        self.inner_logger.debug('Setting up opPixelClassification and multicut_shell...')
         self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
             *self.setup_args
         )
-        logger.debug('opPixelClassification and multicut_shell set up')
+        self.inner_logger.debug('opPixelClassification and multicut_shell set up')
 
         Request.reset_thread_pool(1)
 
     def execute(self):
         node_info, roi_radius_px = self.input_queue.get()
 
-        logger = logging.getLogger(self.logger_name)
-
-        logger.debug("Addressing node {}; {} nodes remaining".format(node_info.id, self.input_queue.qsize()))
+        self.inner_logger.debug("Addressing node {}; {} nodes remaining".format(node_info.id, self.input_queue.qsize()))
 
         with Timer() as node_timer:
             roi_xyz = roi_around_node(node_info, roi_radius_px)
@@ -507,18 +500,20 @@ class NeuronSegmenterProcess(LeakyProcess):
             node_segment = segmentation_xy[tuple(center_coord)]
 
             synapse_overlaps = synapse_cc_xy * (segmentation_xy == node_segment)
-            outputs = tuple()
-            for syn_id in np.unique(synapse_overlaps[synapse_overlaps > 1]):
+            outputs = []
+            slice_ids = np.unique(synapse_overlaps[synapse_overlaps > 1])
+            self.inner_logger.debug('Found overlapping IDs {} in roi_xyz {}', slice_ids, roi_xyz)
+            for syn_id in slice_ids:
                 contact_px = skeletonize(synapse_overlaps == syn_id).sum()  # todo: improve this?
-                outputs += (NeuronSegmenterOutput(node_info, syn_id, contact_px), )
+                outputs.append(NeuronSegmenterOutput(node_info, syn_id, contact_px))
 
-            self.timing_logger.info("TILE TIMER: {}".format(node_timer.seconds()))
+            logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
 
-        logger.debug('Adding segmentation output of node {} to output queue; {} nodes remaining'.format(
+        self.inner_logger.debug('Adding segmentation output of node {} to output queue; {} nodes remaining'.format(
             node_info.id, self.input_queue.qsize()
         ))
 
-        self.output_queue.put(outputs)
+        self.output_queue.put(tuple(outputs))
 
 
 def coords_to_multipoint_wkt_str(x_coords, y_coords):
@@ -623,7 +618,8 @@ def commit_tilewise_results_from_queue(
 
             synapse_slices = []
 
-            for slice_label in np.unique(synapse_cc_yx)[1:].astype(int):
+            slice_label_set = set(np.unique(synapse_cc_yx)[1:].astype(int))
+            for slice_label in slice_label_set:
                 slice_prefix = log_prefix + '[{}] '.format(slice_label)
 
                 logger.debug('%sProcessing slice label'.format(slice_label), slice_prefix)
@@ -658,16 +654,18 @@ def commit_tilewise_results_from_queue(
 
             id_mapping = catmaid.add_synapse_slices_to_tile(workflow_id, synapse_slices, tile_idx)
 
+            assert set(id_mapping.keys()) == slice_label_set
+
             synapse_cc_yx[synapse_cc_yx == 0] = 1
+            mapped_synapse_cc_yx = synapse_cc_yx / synapse_cc_yx
             for slice_label, synapse_id in id_mapping.items():
-                synapse_cc_yx[synapse_cc_yx == slice_label] = synapse_id
-                synapse_ids.append(synapse_id)
+                mapped_synapse_cc_yx[synapse_cc_yx == slice_label] = synapse_id
 
             slice_labels_zyx[
                 bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
             ] = synapse_cc_yx
 
-            catmaid.agglomerate_synapses(synapse_ids)  # maybe do this per larger block?
+            catmaid.agglomerate_synapses(id_mapping.values())  # maybe do this per larger block?
 
 
 def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id):
