@@ -652,7 +652,11 @@ def commit_tilewise_results_from_queue(
 
             id_mapping = catmaid.add_synapse_slices_to_tile(workflow_id, synapse_slices, tile_idx)
 
-            assert set(id_mapping.keys()) == local_label_set
+            returned_keys = {int(key) for key in id_mapping.keys()}
+            if returned_keys != local_label_set:
+                logger.error(
+                    'Returned keys are not the same as sent keys:\n\t{}\n\t{}'.format(returned_keys, local_label_set)
+                )
 
             mapped_synapse_cc_yx = np.ones(synapse_cc_yx.shape, synapse_cc_yx.dtype)
             for local_label, synapse_id in id_mapping.items():
