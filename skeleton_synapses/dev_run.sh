@@ -2,7 +2,7 @@
 
 set -e
 
-project_dir="../projects-2017/L1-CNS"
+project_dir=$(realpath "../projects-2017/L1-CNS")
 cred_path="credentials_dev.json"
 stack_id=1
 skel_id=11524047  #18531735  # small test skeleton only on CLB's local instance
@@ -10,8 +10,10 @@ force=1
 
 timestamp=$(date +"%Y-%m-%d_%H:%M:%S")
 
+log_root=${project_dir}/logs
 log_dir=${project_dir}/logs/${timestamp}
 mkdir -p ${log_dir}
+ln -sf ${log_dir} ${log_root}/latest
 
 source ./set_env_vars.sh
 
