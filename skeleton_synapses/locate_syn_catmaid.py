@@ -616,13 +616,13 @@ def commit_tilewise_results_from_queue(
 
             synapse_slices = []
 
-            slice_label_set = set(np.unique(synapse_cc_yx)[1:].astype(int))
-            for slice_label in slice_label_set:
-                slice_prefix = log_prefix + '[{}] '.format(slice_label)
+            local_label_set = set(np.unique(synapse_cc_yx)[1:].astype(int))
+            for local_label in local_label_set:
+                slice_prefix = log_prefix + '[{}] '.format(local_label)
 
-                logger.debug('%sProcessing slice label'.format(slice_label), slice_prefix)
+                logger.debug('%sProcessing slice label'.format(local_label), slice_prefix)
 
-                binary_arr = synapse_cc_xy == slice_label
+                binary_arr = synapse_cc_xy == local_label
 
                 syn_pixel_coords = np.where(binary_arr)
                 size_px = len(syn_pixel_coords[0])
@@ -631,7 +631,7 @@ def commit_tilewise_results_from_queue(
 
                 # Determine average uncertainty
                 # Get probabilities for this synapse's pixels
-                flat_predictions = predictions_xyc[synapse_cc_xy == slice_label]
+                flat_predictions = predictions_xyc[synapse_cc_xy == local_label]
                 # Sort along channel axis
                 flat_predictions.sort(axis=-1)
                 # What's the difference between the highest and second-highest class?
@@ -642,7 +642,7 @@ def commit_tilewise_results_from_queue(
                 wkt_str = simplify_image(binary_arr, bounds_xyz[0, 0], bounds_xyz[0, 1])
 
                 synapse_slices.append({
-                    'id': int(slice_label),
+                    'id': int(local_label),
                     'wkt_str': wkt_str,
                     'size_px': int(size_px),
                     'xs_centroid': int(x_centroid_px),
@@ -652,16 +652,15 @@ def commit_tilewise_results_from_queue(
 
             id_mapping = catmaid.add_synapse_slices_to_tile(workflow_id, synapse_slices, tile_idx)
 
-            assert set(id_mapping.keys()) == slice_label_set
+            assert set(id_mapping.keys()) == local_label_set
 
-            synapse_cc_yx[synapse_cc_yx == 0] = 1
-            mapped_synapse_cc_yx = synapse_cc_yx / synapse_cc_yx
-            for slice_label, synapse_id in id_mapping.items():
-                mapped_synapse_cc_yx[synapse_cc_yx == slice_label] = synapse_id
+            mapped_synapse_cc_yx = np.ones(synapse_cc_yx.shape, synapse_cc_yx.dtype)
+            for local_label, synapse_id in id_mapping.items():
+                mapped_synapse_cc_yx[synapse_cc_yx == local_label] = synapse_id
 
             slice_labels_zyx[
                 bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
-            ] = synapse_cc_yx
+            ] = mapped_synapse_cc_yx
 
             catmaid.agglomerate_synapses(id_mapping.values())  # maybe do this per larger block?
 
