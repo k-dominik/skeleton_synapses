@@ -52,7 +52,6 @@ performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
 logger.info('STARTING CATMAID-COMPATIBLE DETECTION')
 
 HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
-STACK_PATH = "../projects-2017/L1-CNS/synapse_volume.hdf5"
 
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
@@ -138,16 +137,6 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
         stack_info
     )
 
-    link_images(force=True)
-
-
-def link_images(existing_path=HDF5_PATH, new_path=STACK_PATH, force=False):
-    if force or not os.path.isfile(new_path):
-        os.remove(new_path)
-        os.link(existing_path, new_path)
-        # with h5py.File(existing_path, 'r+') as f:
-        #     f['volume'] = f['slice_labels']
-
 
 def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=np.float64, extra_dim=None):
     dimension = [stack_info['dimension'][dim] for dim in 'zyx']
@@ -172,11 +161,7 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
 
 
 def ensure_hdf5(stack_info, force=False):
-    if force and os.path.isfile(HDF5_PATH):
-        logger.warning('FORCE detected; deleting existing HDF5 file')
-        os.remove(HDF5_PATH)
-
-    if not os.path.isfile(HDF5_PATH):
+    if force or not os.path.isfile(HDF5_PATH):
         logger.info('Creating HDF5 volumes in %s', HDF5_PATH)
         with h5py.File(HDF5_PATH, 'w') as f:
             # f.attrs['workflow_id'] = workflow_id  # todo
