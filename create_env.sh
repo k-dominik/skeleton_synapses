@@ -9,4 +9,4 @@ source activate ${ENV_NAME}
 conda install -c ilastik ilastik-everything
 
 easy_install -U pip
-pip install -r requirements
+pip install -r $(realpath $(dirname $0))/requirements.txt
