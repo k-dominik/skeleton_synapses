@@ -56,6 +56,9 @@ HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
 
+LABEL_DTYPE = np.int64
+PIXEL_PREDICTION_DTYPE = np.float32
+
 TILE_SIZE = 512
 
 THREADS = int(os.getenv('SYNAPSE_DETECTION_THREADS', 3))
@@ -138,7 +141,7 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
     )
 
 
-def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=np.float64, extra_dim=None):
+def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=LABEL_DTYPE, extra_dim=None):
     dimension = [stack_info['dimension'][dim] for dim in 'zyx']
     chunksize = (1, tile_size, tile_size)
 
@@ -167,9 +170,10 @@ def ensure_hdf5(stack_info, force=False):
             # f.attrs['workflow_id'] = workflow_id  # todo
             f.attrs['source_stack_id'] = stack_info['sid']
 
-            create_label_volume(stack_info, f, 'slice_labels', TILE_SIZE, dtype=np.int64)
+            create_label_volume(stack_info, f, 'slice_labels', TILE_SIZE)
             # create_label_volume(stack_info, f, 'object_labels')  # todo?
-            create_label_volume(stack_info, f, 'pixel_predictions', TILE_SIZE, dtype=np.float32, extra_dim=3)
+            create_label_volume(stack_info, f, 'pixel_predictions', TILE_SIZE, dtype=PIXEL_PREDICTION_DTYPE,
+                                extra_dim=3)
 
             f.flush()
 
@@ -319,7 +323,7 @@ def locate_synapses_catmaid(
     log_timestamp('started getting nodes')
 
     project_workflow_id = catmaid.get_project_workflow_id(workflow_id, algo_hash)
-    treenode_slice_mappings = catmaid.get_treenode_synapse_associations(project_workflow_id)
+    treenode_slice_mappings = catmaid.get_treenode_synapse_associations(skeleton_id, project_workflow_id)
     associated_treenodes = {int(pair[0]) for pair in treenode_slice_mappings}
 
     node_queue, node_result_queue = mp.Queue(), mp.Queue()
@@ -408,7 +412,7 @@ class DetectorProcess(LeakyProcess):
             "Detected synapses in tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize())
         )
 
-        self.output_queue.put(DetectorOutput(tile_idx, predictions_xyc, synapse_cc_xy))
+        self.output_queue.put(DetectorOutput(tile_idx, np.array(predictions_xyc), np.array(synapse_cc_xy)))
 
 
 NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['node_info', 'roi_radius_px'])
@@ -594,7 +598,6 @@ def commit_tilewise_results_from_queue(
         slice_labels_zyx = f['slice_labels']
 
         for tile_count, (tile_idx, predictions_xyc, synapse_cc_xy) in enumerate(result_iterator):
-            synapse_ids = []
             tilename = 'z{}-y{}-x{}'.format(*tile_idx)
             logger.debug('Committing results from tile {}, {} of {}'.format(tilename, tile_count, total_tiles))
             bounds_xyz = tile_index_to_bounds(tile_idx, tile_size)
@@ -644,6 +647,7 @@ def commit_tilewise_results_from_queue(
                 })
 
             id_mapping = catmaid.add_synapse_slices_to_tile(workflow_id, synapse_slices, tile_idx)
+            logger.debug('Got ID mapping from CATMAID:\n{}'.format(id_mapping))
 
             returned_keys = {int(key) for key in id_mapping.keys()}
             if returned_keys != local_label_set:
@@ -651,9 +655,10 @@ def commit_tilewise_results_from_queue(
                     'Returned keys are not the same as sent keys:\n\t{}\n\t{}'.format(returned_keys, local_label_set)
                 )
 
-            mapped_synapse_cc_yx = np.ones(synapse_cc_yx.shape, synapse_cc_yx.dtype)
+            mapped_synapse_cc_yx = np.ones(synapse_cc_yx.shape, LABEL_DTYPE)
             for local_label, synapse_id in id_mapping.items():
-                mapped_synapse_cc_yx[synapse_cc_yx == local_label] = synapse_id
+                logger.debug('Addressing ID mapping pair: {}, {}'.format(local_label, synapse_id))
+                mapped_synapse_cc_yx[synapse_cc_yx == int(local_label)] = synapse_id
 
             slice_labels_zyx[
                 bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
@@ -696,8 +701,10 @@ if __name__ == "__main__":
         project_dir = "../projects-2017/L1-CNS"
         cred_path = "credentials_dev.json"
         stack_id = 1
-        skel_id = 18531735  # small test skeleton only on CLB's local instance
-        force = 0
+        # skel_id = 18531735  # small test skeleton only on CLB's local instance
+        skel_id = 18531745  # single-node skeleton on de moivre tile [9485, 7413, 582] on CLB's local instance
+
+        force = 1
 
         args_list = [
             cred_path, stack_id, skel_id, project_dir

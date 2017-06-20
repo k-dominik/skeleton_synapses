@@ -335,7 +335,4 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         if project_workflow_id is not None:
             params['project_workflow_id'] = project_workflow_id
 
-        return self.get(
-            ('synapsesuggestor/treenode-association', self.project_id, 'get'),
-            {'skid': skeleton_id, 'project_workflow_id': project_workflow_id}
-        )
+        return self.get(('synapsesuggestor/treenode-association', self.project_id, 'get'), params)
