@@ -270,12 +270,13 @@ def locate_synapses_catmaid(
     addressed_tiles = catmaid.get_detected_tiles(workflow_id)
 
     tile_queue, tile_result_queue = mp.Queue(), mp.Queue()
-
+    tile_count = 0
     for tile_idx in tile_index_set:
         if (tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx) in addressed_tiles:
             logging.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
         else:
             logging.debug("Tile %s has not been addressed, adding to queue", repr(tile_idx))
+            tile_count += 1
             tile_queue.put(tile_idx)
 
     log_timestamp('finished getting tiles')
@@ -283,7 +284,7 @@ def locate_synapses_catmaid(
     # don't save out individual tiles
     skel_output_dir = skel_output_dir if DEBUG else None
 
-    if not tile_queue.empty():
+    if tile_count:
         logger.info('Classifying pixels in tilewise')
 
         detector_containers = [
@@ -292,18 +293,21 @@ def locate_synapses_catmaid(
                 (tile_result_queue, input_filepath, autocontext_project_path, skel_output_dir, TILE_SIZE),
                 name='CaretakerProcess{}'.format(idx)
             )
-            for idx in range(THREADS)
+            for idx in range(min(THREADS, tile_count))
         ]
 
-        total_tiles = tile_queue.qsize()
-        logger.debug('{} tiles queued'.format(total_tiles))
+        logger.debug('{} tiles queued'.format(tile_count))
 
-        log_timestamp('started synapse detection ({} tiles, 512x512 each, {} threads)'.format(total_tiles, THREADS))
+        log_timestamp('started synapse detection ({} tiles, 512x512 each, {} threads)'.format(tile_count, THREADS))
+
+        while tile_queue.qsize() < min(THREADS, tile_count):
+            logger.debug('Waiting for tile queue to populate...')
+            time.sleep(1)
 
         for detector_container in detector_containers:
             detector_container.start()
 
-        commit_tilewise_results_from_queue(tile_result_queue, HDF5_PATH, total_tiles, TILE_SIZE, workflow_id)
+        commit_tilewise_results_from_queue(tile_result_queue, HDF5_PATH, tile_count, TILE_SIZE, workflow_id)
 
         for detector_container in detector_containers:
             detector_container.join()
@@ -319,13 +323,15 @@ def locate_synapses_catmaid(
     associated_treenodes = {int(pair[0]) for pair in treenode_slice_mappings}
 
     node_queue, node_result_queue = mp.Queue(), mp.Queue()
+    node_count = 0
     for node_info in node_infos:
         if int(node_info.id) not in associated_treenodes:
             node_queue.put(NeuronSegmenterInput(node_info, roi_radius_px))
+            node_count += 1
 
     log_timestamp('finished getting nodes')
 
-    if not node_queue.empty():
+    if node_count:
         logger.info('Segmenting node windows')
 
         neuron_seg_containers = [
@@ -334,19 +340,21 @@ def locate_synapses_catmaid(
                 (node_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir),
                 name='CaretakerProcess{}'.format(idx)
             )
-            for idx in range(THREADS)
+            for idx in range(min(THREADS, node_count))
             # for _ in range(1)
         ]
 
-        total_nodes = node_queue.qsize()
+        log_timestamp('started segmenting neurons ({} nodes, {} threads)'.format(node_count, THREADS))
 
-        log_timestamp('started segmenting neurons ({} nodes, {} threads)'.format(total_nodes, THREADS))
+        while node_queue.qsize() < min(THREADS, node_count):
+            logger.debug('Waiting for node queue to populate...')
+            time.sleep(1)
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.start()
             assert neuron_seg_container.is_alive()
 
-        commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id)
+        commit_node_association_results_from_queue(node_result_queue, node_count, project_workflow_id)
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.join()
