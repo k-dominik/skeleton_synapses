@@ -1,31 +1,32 @@
 from __future__ import division
 import h5py
 from matplotlib import pyplot as plt
-import numpy as np
-from tqdm import tqdm
 
 from catpy import CatmaidClient, CoordinateTransformer
 
 
 PATH = '../projects-2017/L1-CNS/tilewise_image_store.hdf5'
-INNER_PATH = 'volume'
+SLICE_PATH = 'slice_labels'
+PIXEL_PATH = 'pixel_predictions'
 
 
-def get_roi(path, inner_path, z_slice, y_bounds, x_bounds):
+def get_roi(path, z_slice, y_bounds, x_bounds):
     with h5py.File(path) as f:
-        vol = f[inner_path]
-        roi_yx = np.array(vol[z_slice, y_bounds[0]:y_bounds[1], x_bounds[0]:x_bounds[1]]).T
+        px_vol = f[PIXEL_PATH]
+        pixel_data_xyc = px_vol[z_slice, y_bounds[0]:y_bounds[1], x_bounds[0]:x_bounds[1], :].transpose((1, 0, 2))
+        sl_vol = f[SLICE_PATH]
+        slice_data_xy = sl_vol[z_slice, y_bounds[0]:y_bounds[1], x_bounds[0]:x_bounds[1]].T
 
-    return roi_yx
+    return pixel_data_xyc, slice_data_xy
 
 
 def plot_roi(z_slice, y_bounds, x_bounds):
-    data = get_roi(PATH, INNER_PATH, z_slice, y_bounds, x_bounds)
+    pixel_data_xyc, slice_data_xy = get_roi(PATH, z_slice, y_bounds, x_bounds)
 
-    f, ax = plt.subplots()
-
-    ax.imshow(data.T)
-    return data
+    f, (px_ax, sl_ax) = plt.subplots(1, 2)
+    px_ax.imshow(pixel_data_xyc.transpose((1, 0, 2)))
+    sl_ax.imshow(slice_data_xy.T)
+    return pixel_data_xyc, slice_data_xy
 
 
 def point2roi(zyx_px, mode='topleft', side=512):
@@ -53,20 +54,5 @@ def plot_near_node(node_id, cred_path=None):
     return plot_near_point([int(coords[dim]) for dim in 'zyx'], mode='middle')
 
 
-def check_hdf5(path=PATH, inner_path=INNER_PATH):
-    z_sums = []
-    with h5py.File(path) as f:
-        dset = f[inner_path]
-        for z_idx in tqdm(range(dset.shape[0])):
-            z_sums.append(0)
-            for y_idx in tqdm(range(dset.shape[1])):
-                z_sums[-1] += dset[z_idx, y_idx, :].sum()
-
-    fig, ax = plt.subplots()
-
-    ax.plot(z_sums)
-    plt.show()
-
-
 if __name__ == '__main__':
-    check_hdf5()
+    plot_near_point((582, 7413, 9485), mode='middle')
