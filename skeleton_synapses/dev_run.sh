@@ -7,7 +7,7 @@ cred_path="credentials_dev.json"
 stack_id=1
 #skel_id=18531745  # single-node skeleton on de moivre tile [9485, 7413, 582] on CLB's local instance
 # skel_id=18531735  # small test skeleton only on CLB's local instance
- skel_id=11524047 # real skeleton
+skel_id=11524047 # real skeleton
 force=1
 
 timestamp=$(date +"%Y-%m-%d_%H:%M:%S")
