@@ -567,13 +567,13 @@ def coords_to_polygon_wkt_str(x_coords, y_coords):
     return 'POLYGON(({}))'.format(coords_str)
 
 
-def simplify_image(array, x_offset, y_offset):
+def simplify_image(array_xy, x_offset, y_offset):
     """
     Return wkt polygon string of binary image
 
     Parameters
     ----------
-    array
+    array_xy
     x_offset
     y_offset
 
@@ -581,8 +581,8 @@ def simplify_image(array, x_offset, y_offset):
     -------
     str
     """
-    outline_coords_yx = find_contours(array, 0.5)[0]
-    return coords_to_polygon_wkt_str(outline_coords_yx[:, 1] + x_offset, outline_coords_yx[:, 0] + y_offset)
+    outline_coords_xy = find_contours(array_xy, 0.5)[0]
+    return coords_to_polygon_wkt_str(outline_coords_xy[:, 0] + x_offset, outline_coords_xy[:, 1] + y_offset)
 
 
 def commit_tilewise_results_from_queue(
@@ -618,12 +618,12 @@ def commit_tilewise_results_from_queue(
 
                 logger.debug('%sProcessing slice label'.format(local_label), slice_prefix)
 
-                binary_arr = synapse_cc_xy == local_label
+                binary_arr_xy = synapse_cc_xy == local_label
 
-                syn_pixel_coords = np.where(binary_arr)
-                size_px = len(syn_pixel_coords[0])
-                y_centroid_px = np.average(syn_pixel_coords[0]) + bounds_xyz[0, 1]
-                x_centroid_px = np.average(syn_pixel_coords[1]) + bounds_xyz[0, 0]
+                syn_pixel_coords_xy = np.where(binary_arr_xy)
+                size_px = len(syn_pixel_coords_xy[0])
+                y_centroid_px = np.average(syn_pixel_coords_xy[1]) + bounds_xyz[0, 1]
+                x_centroid_px = np.average(syn_pixel_coords_xy[0]) + bounds_xyz[0, 0]
 
                 # Determine average uncertainty
                 # Get probabilities for this synapse's pixels
@@ -635,7 +635,7 @@ def commit_tilewise_results_from_queue(
                 avg_certainty = np.mean(certainties)
                 uncertainty = 1.0 - avg_certainty
 
-                wkt_str = simplify_image(binary_arr, bounds_xyz[0, 0], bounds_xyz[0, 1])
+                wkt_str = simplify_image(binary_arr_xy, bounds_xyz[0, 0], bounds_xyz[0, 1])
 
                 synapse_slices.append({
                     'id': int(local_label),
