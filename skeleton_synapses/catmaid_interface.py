@@ -336,3 +336,8 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
             params['project_workflow_id'] = project_workflow_id
 
         return self.get(('synapsesuggestor/treenode-association', self.project_id, 'get'), params)
+
+    def get_synapse_bounds(self, synapse_ids, z_padding=1, xy_padding=10):
+        params = {'synapse_object_ids': list(synapse_ids), 'z_padding': int(z_padding), 'xy_padding': int(xy_padding)}
+
+        return self.get('synapsesuggestor/analysis/synapse-extents', params)
