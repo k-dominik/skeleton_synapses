@@ -1,0 +1,105 @@
+import os
+import shutil
+import re
+
+import h5py
+
+ILP_PATH = 'full-vol-autocontext.ilp'
+
+inner_roots = ['PixelClassification', 'PixelClassification01']
+inner_leaf = '/Bookmarks/0000'
+
+entry_form = '''I{z_px}
+I{y_px}
+I{x_px}
+tp{idx}
+S'{label}'
+p{idx_plus_one}
+tp{idx_plus_two}
+a'''
+
+entry_re = re.compile(
+    entry_form.format(
+        z_px='(?P<z_px>\d+)', y_px='(?P<y_px>\d+)', x_px='(?P<x_px>\d+)',
+        idx='(?P<idx1>\d+)', idx_plus_one='(?P<idx2>\d+)', idx_plus_two='(?P<idx3>\d+)',
+        label='(?P<label>.*)',
+    ), re.MULTILINE
+)
+
+prefix = '''(lp1
+(('''
+
+suffix = '.'
+
+
+class Bookmark(object):
+    def __init__(self, x_px=0, y_px=0, z_px=0, label=''):
+        self.x_px = x_px
+        self.y_px = y_px
+        self.z_px = z_px
+        self.label = label
+
+    @classmethod
+    def from_str(cls, s):
+        """Convert a string with no prefix or suffix into a Bookmark object"""
+        d = entry_re.search(s).groupdict()
+        return cls(int(d['x_px']), int(d['y_px']), int(d['z_px']), d['label'])
+
+    def to_str(self, current_max=1, with_fixes=False):
+        """Convert a Bookmark object into a string for use in an ILP file"""
+        middle = entry_form.format(
+            z_px=self.z_px, y_px=self.y_px, x_px=self.x_px,
+            idx=current_max + 1, idx_plus_one=current_max + 2, idx_plus_two=current_max + 3,
+            label=self.label
+        )
+
+        if with_fixes:
+            return prefix + middle + suffix
+        else:
+            return middle
+
+    @classmethod
+    def deserialise(cls, s):
+        """Convert a string from an ILP file into a list of Bookmark objects"""
+        trimmed = s.lstrip(prefix).rstrip(suffix)
+        return [Bookmark.from_str(item) for item in trimmed.split('((')]
+
+    @staticmethod
+    def serialise(*bookmarks):
+        """Convert a list of Bookmark objects into a string to be inserted into an ILP file"""
+        items = []
+        current_max = 1
+        for bookmark in bookmarks:
+            items.append(bookmark.to_str(current_max))
+            current_max += 3
+
+        return prefix + '(('.join(items) + suffix
+
+    def __repr__(self):
+        return 'Bookmark(x_px={x_px}, y_px={y_px}, z_px={z_px}, label="{label}")'.format(**self.__dict__)
+
+
+def read_bookmarks(path, lane):
+    """Read bookmarks directly from an ILP file"""
+    assert lane in (0, 1)
+    with h5py.File(path, 'r') as f:
+        bookmark_str = f[inner_roots[lane] + inner_leaf].value
+
+    return Bookmark.deserialise(bookmark_str)
+
+
+def write_bookmarks(path, lane, *bookmarks):
+    """Write bookmarks directly to an ILP file"""
+    assert lane in (0, 1)
+    bookmark_str = Bookmark.serialise(*bookmarks)
+    with h5py.File(path) as f:
+        inner_path = inner_roots[lane] + inner_leaf
+        del f[inner_path]
+        f.create_dataset(inner_path, data=bookmark_str)
+
+
+def append_bookmarks(path, lane, *bookmarks):
+    """Append bookmarks to an existing ILP file"""
+    old_bookmarks = read_bookmarks(path, lane)
+    all_bookmarks = old_bookmarks + bookmarks
+    write_bookmarks(path, lane, *all_bookmarks)
