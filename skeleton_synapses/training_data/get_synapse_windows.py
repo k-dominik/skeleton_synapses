@@ -5,8 +5,13 @@ import sys
 import random
 from datetime import datetime, timedelta
 import json
-from skeleton_synapses.catmaid_interface import CatmaidAPI
-from tqdm import tqdm
+from catpy import CatmaidClient
+from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
 
 TIME_WINDOW_YEARS = 3
 DEFAULT_SAMPLE_SIZE = 10
@@ -22,9 +27,9 @@ def copy_dict(d):
 
 def get_exemplar_synapses(credentials_path, sample_size=DEFAULT_SAMPLE_SIZE, output_path=None):
     """
-    Randomly sample connectors recently annotated by trusted experts and construct a padded bounding box of the 
+    Randomly sample connectors recently annotated by trusted experts and construct a padded bounding box of the
     connector and its associated treenodes. Separate these boxes into slices to be passed to Ilastik as bookmarks.
-    
+
     Parameters
     ----------
     credentials_path : str
@@ -38,11 +43,11 @@ def get_exemplar_synapses(credentials_path, sample_size=DEFAULT_SAMPLE_SIZE, out
     -------
     dict
         {
-            f'connector{conn_id}_{slice_idx}': [[xmin, ymin, zmin], [zmax, ymax, zmax]], 
+            f'connector{conn_id}_{slice_idx}': [[xmin, ymin, zmin], [zmax, ymax, zmax]],
             ...
         }
     """
-    catmaid = CatmaidAPI.from_json(credentials_path)
+    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path))
 
     responses = []
     date_to = datetime.now()
