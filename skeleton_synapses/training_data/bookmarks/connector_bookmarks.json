@@ -1,0 +1,1202 @@
+[
+  {
+    "label": "Synapse #0 (connector 5015525)", 
+    "x_px": 6088, 
+    "y_px": 10243, 
+    "z_px": 609
+  }, 
+  {
+    "label": "Synapse #1 (connector 21654660)", 
+    "x_px": 10043, 
+    "y_px": 9482, 
+    "z_px": 649
+  }, 
+  {
+    "label": "Synapse #2 (connector 18998123)", 
+    "x_px": 16015, 
+    "y_px": 7465, 
+    "z_px": 911
+  }, 
+  {
+    "label": "Synapse #3 (connector 22024119)", 
+    "x_px": 11195, 
+    "y_px": 7522, 
+    "z_px": 766
+  }, 
+  {
+    "label": "Synapse #4 (connector 18287253)", 
+    "x_px": 10686, 
+    "y_px": 19757, 
+    "z_px": 1402
+  }, 
+  {
+    "label": "Synapse #5 (connector 20486106)", 
+    "x_px": 17156, 
+    "y_px": 22399, 
+    "z_px": 1484
+  }, 
+  {
+    "label": "Synapse #6 (connector 7620080)", 
+    "x_px": 17532, 
+    "y_px": 22792, 
+    "z_px": 2151
+  }, 
+  {
+    "label": "Synapse #7 (connector 18927609)", 
+    "x_px": 18881, 
+    "y_px": 19748, 
+    "z_px": 2313
+  }, 
+  {
+    "label": "Synapse #8 (connector 19015327)", 
+    "x_px": 11975, 
+    "y_px": 21071, 
+    "z_px": 2843
+  }, 
+  {
+    "label": "Synapse #9 (connector 18152100)", 
+    "x_px": 14827, 
+    "y_px": 20583, 
+    "z_px": 1956
+  }, 
+  {
+    "label": "Synapse #10 (connector 22476334)", 
+    "x_px": 7085, 
+    "y_px": 9621, 
+    "z_px": 638
+  }, 
+  {
+    "label": "Synapse #11 (connector 19032587)", 
+    "x_px": 5523, 
+    "y_px": 11915, 
+    "z_px": 921
+  }, 
+  {
+    "label": "Synapse #12 (connector 18364650)", 
+    "x_px": 10233, 
+    "y_px": 9861, 
+    "z_px": 489
+  }, 
+  {
+    "label": "Synapse #13 (connector 23741697)", 
+    "x_px": 14844, 
+    "y_px": 20596, 
+    "z_px": 4216
+  }, 
+  {
+    "label": "Synapse #14 (connector 22435905)", 
+    "x_px": 12919, 
+    "y_px": 21511, 
+    "z_px": 2691
+  }, 
+  {
+    "label": "Synapse #15 (connector 21998636)", 
+    "x_px": 4742, 
+    "y_px": 10386, 
+    "z_px": 1029
+  }, 
+  {
+    "label": "Synapse #16 (connector 21429018)", 
+    "x_px": 18455, 
+    "y_px": 22721, 
+    "z_px": 1083
+  }, 
+  {
+    "label": "Synapse #17 (connector 14234923)", 
+    "x_px": 10543, 
+    "y_px": 23599, 
+    "z_px": 4054
+  }, 
+  {
+    "label": "Synapse #18 (connector 21183313)", 
+    "x_px": 8989, 
+    "y_px": 13218, 
+    "z_px": 1118
+  }, 
+  {
+    "label": "Synapse #19 (connector 22046920)", 
+    "x_px": 11399, 
+    "y_px": 21655, 
+    "z_px": 1646
+  }, 
+  {
+    "label": "Synapse #20 (connector 20023917)", 
+    "x_px": 5409, 
+    "y_px": 10303, 
+    "z_px": 954
+  }, 
+  {
+    "label": "Synapse #21 (connector 21719901)", 
+    "x_px": 8437, 
+    "y_px": 10994, 
+    "z_px": 1016
+  }, 
+  {
+    "label": "Synapse #22 (connector 15181043)", 
+    "x_px": 7548, 
+    "y_px": 12108, 
+    "z_px": 636
+  }, 
+  {
+    "label": "Synapse #23 (connector 20207999)", 
+    "x_px": 11794, 
+    "y_px": 22109, 
+    "z_px": 1968
+  }, 
+  {
+    "label": "Synapse #24 (connector 17388089)", 
+    "x_px": 21844, 
+    "y_px": 7669, 
+    "z_px": 1071
+  }, 
+  {
+    "label": "Synapse #25 (connector 18936388)", 
+    "x_px": 7075, 
+    "y_px": 13427, 
+    "z_px": 1044
+  }, 
+  {
+    "label": "Synapse #26 (connector 284343)", 
+    "x_px": 19762, 
+    "y_px": 19772, 
+    "z_px": 2233
+  }, 
+  {
+    "label": "Synapse #27 (connector 18172898)", 
+    "x_px": 15523, 
+    "y_px": 17660, 
+    "z_px": 1099
+  }, 
+  {
+    "label": "Synapse #28 (connector 22065941)", 
+    "x_px": 22545, 
+    "y_px": 7748, 
+    "z_px": 1086
+  }, 
+  {
+    "label": "Synapse #29 (connector 21843835)", 
+    "x_px": 9924, 
+    "y_px": 12037, 
+    "z_px": 1068
+  }, 
+  {
+    "label": "Synapse #30 (connector 6599068)", 
+    "x_px": 18852, 
+    "y_px": 5596, 
+    "z_px": 751
+  }, 
+  {
+    "label": "Synapse #31 (connector 21597329)", 
+    "x_px": 8508, 
+    "y_px": 16902, 
+    "z_px": 973
+  }, 
+  {
+    "label": "Synapse #32 (connector 21874968)", 
+    "x_px": 14329, 
+    "y_px": 19186, 
+    "z_px": 3140
+  }, 
+  {
+    "label": "Synapse #33 (connector 18262738)", 
+    "x_px": 9041, 
+    "y_px": 13705, 
+    "z_px": 1054
+  }, 
+  {
+    "label": "Synapse #34 (connector 23398108)", 
+    "x_px": 16394, 
+    "y_px": 17642, 
+    "z_px": 1413
+  }, 
+  {
+    "label": "Synapse #35 (connector 22869142)", 
+    "x_px": 19700, 
+    "y_px": 11919, 
+    "z_px": 764
+  }, 
+  {
+    "label": "Synapse #36 (connector 1505359)", 
+    "x_px": 13501, 
+    "y_px": 22932, 
+    "z_px": 2280
+  }, 
+  {
+    "label": "Synapse #37 (connector 5315156)", 
+    "x_px": 21557, 
+    "y_px": 16255, 
+    "z_px": 706
+  }, 
+  {
+    "label": "Synapse #38 (connector 18941948)", 
+    "x_px": 5843, 
+    "y_px": 9162, 
+    "z_px": 689
+  }, 
+  {
+    "label": "Synapse #39 (connector 18393762)", 
+    "x_px": 11210, 
+    "y_px": 21972, 
+    "z_px": 3326
+  }, 
+  {
+    "label": "Synapse #40 (connector 18955183)", 
+    "x_px": 18790, 
+    "y_px": 7642, 
+    "z_px": 644
+  }, 
+  {
+    "label": "Synapse #41 (connector 19564598)", 
+    "x_px": 15588, 
+    "y_px": 23592, 
+    "z_px": 1947
+  }, 
+  {
+    "label": "Synapse #42 (connector 23397631)", 
+    "x_px": 15715, 
+    "y_px": 11088, 
+    "z_px": 802
+  }, 
+  {
+    "label": "Synapse #43 (connector 18929384)", 
+    "x_px": 11437, 
+    "y_px": 18563, 
+    "z_px": 2416
+  }, 
+  {
+    "label": "Synapse #44 (connector 19001044)", 
+    "x_px": 7713, 
+    "y_px": 11335, 
+    "z_px": 749
+  }, 
+  {
+    "label": "Synapse #45 (connector 15964691)", 
+    "x_px": 17226, 
+    "y_px": 10816, 
+    "z_px": 896
+  }, 
+  {
+    "label": "Synapse #46 (connector 21013978)", 
+    "x_px": 19399, 
+    "y_px": 20051, 
+    "z_px": 1925
+  }, 
+  {
+    "label": "Synapse #47 (connector 11767937)", 
+    "x_px": 8975, 
+    "y_px": 7364, 
+    "z_px": 580
+  }, 
+  {
+    "label": "Synapse #48 (connector 14705595)", 
+    "x_px": 19283, 
+    "y_px": 22208, 
+    "z_px": 2411
+  }, 
+  {
+    "label": "Synapse #49 (connector 21548980)", 
+    "x_px": 21207, 
+    "y_px": 6916, 
+    "z_px": 669
+  }, 
+  {
+    "label": "Synapse #50 (connector 19086838)", 
+    "x_px": 13186, 
+    "y_px": 22297, 
+    "z_px": 2616
+  }, 
+  {
+    "label": "Synapse #51 (connector 18351090)", 
+    "x_px": 16321, 
+    "y_px": 21585, 
+    "z_px": 2773
+  }, 
+  {
+    "label": "Synapse #52 (connector 20479598)", 
+    "x_px": 12170, 
+    "y_px": 21660, 
+    "z_px": 3612
+  }, 
+  {
+    "label": "Synapse #53 (connector 18884085)", 
+    "x_px": 5413, 
+    "y_px": 9843, 
+    "z_px": 810
+  }, 
+  {
+    "label": "Synapse #54 (connector 22013034)", 
+    "x_px": 16612, 
+    "y_px": 8298, 
+    "z_px": 931
+  }, 
+  {
+    "label": "Synapse #55 (connector 20053654)", 
+    "x_px": 22912, 
+    "y_px": 12291, 
+    "z_px": 1164
+  }, 
+  {
+    "label": "Synapse #56 (connector 18830763)", 
+    "x_px": 6045, 
+    "y_px": 11417, 
+    "z_px": 727
+  }, 
+  {
+    "label": "Synapse #57 (connector 22094630)", 
+    "x_px": 19222, 
+    "y_px": 7552, 
+    "z_px": 700
+  }, 
+  {
+    "label": "Synapse #58 (connector 6805961)", 
+    "x_px": 16971, 
+    "y_px": 19658, 
+    "z_px": 2181
+  }, 
+  {
+    "label": "Synapse #59 (connector 22025770)", 
+    "x_px": 10788, 
+    "y_px": 8940, 
+    "z_px": 1050
+  }, 
+  {
+    "label": "Synapse #60 (connector 22035106)", 
+    "x_px": 12097, 
+    "y_px": 23267, 
+    "z_px": 2001
+  }, 
+  {
+    "label": "Synapse #61 (connector 18348756)", 
+    "x_px": 10553, 
+    "y_px": 23732, 
+    "z_px": 1463
+  }, 
+  {
+    "label": "Synapse #62 (connector 23879401)", 
+    "x_px": 8723, 
+    "y_px": 10182, 
+    "z_px": 972
+  }, 
+  {
+    "label": "Synapse #63 (connector 17242981)", 
+    "x_px": 20341, 
+    "y_px": 13553, 
+    "z_px": 746
+  }, 
+  {
+    "label": "Synapse #64 (connector 18846151)", 
+    "x_px": 8020, 
+    "y_px": 11646, 
+    "z_px": 809
+  }, 
+  {
+    "label": "Synapse #65 (connector 15581921)", 
+    "x_px": 11509, 
+    "y_px": 21937, 
+    "z_px": 2130
+  }, 
+  {
+    "label": "Synapse #66 (connector 11342487)", 
+    "x_px": 4091, 
+    "y_px": 9648, 
+    "z_px": 1298
+  }, 
+  {
+    "label": "Synapse #67 (connector 5524984)", 
+    "x_px": 17112, 
+    "y_px": 7260, 
+    "z_px": 701
+  }, 
+  {
+    "label": "Synapse #68 (connector 18881683)", 
+    "x_px": 24217, 
+    "y_px": 12674, 
+    "z_px": 1391
+  }, 
+  {
+    "label": "Synapse #69 (connector 19057218)", 
+    "x_px": 7637, 
+    "y_px": 6574, 
+    "z_px": 649
+  }, 
+  {
+    "label": "Synapse #70 (connector 20673402)", 
+    "x_px": 20384, 
+    "y_px": 11141, 
+    "z_px": 685
+  }, 
+  {
+    "label": "Synapse #71 (connector 7592721)", 
+    "x_px": 17670, 
+    "y_px": 22262, 
+    "z_px": 2643
+  }, 
+  {
+    "label": "Synapse #72 (connector 14810976)", 
+    "x_px": 14925, 
+    "y_px": 19150, 
+    "z_px": 1089
+  }, 
+  {
+    "label": "Synapse #73 (connector 18194271)", 
+    "x_px": 17343, 
+    "y_px": 22485, 
+    "z_px": 2672
+  }, 
+  {
+    "label": "Synapse #74 (connector 18680901)", 
+    "x_px": 19342, 
+    "y_px": 8486, 
+    "z_px": 1115
+  }, 
+  {
+    "label": "Synapse #75 (connector 12686134)", 
+    "x_px": 15620, 
+    "y_px": 23631, 
+    "z_px": 2262
+  }, 
+  {
+    "label": "Synapse #76 (connector 20854844)", 
+    "x_px": 19212, 
+    "y_px": 6905, 
+    "z_px": 636
+  }, 
+  {
+    "label": "Synapse #77 (connector 18343725)", 
+    "x_px": 16998, 
+    "y_px": 22838, 
+    "z_px": 1983
+  }, 
+  {
+    "label": "Synapse #78 (connector 19067999)", 
+    "x_px": 7431, 
+    "y_px": 7479, 
+    "z_px": 684
+  }, 
+  {
+    "label": "Synapse #79 (connector 7392817)", 
+    "x_px": 7060, 
+    "y_px": 13824, 
+    "z_px": 1017
+  }, 
+  {
+    "label": "Synapse #80 (connector 22304857)", 
+    "x_px": 16375, 
+    "y_px": 9329, 
+    "z_px": 967
+  }, 
+  {
+    "label": "Synapse #81 (connector 14820684)", 
+    "x_px": 16055, 
+    "y_px": 23523, 
+    "z_px": 2436
+  }, 
+  {
+    "label": "Synapse #82 (connector 14747795)", 
+    "x_px": 16217, 
+    "y_px": 23434, 
+    "z_px": 2285
+  }, 
+  {
+    "label": "Synapse #83 (connector 9870152)", 
+    "x_px": 23599, 
+    "y_px": 11912, 
+    "z_px": 1354
+  }, 
+  {
+    "label": "Synapse #84 (connector 9092080)", 
+    "x_px": 19782, 
+    "y_px": 5967, 
+    "z_px": 970
+  }, 
+  {
+    "label": "Synapse #85 (connector 18262760)", 
+    "x_px": 9211, 
+    "y_px": 14011, 
+    "z_px": 1071
+  }, 
+  {
+    "label": "Synapse #86 (connector 18188809)", 
+    "x_px": 13501, 
+    "y_px": 22867, 
+    "z_px": 1408
+  }, 
+  {
+    "label": "Synapse #87 (connector 22235877)", 
+    "x_px": 15902, 
+    "y_px": 21883, 
+    "z_px": 2562
+  }, 
+  {
+    "label": "Synapse #88 (connector 10542347)", 
+    "x_px": 10571, 
+    "y_px": 6698, 
+    "z_px": 774
+  }, 
+  {
+    "label": "Synapse #89 (connector 21618480)", 
+    "x_px": 17118, 
+    "y_px": 10899, 
+    "z_px": 771
+  }, 
+  {
+    "label": "Synapse #90 (connector 19041631)", 
+    "x_px": 6002, 
+    "y_px": 11734, 
+    "z_px": 850
+  }, 
+  {
+    "label": "Synapse #91 (connector 18810342)", 
+    "x_px": 24465, 
+    "y_px": 12128, 
+    "z_px": 958
+  }, 
+  {
+    "label": "Synapse #92 (connector 16964740)", 
+    "x_px": 7525, 
+    "y_px": 8781, 
+    "z_px": 487
+  }, 
+  {
+    "label": "Synapse #93 (connector 17265132)", 
+    "x_px": 16536, 
+    "y_px": 20876, 
+    "z_px": 1665
+  }, 
+  {
+    "label": "Synapse #94 (connector 22200874)", 
+    "x_px": 10143, 
+    "y_px": 8359, 
+    "z_px": 700
+  }, 
+  {
+    "label": "Synapse #95 (connector 18902624)", 
+    "x_px": 22055, 
+    "y_px": 11952, 
+    "z_px": 1134
+  }, 
+  {
+    "label": "Synapse #96 (connector 9481189)", 
+    "x_px": 21675, 
+    "y_px": 5868, 
+    "z_px": 1163
+  }, 
+  {
+    "label": "Synapse #97 (connector 19039037)", 
+    "x_px": 6604, 
+    "y_px": 10819, 
+    "z_px": 617
+  }, 
+  {
+    "label": "Synapse #98 (connector 8828861)", 
+    "x_px": 13525, 
+    "y_px": 20596, 
+    "z_px": 1923
+  }, 
+  {
+    "label": "Synapse #99 (connector 23859269)", 
+    "x_px": 18932, 
+    "y_px": 8453, 
+    "z_px": 652
+  }, 
+  {
+    "label": "Synapse #100 (connector 15728027)", 
+    "x_px": 12339, 
+    "y_px": 21317, 
+    "z_px": 2123
+  }, 
+  {
+    "label": "Synapse #101 (connector 9275571)", 
+    "x_px": 5743, 
+    "y_px": 4881, 
+    "z_px": 944
+  }, 
+  {
+    "label": "Synapse #102 (connector 17908044)", 
+    "x_px": 19537, 
+    "y_px": 12323, 
+    "z_px": 758
+  }, 
+  {
+    "label": "Synapse #103 (connector 18170091)", 
+    "x_px": 14897, 
+    "y_px": 24423, 
+    "z_px": 3768
+  }, 
+  {
+    "label": "Synapse #104 (connector 16891834)", 
+    "x_px": 20585, 
+    "y_px": 13291, 
+    "z_px": 736
+  }, 
+  {
+    "label": "Synapse #105 (connector 18955039)", 
+    "x_px": 18349, 
+    "y_px": 7918, 
+    "z_px": 528
+  }, 
+  {
+    "label": "Synapse #106 (connector 17887101)", 
+    "x_px": 11244, 
+    "y_px": 21837, 
+    "z_px": 2391
+  }, 
+  {
+    "label": "Synapse #107 (connector 7717856)", 
+    "x_px": 11948, 
+    "y_px": 22729, 
+    "z_px": 2077
+  }, 
+  {
+    "label": "Synapse #108 (connector 21599761)", 
+    "x_px": 19022, 
+    "y_px": 20858, 
+    "z_px": 1186
+  }, 
+  {
+    "label": "Synapse #109 (connector 18983089)", 
+    "x_px": 19047, 
+    "y_px": 11379, 
+    "z_px": 805
+  }, 
+  {
+    "label": "Synapse #110 (connector 18997978)", 
+    "x_px": 12323, 
+    "y_px": 22020, 
+    "z_px": 1718
+  }, 
+  {
+    "label": "Synapse #111 (connector 22020685)", 
+    "x_px": 9736, 
+    "y_px": 11208, 
+    "z_px": 1063
+  }, 
+  {
+    "label": "Synapse #112 (connector 4699151)", 
+    "x_px": 7438, 
+    "y_px": 15268, 
+    "z_px": 719
+  }, 
+  {
+    "label": "Synapse #113 (connector 11563333)", 
+    "x_px": 8716, 
+    "y_px": 10050, 
+    "z_px": 736
+  }, 
+  {
+    "label": "Synapse #114 (connector 15548291)", 
+    "x_px": 21029, 
+    "y_px": 10690, 
+    "z_px": 624
+  }, 
+  {
+    "label": "Synapse #115 (connector 17910931)", 
+    "x_px": 7557, 
+    "y_px": 8243, 
+    "z_px": 585
+  }, 
+  {
+    "label": "Synapse #116 (connector 21589324)", 
+    "x_px": 10205, 
+    "y_px": 16963, 
+    "z_px": 968
+  }, 
+  {
+    "label": "Synapse #117 (connector 19052379)", 
+    "x_px": 5290, 
+    "y_px": 10570, 
+    "z_px": 934
+  }, 
+  {
+    "label": "Synapse #118 (connector 21142205)", 
+    "x_px": 19280, 
+    "y_px": 9028, 
+    "z_px": 672
+  }, 
+  {
+    "label": "Synapse #119 (connector 3770613)", 
+    "x_px": 15377, 
+    "y_px": 20949, 
+    "z_px": 2162
+  }, 
+  {
+    "label": "Synapse #120 (connector 18295919)", 
+    "x_px": 9865, 
+    "y_px": 10097, 
+    "z_px": 494
+  }, 
+  {
+    "label": "Synapse #121 (connector 20941042)", 
+    "x_px": 19777, 
+    "y_px": 13359, 
+    "z_px": 980
+  }, 
+  {
+    "label": "Synapse #122 (connector 21599596)", 
+    "x_px": 18834, 
+    "y_px": 20928, 
+    "z_px": 1153
+  }, 
+  {
+    "label": "Synapse #123 (connector 22755358)", 
+    "x_px": 10862, 
+    "y_px": 18821, 
+    "z_px": 1494
+  }, 
+  {
+    "label": "Synapse #124 (connector 11572364)", 
+    "x_px": 6821, 
+    "y_px": 5569, 
+    "z_px": 851
+  }, 
+  {
+    "label": "Synapse #125 (connector 21288508)", 
+    "x_px": 11409, 
+    "y_px": 22283, 
+    "z_px": 2136
+  }, 
+  {
+    "label": "Synapse #126 (connector 20855004)", 
+    "x_px": 20323, 
+    "y_px": 8225, 
+    "z_px": 700
+  }, 
+  {
+    "label": "Synapse #127 (connector 14980163)", 
+    "x_px": 16576, 
+    "y_px": 23986, 
+    "z_px": 2307
+  }, 
+  {
+    "label": "Synapse #128 (connector 19062141)", 
+    "x_px": 12688, 
+    "y_px": 21928, 
+    "z_px": 2246
+  }, 
+  {
+    "label": "Synapse #129 (connector 6529811)", 
+    "x_px": 20297, 
+    "y_px": 21568, 
+    "z_px": 2422
+  }, 
+  {
+    "label": "Synapse #130 (connector 18927569)", 
+    "x_px": 8369, 
+    "y_px": 15742, 
+    "z_px": 1061
+  }, 
+  {
+    "label": "Synapse #131 (connector 10793458)", 
+    "x_px": 11699, 
+    "y_px": 21957, 
+    "z_px": 2209
+  }, 
+  {
+    "label": "Synapse #132 (connector 21979500)", 
+    "x_px": 14927, 
+    "y_px": 23804, 
+    "z_px": 2040
+  }, 
+  {
+    "label": "Synapse #133 (connector 22144711)", 
+    "x_px": 15724, 
+    "y_px": 7644, 
+    "z_px": 822
+  }, 
+  {
+    "label": "Synapse #134 (connector 16180814)", 
+    "x_px": 11395, 
+    "y_px": 7151, 
+    "z_px": 774
+  }, 
+  {
+    "label": "Synapse #135 (connector 20639829)", 
+    "x_px": 9732, 
+    "y_px": 10795, 
+    "z_px": 1046
+  }, 
+  {
+    "label": "Synapse #136 (connector 10823818)", 
+    "x_px": 20715, 
+    "y_px": 13386, 
+    "z_px": 688
+  }, 
+  {
+    "label": "Synapse #137 (connector 4196369)", 
+    "x_px": 16089, 
+    "y_px": 22226, 
+    "z_px": 2451
+  }, 
+  {
+    "label": "Synapse #138 (connector 19982893)", 
+    "x_px": 4849, 
+    "y_px": 8688, 
+    "z_px": 726
+  }, 
+  {
+    "label": "Synapse #139 (connector 6624577)", 
+    "x_px": 20709, 
+    "y_px": 11245, 
+    "z_px": 1053
+  }, 
+  {
+    "label": "Synapse #140 (connector 23397541)", 
+    "x_px": 15623, 
+    "y_px": 9484, 
+    "z_px": 687
+  }, 
+  {
+    "label": "Synapse #141 (connector 18907439)", 
+    "x_px": 22459, 
+    "y_px": 13529, 
+    "z_px": 1049
+  }, 
+  {
+    "label": "Synapse #142 (connector 483480)", 
+    "x_px": 17622, 
+    "y_px": 22275, 
+    "z_px": 2628
+  }, 
+  {
+    "label": "Synapse #143 (connector 19085176)", 
+    "x_px": 11562, 
+    "y_px": 21732, 
+    "z_px": 2571
+  }, 
+  {
+    "label": "Synapse #144 (connector 19044355)", 
+    "x_px": 19831, 
+    "y_px": 11959, 
+    "z_px": 868
+  }, 
+  {
+    "label": "Synapse #145 (connector 21573550)", 
+    "x_px": 20636, 
+    "y_px": 13238, 
+    "z_px": 799
+  }, 
+  {
+    "label": "Synapse #146 (connector 17907710)", 
+    "x_px": 17002, 
+    "y_px": 22627, 
+    "z_px": 2710
+  }, 
+  {
+    "label": "Synapse #147 (connector 20739782)", 
+    "x_px": 17696, 
+    "y_px": 16973, 
+    "z_px": 1172
+  }, 
+  {
+    "label": "Synapse #148 (connector 18680236)", 
+    "x_px": 11850, 
+    "y_px": 20159, 
+    "z_px": 1858
+  }, 
+  {
+    "label": "Synapse #149 (connector 22699803)", 
+    "x_px": 10326, 
+    "y_px": 8304, 
+    "z_px": 901
+  }, 
+  {
+    "label": "Synapse #150 (connector 22983267)", 
+    "x_px": 9719, 
+    "y_px": 13208, 
+    "z_px": 1113
+  }, 
+  {
+    "label": "Synapse #151 (connector 6102207)", 
+    "x_px": 10891, 
+    "y_px": 6724, 
+    "z_px": 488
+  }, 
+  {
+    "label": "Synapse #152 (connector 11370231)", 
+    "x_px": 10567, 
+    "y_px": 14422, 
+    "z_px": 683
+  }, 
+  {
+    "label": "Synapse #153 (connector 18816962)", 
+    "x_px": 12077, 
+    "y_px": 18664, 
+    "z_px": 2301
+  }, 
+  {
+    "label": "Synapse #154 (connector 22031301)", 
+    "x_px": 12129, 
+    "y_px": 7226, 
+    "z_px": 726
+  }, 
+  {
+    "label": "Synapse #155 (connector 19102989)", 
+    "x_px": 4656, 
+    "y_px": 9816, 
+    "z_px": 874
+  }, 
+  {
+    "label": "Synapse #156 (connector 18920617)", 
+    "x_px": 5047, 
+    "y_px": 11072, 
+    "z_px": 1018
+  }, 
+  {
+    "label": "Synapse #157 (connector 15620071)", 
+    "x_px": 15179, 
+    "y_px": 23569, 
+    "z_px": 2306
+  }, 
+  {
+    "label": "Synapse #158 (connector 22203138)", 
+    "x_px": 11738, 
+    "y_px": 17040, 
+    "z_px": 2784
+  }, 
+  {
+    "label": "Synapse #159 (connector 20074079)", 
+    "x_px": 11886, 
+    "y_px": 7607, 
+    "z_px": 814
+  }, 
+  {
+    "label": "Synapse #160 (connector 20893923)", 
+    "x_px": 23261, 
+    "y_px": 10899, 
+    "z_px": 975
+  }, 
+  {
+    "label": "Synapse #161 (connector 6016882)", 
+    "x_px": 15244, 
+    "y_px": 20997, 
+    "z_px": 2226
+  }, 
+  {
+    "label": "Synapse #162 (connector 4204802)", 
+    "x_px": 16237, 
+    "y_px": 22334, 
+    "z_px": 2326
+  }, 
+  {
+    "label": "Synapse #163 (connector 6750586)", 
+    "x_px": 16482, 
+    "y_px": 22150, 
+    "z_px": 2458
+  }, 
+  {
+    "label": "Synapse #164 (connector 18845564)", 
+    "x_px": 7286, 
+    "y_px": 11687, 
+    "z_px": 577
+  }, 
+  {
+    "label": "Synapse #165 (connector 7656506)", 
+    "x_px": 16056, 
+    "y_px": 21978, 
+    "z_px": 2677
+  }, 
+  {
+    "label": "Synapse #166 (connector 21528581)", 
+    "x_px": 21181, 
+    "y_px": 14922, 
+    "z_px": 883
+  }, 
+  {
+    "label": "Synapse #167 (connector 21769528)", 
+    "x_px": 16768, 
+    "y_px": 23874, 
+    "z_px": 3872
+  }, 
+  {
+    "label": "Synapse #168 (connector 18942005)", 
+    "x_px": 5465, 
+    "y_px": 9133, 
+    "z_px": 702
+  }, 
+  {
+    "label": "Synapse #169 (connector 21527814)", 
+    "x_px": 17156, 
+    "y_px": 13263, 
+    "z_px": 986
+  }, 
+  {
+    "label": "Synapse #170 (connector 15172183)", 
+    "x_px": 5732, 
+    "y_px": 9525, 
+    "z_px": 601
+  }, 
+  {
+    "label": "Synapse #171 (connector 16955018)", 
+    "x_px": 6115, 
+    "y_px": 9365, 
+    "z_px": 649
+  }, 
+  {
+    "label": "Synapse #172 (connector 23397926)", 
+    "x_px": 17275, 
+    "y_px": 14647, 
+    "z_px": 1021
+  }, 
+  {
+    "label": "Synapse #173 (connector 21435886)", 
+    "x_px": 10302, 
+    "y_px": 9612, 
+    "z_px": 655
+  }, 
+  {
+    "label": "Synapse #174 (connector 18980279)", 
+    "x_px": 5259, 
+    "y_px": 8766, 
+    "z_px": 996
+  }, 
+  {
+    "label": "Synapse #175 (connector 20564481)", 
+    "x_px": 18496, 
+    "y_px": 18580, 
+    "z_px": 1232
+  }, 
+  {
+    "label": "Synapse #176 (connector 11720933)", 
+    "x_px": 7394, 
+    "y_px": 13924, 
+    "z_px": 1048
+  }, 
+  {
+    "label": "Synapse #177 (connector 21874927)", 
+    "x_px": 14324, 
+    "y_px": 19124, 
+    "z_px": 2920
+  }, 
+  {
+    "label": "Synapse #178 (connector 10580946)", 
+    "x_px": 11556, 
+    "y_px": 17750, 
+    "z_px": 2155
+  }, 
+  {
+    "label": "Synapse #179 (connector 6601758)", 
+    "x_px": 18916, 
+    "y_px": 6079, 
+    "z_px": 728
+  }, 
+  {
+    "label": "Synapse #180 (connector 20479846)", 
+    "x_px": 17387, 
+    "y_px": 22504, 
+    "z_px": 3688
+  }, 
+  {
+    "label": "Synapse #181 (connector 13361245)", 
+    "x_px": 20102, 
+    "y_px": 19514, 
+    "z_px": 2241
+  }, 
+  {
+    "label": "Synapse #182 (connector 22182701)", 
+    "x_px": 8786, 
+    "y_px": 5978, 
+    "z_px": 935
+  }, 
+  {
+    "label": "Synapse #183 (connector 18841969)", 
+    "x_px": 21345, 
+    "y_px": 11901, 
+    "z_px": 793
+  }, 
+  {
+    "label": "Synapse #184 (connector 20170178)", 
+    "x_px": 11872, 
+    "y_px": 21462, 
+    "z_px": 1466
+  }, 
+  {
+    "label": "Synapse #185 (connector 21880881)", 
+    "x_px": 16014, 
+    "y_px": 19935, 
+    "z_px": 1616
+  }, 
+  {
+    "label": "Synapse #186 (connector 17705749)", 
+    "x_px": 13208, 
+    "y_px": 19901, 
+    "z_px": 2036
+  }, 
+  {
+    "label": "Synapse #187 (connector 22048379)", 
+    "x_px": 12245, 
+    "y_px": 21589, 
+    "z_px": 1531
+  }, 
+  {
+    "label": "Synapse #188 (connector 21702946)", 
+    "x_px": 18519, 
+    "y_px": 16169, 
+    "z_px": 1156
+  }, 
+  {
+    "label": "Synapse #189 (connector 20170524)", 
+    "x_px": 12064, 
+    "y_px": 21477, 
+    "z_px": 1431
+  }, 
+  {
+    "label": "Synapse #190 (connector 12683359)", 
+    "x_px": 13132, 
+    "y_px": 16796, 
+    "z_px": 1071
+  }, 
+  {
+    "label": "Synapse #191 (connector 23884564)", 
+    "x_px": 15804, 
+    "y_px": 23515, 
+    "z_px": 3934
+  }, 
+  {
+    "label": "Synapse #192 (connector 21582456)", 
+    "x_px": 10359, 
+    "y_px": 20024, 
+    "z_px": 1534
+  }, 
+  {
+    "label": "Synapse #193 (connector 23018154)", 
+    "x_px": 18041, 
+    "y_px": 21444, 
+    "z_px": 2086
+  }, 
+  {
+    "label": "Synapse #194 (connector 17596429)", 
+    "x_px": 9705, 
+    "y_px": 6658, 
+    "z_px": 858
+  }, 
+  {
+    "label": "Synapse #195 (connector 11932105)", 
+    "x_px": 8163, 
+    "y_px": 10895, 
+    "z_px": 803
+  }, 
+  {
+    "label": "Synapse #196 (connector 2883695)", 
+    "x_px": 17567, 
+    "y_px": 23080, 
+    "z_px": 2385
+  }, 
+  {
+    "label": "Synapse #197 (connector 22096819)", 
+    "x_px": 12307, 
+    "y_px": 21946, 
+    "z_px": 1482
+  }, 
+  {
+    "label": "Synapse #198 (connector 22045609)", 
+    "x_px": 12862, 
+    "y_px": 21941, 
+    "z_px": 2666
+  }, 
+  {
+    "label": "Synapse #199 (connector 17787603)", 
+    "x_px": 17515, 
+    "y_px": 8323, 
+    "z_px": 853
+  }
+]

@@ -1,0 +1,1472 @@
+[
+  {
+    "label": "noise #0 (treenode 17074054)", 
+    "x_px": 7548, 
+    "y_px": 4663, 
+    "z_px": 943
+  }, 
+  {
+    "label": "noise #1 (treenode 8992960)", 
+    "x_px": 7185, 
+    "y_px": 7848, 
+    "z_px": 1099
+  }, 
+  {
+    "label": "noise #2 (treenode 10819073)", 
+    "x_px": 18584, 
+    "y_px": 21849, 
+    "z_px": 2309
+  }, 
+  {
+    "label": "noise #3 (treenode 20328618)", 
+    "x_px": 18476, 
+    "y_px": 6271, 
+    "z_px": 1087
+  }, 
+  {
+    "label": "noise #4 (treenode 19564528)", 
+    "x_px": 22837, 
+    "y_px": 7975, 
+    "z_px": 1087
+  }, 
+  {
+    "label": "noise #5 (treenode 11040516)", 
+    "x_px": 19884, 
+    "y_px": 5974, 
+    "z_px": 1095
+  }, 
+  {
+    "label": "noise #6 (treenode 1023477)", 
+    "x_px": 17579, 
+    "y_px": 19366, 
+    "z_px": 1936
+  }, 
+  {
+    "label": "noise #7 (treenode 23005281)", 
+    "x_px": 10475, 
+    "y_px": 18916, 
+    "z_px": 1591
+  }, 
+  {
+    "label": "noise #8 (treenode 23005666)", 
+    "x_px": 10612, 
+    "y_px": 20137, 
+    "z_px": 1536
+  }, 
+  {
+    "label": "noise #9 (treenode 19033701)", 
+    "x_px": 17689, 
+    "y_px": 9138, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #10 (treenode 19034084)", 
+    "x_px": 7380, 
+    "y_px": 10640, 
+    "z_px": 710
+  }, 
+  {
+    "label": "noise #11 (treenode 22956969)", 
+    "x_px": 16257, 
+    "y_px": 21500, 
+    "z_px": 4116
+  }, 
+  {
+    "label": "noise #12 (treenode 1024171)", 
+    "x_px": 18044, 
+    "y_px": 19755, 
+    "z_px": 1729
+  }, 
+  {
+    "label": "noise #13 (treenode 19616297)", 
+    "x_px": 20856, 
+    "y_px": 8295, 
+    "z_px": 1098
+  }, 
+  {
+    "label": "noise #14 (treenode 20295063)", 
+    "x_px": 11293, 
+    "y_px": 18058, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #15 (treenode 9210438)", 
+    "x_px": 9913, 
+    "y_px": 6535, 
+    "z_px": 934
+  }, 
+  {
+    "label": "noise #16 (treenode 9210696)", 
+    "x_px": 9757, 
+    "y_px": 6758, 
+    "z_px": 871
+  }, 
+  {
+    "label": "noise #17 (treenode 11767202)", 
+    "x_px": 8464, 
+    "y_px": 4797, 
+    "z_px": 952
+  }, 
+  {
+    "label": "noise #18 (treenode 647856)", 
+    "x_px": 16835, 
+    "y_px": 22330, 
+    "z_px": 3202
+  }, 
+  {
+    "label": "noise #19 (treenode 5665912)", 
+    "x_px": 6700, 
+    "y_px": 6490, 
+    "z_px": 1028
+  }, 
+  {
+    "label": "noise #20 (treenode 18993395)", 
+    "x_px": 11060, 
+    "y_px": 15352, 
+    "z_px": 1076
+  }, 
+  {
+    "label": "noise #21 (treenode 18997896)", 
+    "x_px": 16200, 
+    "y_px": 9099, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #22 (treenode 1081529)", 
+    "x_px": 19474, 
+    "y_px": 20430, 
+    "z_px": 1658
+  }, 
+  {
+    "label": "noise #23 (treenode 1082343)", 
+    "x_px": 16563, 
+    "y_px": 19406, 
+    "z_px": 2446
+  }, 
+  {
+    "label": "noise #24 (treenode 3748189)", 
+    "x_px": 6564, 
+    "y_px": 4954, 
+    "z_px": 1002
+  }, 
+  {
+    "label": "noise #25 (treenode 7061441)", 
+    "x_px": 19328, 
+    "y_px": 5839, 
+    "z_px": 1087
+  }, 
+  {
+    "label": "noise #26 (treenode 19649167)", 
+    "x_px": 6315, 
+    "y_px": 7203, 
+    "z_px": 1124
+  }, 
+  {
+    "label": "noise #27 (treenode 19596890)", 
+    "x_px": 5923, 
+    "y_px": 9348, 
+    "z_px": 644
+  }, 
+  {
+    "label": "noise #28 (treenode 19812835)", 
+    "x_px": 20788, 
+    "y_px": 11859, 
+    "z_px": 751
+  }, 
+  {
+    "label": "noise #29 (treenode 22973796)", 
+    "x_px": 12383, 
+    "y_px": 17346, 
+    "z_px": 1461
+  }, 
+  {
+    "label": "noise #30 (treenode 9113128)", 
+    "x_px": 9846, 
+    "y_px": 6988, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #31 (treenode 20747097)", 
+    "x_px": 12018, 
+    "y_px": 15792, 
+    "z_px": 1233
+  }, 
+  {
+    "label": "noise #32 (treenode 20747402)", 
+    "x_px": 12661, 
+    "y_px": 16519, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #33 (treenode 20747373)", 
+    "x_px": 12801, 
+    "y_px": 16513, 
+    "z_px": 1360
+  }, 
+  {
+    "label": "noise #34 (treenode 20747142)", 
+    "x_px": 11903, 
+    "y_px": 15942, 
+    "z_px": 1233
+  }, 
+  {
+    "label": "noise #35 (treenode 1623949)", 
+    "x_px": 19722, 
+    "y_px": 14320, 
+    "z_px": 943
+  }, 
+  {
+    "label": "noise #36 (treenode 20791606)", 
+    "x_px": 11424, 
+    "y_px": 15426, 
+    "z_px": 1126
+  }, 
+  {
+    "label": "noise #37 (treenode 4899025)", 
+    "x_px": 16789, 
+    "y_px": 17197, 
+    "z_px": 1191
+  }, 
+  {
+    "label": "noise #38 (treenode 4939883)", 
+    "x_px": 8507, 
+    "y_px": 7818, 
+    "z_px": 679
+  }, 
+  {
+    "label": "noise #39 (treenode 5184359)", 
+    "x_px": 19520, 
+    "y_px": 20659, 
+    "z_px": 2568
+  }, 
+  {
+    "label": "noise #40 (treenode 5200368)", 
+    "x_px": 15722, 
+    "y_px": 20471, 
+    "z_px": 1855
+  }, 
+  {
+    "label": "noise #41 (treenode 5200607)", 
+    "x_px": 16158, 
+    "y_px": 20363, 
+    "z_px": 1617
+  }, 
+  {
+    "label": "noise #42 (treenode 5200928)", 
+    "x_px": 14574, 
+    "y_px": 21978, 
+    "z_px": 2375
+  }, 
+  {
+    "label": "noise #43 (treenode 5200936)", 
+    "x_px": 14600, 
+    "y_px": 21776, 
+    "z_px": 2368
+  }, 
+  {
+    "label": "noise #44 (treenode 5201284)", 
+    "x_px": 14459, 
+    "y_px": 22305, 
+    "z_px": 2403
+  }, 
+  {
+    "label": "noise #45 (treenode 5208157)", 
+    "x_px": 12486, 
+    "y_px": 17653, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #46 (treenode 5211124)", 
+    "x_px": 11365, 
+    "y_px": 16916, 
+    "z_px": 1161
+  }, 
+  {
+    "label": "noise #47 (treenode 4917493)", 
+    "x_px": 11490, 
+    "y_px": 18035, 
+    "z_px": 2437
+  }, 
+  {
+    "label": "noise #48 (treenode 5271979)", 
+    "x_px": 4533, 
+    "y_px": 9475, 
+    "z_px": 943
+  }, 
+  {
+    "label": "noise #49 (treenode 5277539)", 
+    "x_px": 7182, 
+    "y_px": 10923, 
+    "z_px": 1000
+  }, 
+  {
+    "label": "noise #50 (treenode 5277768)", 
+    "x_px": 6939, 
+    "y_px": 10495, 
+    "z_px": 1009
+  }, 
+  {
+    "label": "noise #51 (treenode 5277828)", 
+    "x_px": 6921, 
+    "y_px": 10452, 
+    "z_px": 1008
+  }, 
+  {
+    "label": "noise #52 (treenode 5160844)", 
+    "x_px": 6217, 
+    "y_px": 10581, 
+    "z_px": 935
+  }, 
+  {
+    "label": "noise #53 (treenode 5536279)", 
+    "x_px": 13690, 
+    "y_px": 21535, 
+    "z_px": 4116
+  }, 
+  {
+    "label": "noise #54 (treenode 5542591)", 
+    "x_px": 6651, 
+    "y_px": 10787, 
+    "z_px": 1009
+  }, 
+  {
+    "label": "noise #55 (treenode 5543820)", 
+    "x_px": 6168, 
+    "y_px": 11255, 
+    "z_px": 1009
+  }, 
+  {
+    "label": "noise #56 (treenode 5558615)", 
+    "x_px": 4701, 
+    "y_px": 12194, 
+    "z_px": 976
+  }, 
+  {
+    "label": "noise #57 (treenode 5566004)", 
+    "x_px": 20416, 
+    "y_px": 10384, 
+    "z_px": 1174
+  }, 
+  {
+    "label": "noise #58 (treenode 5572860)", 
+    "x_px": 15905, 
+    "y_px": 18531, 
+    "z_px": 1095
+  }, 
+  {
+    "label": "noise #59 (treenode 5895858)", 
+    "x_px": 8680, 
+    "y_px": 8547, 
+    "z_px": 492
+  }, 
+  {
+    "label": "noise #60 (treenode 9568968)", 
+    "x_px": 13341, 
+    "y_px": 19805, 
+    "z_px": 1526
+  }, 
+  {
+    "label": "noise #61 (treenode 9592051)", 
+    "x_px": 15632, 
+    "y_px": 21435, 
+    "z_px": 1950
+  }, 
+  {
+    "label": "noise #62 (treenode 4212958)", 
+    "x_px": 10590, 
+    "y_px": 14613, 
+    "z_px": 1127
+  }, 
+  {
+    "label": "noise #63 (treenode 8833920)", 
+    "x_px": 5604, 
+    "y_px": 10966, 
+    "z_px": 1008
+  }, 
+  {
+    "label": "noise #64 (treenode 5977534)", 
+    "x_px": 23874, 
+    "y_px": 11919, 
+    "z_px": 1329
+  }, 
+  {
+    "label": "noise #65 (treenode 2493949)", 
+    "x_px": 22915, 
+    "y_px": 11186, 
+    "z_px": 1330
+  }, 
+  {
+    "label": "noise #66 (treenode 10010170)", 
+    "x_px": 19022, 
+    "y_px": 14884, 
+    "z_px": 888
+  }, 
+  {
+    "label": "noise #67 (treenode 10010302)", 
+    "x_px": 19534, 
+    "y_px": 12448, 
+    "z_px": 968
+  }, 
+  {
+    "label": "noise #68 (treenode 10012371)", 
+    "x_px": 15287, 
+    "y_px": 20319, 
+    "z_px": 1172
+  }, 
+  {
+    "label": "noise #69 (treenode 10022941)", 
+    "x_px": 9246, 
+    "y_px": 15680, 
+    "z_px": 977
+  }, 
+  {
+    "label": "noise #70 (treenode 10023721)", 
+    "x_px": 8914, 
+    "y_px": 15643, 
+    "z_px": 977
+  }, 
+  {
+    "label": "noise #71 (treenode 10048829)", 
+    "x_px": 8483, 
+    "y_px": 16403, 
+    "z_px": 1003
+  }, 
+  {
+    "label": "noise #72 (treenode 10054534)", 
+    "x_px": 17295, 
+    "y_px": 11302, 
+    "z_px": 644
+  }, 
+  {
+    "label": "noise #73 (treenode 3411581)", 
+    "x_px": 10364, 
+    "y_px": 15752, 
+    "z_px": 644
+  }, 
+  {
+    "label": "noise #74 (treenode 10100746)", 
+    "x_px": 10087, 
+    "y_px": 10708, 
+    "z_px": 543
+  }, 
+  {
+    "label": "noise #75 (treenode 10142179)", 
+    "x_px": 17216, 
+    "y_px": 11711, 
+    "z_px": 644
+  }, 
+  {
+    "label": "noise #76 (treenode 10322480)", 
+    "x_px": 17788, 
+    "y_px": 7703, 
+    "z_px": 616
+  }, 
+  {
+    "label": "noise #77 (treenode 10345943)", 
+    "x_px": 18530, 
+    "y_px": 9932, 
+    "z_px": 551
+  }, 
+  {
+    "label": "noise #78 (treenode 10351771)", 
+    "x_px": 9655, 
+    "y_px": 8910, 
+    "z_px": 222
+  }, 
+  {
+    "label": "noise #79 (treenode 10369941)", 
+    "x_px": 17183, 
+    "y_px": 8452, 
+    "z_px": 548
+  }, 
+  {
+    "label": "noise #80 (treenode 10715356)", 
+    "x_px": 22199, 
+    "y_px": 13514, 
+    "z_px": 1131
+  }, 
+  {
+    "label": "noise #81 (treenode 4899485)", 
+    "x_px": 17123, 
+    "y_px": 15806, 
+    "z_px": 1093
+  }, 
+  {
+    "label": "noise #82 (treenode 5033259)", 
+    "x_px": 7513, 
+    "y_px": 8563, 
+    "z_px": 943
+  }, 
+  {
+    "label": "noise #83 (treenode 4939885)", 
+    "x_px": 8499, 
+    "y_px": 7860, 
+    "z_px": 681
+  }, 
+  {
+    "label": "noise #84 (treenode 10841675)", 
+    "x_px": 11690, 
+    "y_px": 5390, 
+    "z_px": 356
+  }, 
+  {
+    "label": "noise #85 (treenode 10866496)", 
+    "x_px": 10191, 
+    "y_px": 8316, 
+    "z_px": 943
+  }, 
+  {
+    "label": "noise #86 (treenode 10876363)", 
+    "x_px": 15998, 
+    "y_px": 8303, 
+    "z_px": 818
+  }, 
+  {
+    "label": "noise #87 (treenode 10876656)", 
+    "x_px": 16232, 
+    "y_px": 8155, 
+    "z_px": 818
+  }, 
+  {
+    "label": "noise #88 (treenode 10877026)", 
+    "x_px": 11729, 
+    "y_px": 7040, 
+    "z_px": 744
+  }, 
+  {
+    "label": "noise #89 (treenode 8456882)", 
+    "x_px": 19019, 
+    "y_px": 9861, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #90 (treenode 10892513)", 
+    "x_px": 19098, 
+    "y_px": 9440, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #91 (treenode 10892514)", 
+    "x_px": 19064, 
+    "y_px": 9442, 
+    "z_px": 936
+  }, 
+  {
+    "label": "noise #92 (treenode 2089869)", 
+    "x_px": 18851, 
+    "y_px": 10376, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #93 (treenode 10912689)", 
+    "x_px": 18441, 
+    "y_px": 9182, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #94 (treenode 10913157)", 
+    "x_px": 18949, 
+    "y_px": 8825, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #95 (treenode 1984136)", 
+    "x_px": 19305, 
+    "y_px": 9488, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #96 (treenode 10919870)", 
+    "x_px": 18249, 
+    "y_px": 10396, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #97 (treenode 1980374)", 
+    "x_px": 19335, 
+    "y_px": 10085, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #98 (treenode 10931937)", 
+    "x_px": 19290, 
+    "y_px": 9359, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #99 (treenode 10931969)", 
+    "x_px": 19314, 
+    "y_px": 9681, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #100 (treenode 10932588)", 
+    "x_px": 19800, 
+    "y_px": 9671, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #101 (treenode 11623893)", 
+    "x_px": 10487, 
+    "y_px": 15245, 
+    "z_px": 1031
+  }, 
+  {
+    "label": "noise #102 (treenode 11626145)", 
+    "x_px": 12731, 
+    "y_px": 15950, 
+    "z_px": 1125
+  }, 
+  {
+    "label": "noise #103 (treenode 11626832)", 
+    "x_px": 13389, 
+    "y_px": 16592, 
+    "z_px": 1127
+  }, 
+  {
+    "label": "noise #104 (treenode 11642648)", 
+    "x_px": 16019, 
+    "y_px": 19036, 
+    "z_px": 834
+  }, 
+  {
+    "label": "noise #105 (treenode 7616083)", 
+    "x_px": 8271, 
+    "y_px": 5742, 
+    "z_px": 878
+  }, 
+  {
+    "label": "noise #106 (treenode 10691380)", 
+    "x_px": 7730, 
+    "y_px": 6373, 
+    "z_px": 560
+  }, 
+  {
+    "label": "noise #107 (treenode 11695173)", 
+    "x_px": 12982, 
+    "y_px": 18565, 
+    "z_px": 1095
+  }, 
+  {
+    "label": "noise #108 (treenode 3850172)", 
+    "x_px": 11305, 
+    "y_px": 16004, 
+    "z_px": 927
+  }, 
+  {
+    "label": "noise #109 (treenode 3849885)", 
+    "x_px": 11209, 
+    "y_px": 15728, 
+    "z_px": 905
+  }, 
+  {
+    "label": "noise #110 (treenode 3851890)", 
+    "x_px": 13011, 
+    "y_px": 18112, 
+    "z_px": 1092
+  }, 
+  {
+    "label": "noise #111 (treenode 11741529)", 
+    "x_px": 14596, 
+    "y_px": 18677, 
+    "z_px": 1091
+  }, 
+  {
+    "label": "noise #112 (treenode 10480195)", 
+    "x_px": 7431, 
+    "y_px": 5710, 
+    "z_px": 514
+  }, 
+  {
+    "label": "noise #113 (treenode 7776783)", 
+    "x_px": 8358, 
+    "y_px": 4379, 
+    "z_px": 969
+  }, 
+  {
+    "label": "noise #114 (treenode 11815819)", 
+    "x_px": 7529, 
+    "y_px": 4685, 
+    "z_px": 1001
+  }, 
+  {
+    "label": "noise #115 (treenode 11849390)", 
+    "x_px": 8542, 
+    "y_px": 4794, 
+    "z_px": 933
+  }, 
+  {
+    "label": "noise #116 (treenode 11851273)", 
+    "x_px": 7323, 
+    "y_px": 9130, 
+    "z_px": 546
+  }, 
+  {
+    "label": "noise #117 (treenode 11910680)", 
+    "x_px": 7509, 
+    "y_px": 6356, 
+    "z_px": 560
+  }, 
+  {
+    "label": "noise #118 (treenode 11911550)", 
+    "x_px": 7491, 
+    "y_px": 5639, 
+    "z_px": 560
+  }, 
+  {
+    "label": "noise #119 (treenode 11918456)", 
+    "x_px": 13665, 
+    "y_px": 21957, 
+    "z_px": 2596
+  }, 
+  {
+    "label": "noise #120 (treenode 11997151)", 
+    "x_px": 12637, 
+    "y_px": 22560, 
+    "z_px": 1828
+  }, 
+  {
+    "label": "noise #121 (treenode 12000979)", 
+    "x_px": 13289, 
+    "y_px": 22849, 
+    "z_px": 3619
+  }, 
+  {
+    "label": "noise #122 (treenode 12096150)", 
+    "x_px": 16161, 
+    "y_px": 22285, 
+    "z_px": 3316
+  }, 
+  {
+    "label": "noise #123 (treenode 12099165)", 
+    "x_px": 16456, 
+    "y_px": 22379, 
+    "z_px": 2745
+  }, 
+  {
+    "label": "noise #124 (treenode 12100175)", 
+    "x_px": 15972, 
+    "y_px": 22799, 
+    "z_px": 2456
+  }, 
+  {
+    "label": "noise #125 (treenode 12102166)", 
+    "x_px": 16985, 
+    "y_px": 23423, 
+    "z_px": 1679
+  }, 
+  {
+    "label": "noise #126 (treenode 3234830)", 
+    "x_px": 5204, 
+    "y_px": 9008, 
+    "z_px": 1095
+  }, 
+  {
+    "label": "noise #127 (treenode 11114335)", 
+    "x_px": 8945, 
+    "y_px": 5362, 
+    "z_px": 942
+  }, 
+  {
+    "label": "noise #128 (treenode 16895997)", 
+    "x_px": 17418, 
+    "y_px": 10325, 
+    "z_px": 792
+  }, 
+  {
+    "label": "noise #129 (treenode 17346016)", 
+    "x_px": 19378, 
+    "y_px": 8141, 
+    "z_px": 1095
+  }, 
+  {
+    "label": "noise #130 (treenode 17346034)", 
+    "x_px": 19377, 
+    "y_px": 8160, 
+    "z_px": 1094
+  }, 
+  {
+    "label": "noise #131 (treenode 17346319)", 
+    "x_px": 20948, 
+    "y_px": 9830, 
+    "z_px": 941
+  }, 
+  {
+    "label": "noise #132 (treenode 17388185)", 
+    "x_px": 21848, 
+    "y_px": 7934, 
+    "z_px": 1094
+  }, 
+  {
+    "label": "noise #133 (treenode 17410110)", 
+    "x_px": 10207, 
+    "y_px": 18096, 
+    "z_px": 924
+  }, 
+  {
+    "label": "noise #134 (treenode 18151652)", 
+    "x_px": 22055, 
+    "y_px": 21023, 
+    "z_px": 2253
+  }, 
+  {
+    "label": "noise #135 (treenode 18151773)", 
+    "x_px": 14878, 
+    "y_px": 23368, 
+    "z_px": 2168
+  }, 
+  {
+    "label": "noise #136 (treenode 18156181)", 
+    "x_px": 22096, 
+    "y_px": 9910, 
+    "z_px": 808
+  }, 
+  {
+    "label": "noise #137 (treenode 7882038)", 
+    "x_px": 15681, 
+    "y_px": 17030, 
+    "z_px": 970
+  }, 
+  {
+    "label": "noise #138 (treenode 7882034)", 
+    "x_px": 15659, 
+    "y_px": 17040, 
+    "z_px": 973
+  }, 
+  {
+    "label": "noise #139 (treenode 744006)", 
+    "x_px": 13926, 
+    "y_px": 19765, 
+    "z_px": 1125
+  }, 
+  {
+    "label": "noise #140 (treenode 18160817)", 
+    "x_px": 15296, 
+    "y_px": 21524, 
+    "z_px": 1305
+  }, 
+  {
+    "label": "noise #141 (treenode 1561548)", 
+    "x_px": 14693, 
+    "y_px": 23709, 
+    "z_px": 3596
+  }, 
+  {
+    "label": "noise #142 (treenode 745606)", 
+    "x_px": 14327, 
+    "y_px": 22726, 
+    "z_px": 1448
+  }, 
+  {
+    "label": "noise #143 (treenode 257647)", 
+    "x_px": 13822, 
+    "y_px": 23531, 
+    "z_px": 3519
+  }, 
+  {
+    "label": "noise #144 (treenode 179784)", 
+    "x_px": 13177, 
+    "y_px": 23331, 
+    "z_px": 1831
+  }, 
+  {
+    "label": "noise #145 (treenode 187909)", 
+    "x_px": 16924, 
+    "y_px": 21990, 
+    "z_px": 1099
+  }, 
+  {
+    "label": "noise #146 (treenode 188339)", 
+    "x_px": 16574, 
+    "y_px": 22862, 
+    "z_px": 976
+  }, 
+  {
+    "label": "noise #147 (treenode 3446917)", 
+    "x_px": 13294, 
+    "y_px": 22083, 
+    "z_px": 2992
+  }, 
+  {
+    "label": "noise #148 (treenode 9301162)", 
+    "x_px": 14999, 
+    "y_px": 22217, 
+    "z_px": 1126
+  }, 
+  {
+    "label": "noise #149 (treenode 9301161)", 
+    "x_px": 14966, 
+    "y_px": 22242, 
+    "z_px": 1125
+  }, 
+  {
+    "label": "noise #150 (treenode 9301321)", 
+    "x_px": 14048, 
+    "y_px": 21722, 
+    "z_px": 1167
+  }, 
+  {
+    "label": "noise #151 (treenode 14907401)", 
+    "x_px": 15126, 
+    "y_px": 23507, 
+    "z_px": 2033
+  }, 
+  {
+    "label": "noise #152 (treenode 18226931)", 
+    "x_px": 14418, 
+    "y_px": 17644, 
+    "z_px": 1126
+  }, 
+  {
+    "label": "noise #153 (treenode 18244926)", 
+    "x_px": 8395, 
+    "y_px": 12791, 
+    "z_px": 935
+  }, 
+  {
+    "label": "noise #154 (treenode 18244925)", 
+    "x_px": 8380, 
+    "y_px": 12788, 
+    "z_px": 934
+  }, 
+  {
+    "label": "noise #155 (treenode 13825381)", 
+    "x_px": 18296, 
+    "y_px": 20487, 
+    "z_px": 1424
+  }, 
+  {
+    "label": "noise #156 (treenode 18277330)", 
+    "x_px": 14258, 
+    "y_px": 24593, 
+    "z_px": 4116
+  }, 
+  {
+    "label": "noise #157 (treenode 18283825)", 
+    "x_px": 15472, 
+    "y_px": 19251, 
+    "z_px": 1192
+  }, 
+  {
+    "label": "noise #158 (treenode 18300556)", 
+    "x_px": 13612, 
+    "y_px": 21182, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #159 (treenode 18332107)", 
+    "x_px": 14372, 
+    "y_px": 23494, 
+    "z_px": 1826
+  }, 
+  {
+    "label": "noise #160 (treenode 18333785)", 
+    "x_px": 17527, 
+    "y_px": 16914, 
+    "z_px": 1096
+  }, 
+  {
+    "label": "noise #161 (treenode 18333784)", 
+    "x_px": 17457, 
+    "y_px": 16899, 
+    "z_px": 1095
+  }, 
+  {
+    "label": "noise #162 (treenode 18336004)", 
+    "x_px": 13050, 
+    "y_px": 19489, 
+    "z_px": 976
+  }, 
+  {
+    "label": "noise #163 (treenode 18337519)", 
+    "x_px": 17731, 
+    "y_px": 21718, 
+    "z_px": 935
+  }, 
+  {
+    "label": "noise #164 (treenode 18376545)", 
+    "x_px": 22457, 
+    "y_px": 8715, 
+    "z_px": 1160
+  }, 
+  {
+    "label": "noise #165 (treenode 18395036)", 
+    "x_px": 10411, 
+    "y_px": 23220, 
+    "z_px": 4116
+  }, 
+  {
+    "label": "noise #166 (treenode 18673551)", 
+    "x_px": 11073, 
+    "y_px": 17517, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #167 (treenode 18678563)", 
+    "x_px": 9157, 
+    "y_px": 13605, 
+    "z_px": 1055
+  }, 
+  {
+    "label": "noise #168 (treenode 18679171)", 
+    "x_px": 9986, 
+    "y_px": 14582, 
+    "z_px": 1126
+  }, 
+  {
+    "label": "noise #169 (treenode 18679485)", 
+    "x_px": 10646, 
+    "y_px": 16621, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #170 (treenode 16443146)", 
+    "x_px": 12507, 
+    "y_px": 18800, 
+    "z_px": 2527
+  }, 
+  {
+    "label": "noise #171 (treenode 18827925)", 
+    "x_px": 9149, 
+    "y_px": 14247, 
+    "z_px": 1092
+  }, 
+  {
+    "label": "noise #172 (treenode 18827927)", 
+    "x_px": 9239, 
+    "y_px": 14241, 
+    "z_px": 1094
+  }, 
+  {
+    "label": "noise #173 (treenode 18827943)", 
+    "x_px": 9183, 
+    "y_px": 14105, 
+    "z_px": 1092
+  }, 
+  {
+    "label": "noise #174 (treenode 18836185)", 
+    "x_px": 19181, 
+    "y_px": 19310, 
+    "z_px": 3547
+  }, 
+  {
+    "label": "noise #175 (treenode 18837923)", 
+    "x_px": 18933, 
+    "y_px": 19560, 
+    "z_px": 3214
+  }, 
+  {
+    "label": "noise #176 (treenode 18841318)", 
+    "x_px": 9986, 
+    "y_px": 9696, 
+    "z_px": 506
+  }, 
+  {
+    "label": "noise #177 (treenode 18841678)", 
+    "x_px": 18071, 
+    "y_px": 10747, 
+    "z_px": 644
+  }, 
+  {
+    "label": "noise #178 (treenode 18844243)", 
+    "x_px": 8873, 
+    "y_px": 9936, 
+    "z_px": 543
+  }, 
+  {
+    "label": "noise #179 (treenode 18845624)", 
+    "x_px": 7450, 
+    "y_px": 11559, 
+    "z_px": 626
+  }, 
+  {
+    "label": "noise #180 (treenode 18846718)", 
+    "x_px": 9065, 
+    "y_px": 14105, 
+    "z_px": 1001
+  }, 
+  {
+    "label": "noise #181 (treenode 18846965)", 
+    "x_px": 10106, 
+    "y_px": 14592, 
+    "z_px": 1092
+  }, 
+  {
+    "label": "noise #182 (treenode 18850077)", 
+    "x_px": 17831, 
+    "y_px": 9093, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #183 (treenode 17265239)", 
+    "x_px": 22798, 
+    "y_px": 8646, 
+    "z_px": 1174
+  }, 
+  {
+    "label": "noise #184 (treenode 18865903)", 
+    "x_px": 9374, 
+    "y_px": 10316, 
+    "z_px": 543
+  }, 
+  {
+    "label": "noise #185 (treenode 13059197)", 
+    "x_px": 19750, 
+    "y_px": 19397, 
+    "z_px": 2389
+  }, 
+  {
+    "label": "noise #186 (treenode 18934206)", 
+    "x_px": 10718, 
+    "y_px": 17744, 
+    "z_px": 2261
+  }, 
+  {
+    "label": "noise #187 (treenode 13328742)", 
+    "x_px": 20579, 
+    "y_px": 20768, 
+    "z_px": 2389
+  }, 
+  {
+    "label": "noise #188 (treenode 21430634)", 
+    "x_px": 7441, 
+    "y_px": 13673, 
+    "z_px": 970
+  }, 
+  {
+    "label": "noise #189 (treenode 21430682)", 
+    "x_px": 8266, 
+    "y_px": 14305, 
+    "z_px": 1002
+  }, 
+  {
+    "label": "noise #190 (treenode 4821438)", 
+    "x_px": 7332, 
+    "y_px": 16571, 
+    "z_px": 603
+  }, 
+  {
+    "label": "noise #191 (treenode 21587908)", 
+    "x_px": 10984, 
+    "y_px": 20012, 
+    "z_px": 1202
+  }, 
+  {
+    "label": "noise #192 (treenode 21599449)", 
+    "x_px": 19005, 
+    "y_px": 20777, 
+    "z_px": 1094
+  }, 
+  {
+    "label": "noise #193 (treenode 16553017)", 
+    "x_px": 17562, 
+    "y_px": 19071, 
+    "z_px": 887
+  }, 
+  {
+    "label": "noise #194 (treenode 21678988)", 
+    "x_px": 19959, 
+    "y_px": 18068, 
+    "z_px": 778
+  }, 
+  {
+    "label": "noise #195 (treenode 13621064)", 
+    "x_px": 8131, 
+    "y_px": 16673, 
+    "z_px": 708
+  }, 
+  {
+    "label": "noise #196 (treenode 19816923)", 
+    "x_px": 10280, 
+    "y_px": 19758, 
+    "z_px": 1002
+  }, 
+  {
+    "label": "noise #197 (treenode 19816878)", 
+    "x_px": 10407, 
+    "y_px": 19445, 
+    "z_px": 977
+  }, 
+  {
+    "label": "noise #198 (treenode 11552532)", 
+    "x_px": 8080, 
+    "y_px": 16441, 
+    "z_px": 627
+  }, 
+  {
+    "label": "noise #199 (treenode 19832554)", 
+    "x_px": 8875, 
+    "y_px": 18359, 
+    "z_px": 977
+  }, 
+  {
+    "label": "noise #200 (treenode 13586921)", 
+    "x_px": 10415, 
+    "y_px": 20245, 
+    "z_px": 977
+  }, 
+  {
+    "label": "noise #201 (treenode 13586720)", 
+    "x_px": 10315, 
+    "y_px": 20403, 
+    "z_px": 977
+  }, 
+  {
+    "label": "noise #202 (treenode 19816075)", 
+    "x_px": 10642, 
+    "y_px": 18538, 
+    "z_px": 894
+  }, 
+  {
+    "label": "noise #203 (treenode 13585140)", 
+    "x_px": 10860, 
+    "y_px": 19231, 
+    "z_px": 924
+  }, 
+  {
+    "label": "noise #204 (treenode 21687434)", 
+    "x_px": 9982, 
+    "y_px": 18912, 
+    "z_px": 924
+  }, 
+  {
+    "label": "noise #205 (treenode 21688275)", 
+    "x_px": 8683, 
+    "y_px": 18321, 
+    "z_px": 924
+  }, 
+  {
+    "label": "noise #206 (treenode 21702327)", 
+    "x_px": 18456, 
+    "y_px": 20234, 
+    "z_px": 1125
+  }, 
+  {
+    "label": "noise #207 (treenode 21702544)", 
+    "x_px": 18726, 
+    "y_px": 19440, 
+    "z_px": 1046
+  }, 
+  {
+    "label": "noise #208 (treenode 21803151)", 
+    "x_px": 22619, 
+    "y_px": 6616, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #209 (treenode 21843569)", 
+    "x_px": 14180, 
+    "y_px": 19165, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #210 (treenode 21843685)", 
+    "x_px": 13621, 
+    "y_px": 18347, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #211 (treenode 20522649)", 
+    "x_px": 11828, 
+    "y_px": 16718, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #212 (treenode 21847278)", 
+    "x_px": 8758, 
+    "y_px": 17804, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #213 (treenode 21847279)", 
+    "x_px": 8730, 
+    "y_px": 17780, 
+    "z_px": 1336
+  }, 
+  {
+    "label": "noise #214 (treenode 21852741)", 
+    "x_px": 9734, 
+    "y_px": 12236, 
+    "z_px": 1095
+  }, 
+  {
+    "label": "noise #215 (treenode 21869652)", 
+    "x_px": 12646, 
+    "y_px": 16204, 
+    "z_px": 1190
+  }, 
+  {
+    "label": "noise #216 (treenode 21869952)", 
+    "x_px": 12482, 
+    "y_px": 17701, 
+    "z_px": 1337
+  }, 
+  {
+    "label": "noise #217 (treenode 21873304)", 
+    "x_px": 12865, 
+    "y_px": 20185, 
+    "z_px": 1845
+  }, 
+  {
+    "label": "noise #218 (treenode 21880815)", 
+    "x_px": 16192, 
+    "y_px": 20272, 
+    "z_px": 1617
+  }, 
+  {
+    "label": "noise #219 (treenode 21880884)", 
+    "x_px": 16044, 
+    "y_px": 19884, 
+    "z_px": 1617
+  }, 
+  {
+    "label": "noise #220 (treenode 21985380)", 
+    "x_px": 17909, 
+    "y_px": 7459, 
+    "z_px": 1003
+  }, 
+  {
+    "label": "noise #221 (treenode 22754878)", 
+    "x_px": 9461, 
+    "y_px": 13939, 
+    "z_px": 1091
+  }, 
+  {
+    "label": "noise #222 (treenode 22769664)", 
+    "x_px": 10386, 
+    "y_px": 10174, 
+    "z_px": 942
+  }, 
+  {
+    "label": "noise #223 (treenode 22864384)", 
+    "x_px": 18471, 
+    "y_px": 11220, 
+    "z_px": 936
+  }, 
+  {
+    "label": "noise #224 (treenode 20068123)", 
+    "x_px": 10342, 
+    "y_px": 7220, 
+    "z_px": 984
+  }, 
+  {
+    "label": "noise #225 (treenode 20067930)", 
+    "x_px": 11444, 
+    "y_px": 6630, 
+    "z_px": 817
+  }, 
+  {
+    "label": "noise #226 (treenode 22891165)", 
+    "x_px": 15817, 
+    "y_px": 22319, 
+    "z_px": 3678
+  }, 
+  {
+    "label": "noise #227 (treenode 1827090)", 
+    "x_px": 3930, 
+    "y_px": 10463, 
+    "z_px": 1333
+  }, 
+  {
+    "label": "noise #228 (treenode 23378904)", 
+    "x_px": 18095, 
+    "y_px": 7821, 
+    "z_px": 926
+  }, 
+  {
+    "label": "noise #229 (treenode 23410934)", 
+    "x_px": 16362, 
+    "y_px": 18103, 
+    "z_px": 1094
+  }, 
+  {
+    "label": "noise #230 (treenode 23420156)", 
+    "x_px": 9552, 
+    "y_px": 11032, 
+    "z_px": 920
+  }, 
+  {
+    "label": "noise #231 (treenode 23461703)", 
+    "x_px": 19683, 
+    "y_px": 17054, 
+    "z_px": 1060
+  }, 
+  {
+    "label": "noise #232 (treenode 23470299)", 
+    "x_px": 17680, 
+    "y_px": 9253, 
+    "z_px": 1095
+  }, 
+  {
+    "label": "noise #233 (treenode 23528690)", 
+    "x_px": 16317, 
+    "y_px": 9146, 
+    "z_px": 917
+  }, 
+  {
+    "label": "noise #234 (treenode 23528729)", 
+    "x_px": 16310, 
+    "y_px": 9439, 
+    "z_px": 937
+  }, 
+  {
+    "label": "noise #235 (treenode 23529207)", 
+    "x_px": 8819, 
+    "y_px": 6082, 
+    "z_px": 878
+  }, 
+  {
+    "label": "noise #236 (treenode 23598165)", 
+    "x_px": 20973, 
+    "y_px": 7740, 
+    "z_px": 612
+  }, 
+  {
+    "label": "noise #237 (treenode 9889778)", 
+    "x_px": 20668, 
+    "y_px": 5538, 
+    "z_px": 1126
+  }, 
+  {
+    "label": "noise #238 (treenode 11662949)", 
+    "x_px": 11058, 
+    "y_px": 7335, 
+    "z_px": 490
+  }, 
+  {
+    "label": "noise #239 (treenode 16162316)", 
+    "x_px": 19739, 
+    "y_px": 8995, 
+    "z_px": 661
+  }, 
+  {
+    "label": "noise #240 (treenode 8877812)", 
+    "x_px": 6364, 
+    "y_px": 9702, 
+    "z_px": 470
+  }, 
+  {
+    "label": "noise #241 (treenode 14455434)", 
+    "x_px": 18053, 
+    "y_px": 8500, 
+    "z_px": 663
+  }, 
+  {
+    "label": "noise #242 (treenode 23859199)", 
+    "x_px": 9310, 
+    "y_px": 7179, 
+    "z_px": 551
+  }, 
+  {
+    "label": "noise #243 (treenode 23879293)", 
+    "x_px": 20703, 
+    "y_px": 13757, 
+    "z_px": 970
+  }, 
+  {
+    "label": "noise #244 (treenode 24008312)", 
+    "x_px": 18157, 
+    "y_px": 14284, 
+    "z_px": 932
+  }
+]
