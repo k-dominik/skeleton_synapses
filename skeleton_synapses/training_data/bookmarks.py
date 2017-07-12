@@ -1,12 +1,11 @@
-import os
-import shutil
 import re
+import json
 
 import h5py
 
 ILP_PATH = 'full-vol-autocontext.ilp'
 
-inner_roots = ['PixelClassification', 'PixelClassification01']
+lane_paths = ['PixelClassification', 'PixelClassification01']
 inner_leaf = '/Bookmarks/0000'
 
 entry_form = '''I{z_px}
@@ -40,12 +39,12 @@ class Bookmark(object):
         self.label = label
 
     @classmethod
-    def from_str(cls, s):
+    def from_ilp(cls, s):
         """Convert a string with no prefix or suffix into a Bookmark object"""
         d = entry_re.search(s).groupdict()
         return cls(int(d['x_px']), int(d['y_px']), int(d['z_px']), d['label'])
 
-    def to_str(self, current_max=1, with_fixes=False):
+    def to_ilp(self, current_max=1, with_fixes=False):
         """Convert a Bookmark object into a string for use in an ILP file"""
         middle = entry_form.format(
             z_px=self.z_px, y_px=self.y_px, x_px=self.x_px,
@@ -62,7 +61,7 @@ class Bookmark(object):
     def deserialise(cls, s):
         """Convert a string from an ILP file into a list of Bookmark objects"""
         trimmed = s.lstrip(prefix).rstrip(suffix)
-        return [Bookmark.from_str(item) for item in trimmed.split('((')]
+        return [Bookmark.from_ilp(item) for item in trimmed.split('((')]
 
     @staticmethod
     def serialise(*bookmarks):
@@ -70,10 +69,39 @@ class Bookmark(object):
         items = []
         current_max = 1
         for bookmark in bookmarks:
-            items.append(bookmark.to_str(current_max))
+            items.append(bookmark.to_ilp(current_max))
             current_max += 3
 
         return prefix + '(('.join(items) + suffix
+
+    def to_dict(self):
+        return {
+            'x_px': self.x_px,
+            'y_px': self.y_px,
+            'z_px': self.z_px,
+            'label': self.label,
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(d['x_px'], d['y_px'], d['z_px'], d.get('label', ''))
+
+    @classmethod
+    def from_json_multi(cls, path):
+        """Multiple Bookmarks from a json-serialised list of dicts"""
+        with open(path) as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return [cls.from_dict(item) for item in data]
+            else:
+                return [cls.from_dict(data)]
+
+    @classmethod
+    def from_json(cls, path):
+        """Bookmark from a json-serialised dict"""
+        with open(path) as f:
+            data = json.load(f)
+            return cls.from_dict(data)
 
     def __repr__(self):
         return 'Bookmark(x_px={x_px}, y_px={y_px}, z_px={z_px}, label="{label}")'.format(**self.__dict__)
@@ -83,7 +111,7 @@ def read_bookmarks(path, lane):
     """Read bookmarks directly from an ILP file"""
     assert lane in (0, 1)
     with h5py.File(path, 'r') as f:
-        bookmark_str = f[inner_roots[lane] + inner_leaf].value
+        bookmark_str = f[lane_paths[lane] + inner_leaf].value
 
     return Bookmark.deserialise(bookmark_str)
 
@@ -93,7 +121,7 @@ def write_bookmarks(path, lane, *bookmarks):
     assert lane in (0, 1)
     bookmark_str = Bookmark.serialise(*bookmarks)
     with h5py.File(path) as f:
-        inner_path = inner_roots[lane] + inner_leaf
+        inner_path = lane_paths[lane] + inner_leaf
         del f[inner_path]
         f.create_dataset(inner_path, data=bookmark_str)
 
