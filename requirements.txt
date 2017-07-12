@@ -1,1 +1,3 @@
 git+https://github.com/catmaid/catpy.git@features/export_widget#egg=catpy
+tqdm
+ain
