@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import json
 from catpy import CatmaidClient
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
+from skeleton_synapses.training_data.bookmarks import Bookmark
 try:
     from tqdm import tqdm
 except ImportError:
@@ -14,120 +15,116 @@ except ImportError:
         return iterable
 
 TIME_WINDOW_YEARS = 3
-DEFAULT_SAMPLE_SIZE = 10
+DEFAULT_SAMPLE_SIZE = 200
 XY_PADDING = 10
 Z_PADDING = 1
 TRUSTED_USERS = ['caseysm', 'albert']
 STACK_ID = 1
+SEED = 1
 
 
 def copy_dict(d):
     return json.loads(json.dumps(d))
 
 
-def get_exemplar_synapses(credentials_path, sample_size=DEFAULT_SAMPLE_SIZE, output_path=None):
-    """
-    Randomly sample connectors recently annotated by trusted experts and construct a padded bounding box of the
-    connector and its associated treenodes. Separate these boxes into slices to be passed to Ilastik as bookmarks.
+class TrainingDataBookmarker(object):
+    def __init__(self, credentials_path, seed=None, output_root='.'):
+        self._seed = seed
+        self.catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path))
+        self.coord_transformer = self.catmaid.get_coord_transformer(STACK_ID)
+        self.output_root = output_root
 
-    Parameters
-    ----------
-    credentials_path : str
-        Path to CATMAID credentials JSON
-    sample_size : int
-        How many connectors to sample
-    output_path : str
-        Where to save the JSON output
+    @property
+    def seed(self):
+        if self._seed is None:
+            return random.randint(0, sys.maxsize)
+        else:
+            return self._seed
 
-    Returns
-    -------
-    dict
-        {
-            f'connector{conn_id}_{slice_idx}': [[xmin, ymin, zmin], [zmax, ymax, zmax]],
-            ...
-        }
-    """
-    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path))
-
-    responses = []
-    date_to = datetime.now()
-    date_from = date_to - timedelta(days=365.25*TIME_WINDOW_YEARS)
-
-    # todo: speed this up with threading?
-    for username in tqdm(TRUSTED_USERS, desc='Getting connectors by trusted annotators', file=sys.stdout):
-        responses += catmaid.get_connectors(username, date_from, date_to)
-
-    print('Sampling responses')
-    sample = random.sample({response[0] for response in responses}, sample_size)
-
-    bounds = {
-        'min': {
-            'x': sys.float_info.max,
-            'y': sys.float_info.max,
-            'z': sys.float_info.max
-        },
-        'max': {
-            'x': -sys.float_info.max,
-            'y': -sys.float_info.max,
-            'z': -sys.float_info.max
-        }
-    }
-
-    connectors = {connector_id: copy_dict(bounds) for connector_id in sample}
-
-    coord_transformer = catmaid.get_coord_transformer(STACK_ID)
-
-    for response in tqdm(responses, desc='Getting bounding boxes for connectors', file=sys.stdout):
-        connector_id = response[0]
-        if connector_id not in connectors:
-            continue
-
-        proj_coords = [
-            {
-                'x': response[1][0],
-                'y': response[1][1],
-                'z': response[1][2]
-            },
-            {
-                'x': response[6][0],
-                'y': response[6][1],
-                'z': response[6][2]
-            },
-            {
-                'x': response[11][0],
-                'y': response[11][1],
-                'z': response[11][2]
-            }
-        ]
-
-        stack_coords = [
-            coord_transformer.project_to_stack(coord_dict) for coord_dict in proj_coords
-        ]
-
-        for dim in ['x', 'y', 'z']:
-            dim_coords = [stack_coord[dim] for stack_coord in stack_coords]
-
-            connectors[connector_id]['min'][dim] = min(dim_coords + [connectors[connector_id]['min'][dim]])
-            connectors[connector_id]['max'][dim] = max(dim_coords + [connectors[connector_id]['max'][dim]])
-
-    slices = dict()
-    for connector_id, bounds in tqdm(connectors.items(), desc='Converting bounding boxes to slice ROIs', file=sys.stdout):
-        if abs(int(bounds['min']['z']) - int(bounds['max']['z']) + 1) > 30:
-            continue
-        for idx, z_index in enumerate(range(int(bounds['min']['z']) - Z_PADDING, int(bounds['max']['z']) + 1 + Z_PADDING)):
-            roi_xyz = [
-                [bounds['min']['x'] - XY_PADDING, bounds['min']['y'] - XY_PADDING, z_index],
-                [bounds['max']['x'] + XY_PADDING, bounds['max']['y'] + XY_PADDING, z_index + 1]
-            ]
-
-            slices['connector{}_{}'.format(connector_id, idx)] = roi_xyz
-
-    if output_path:
+    def _dump_bookmarks(self, bookmarks, rel_output_path):
+        if rel_output_path is None:
+            return
         print('Writing output')
-        with open(output_path, 'w') as f:
-            json.dump(slices, f, indent=2, sort_keys=True)
+        with open(os.path.join(self.output_root, rel_output_path), 'w') as f:
+            json.dump([bookmark.to_dict() for bookmark in bookmarks], f, indent=2, sort_keys=True)
 
-    return slices
+    def get_connector_bookmarks(self, sample_size=DEFAULT_SAMPLE_SIZE, output_path=None):
+        """
+        Randomly sample connectors recently annotated by trusted experts and return a list of Bookmark objects for
+        insertion into Ilastik.
+
+        Parameters
+        ----------
+        credentials_path : str
+            Path to CATMAID credentials JSON
+        sample_size : int
+            How many connectors to sample
+        output_path : str
+            Where to save the JSON output
+
+        Returns
+        -------
+        list of Bookmark
+        """
+        responses = dict()
+        date_to = datetime.now()
+        date_from = date_to - timedelta(days=365.25*TIME_WINDOW_YEARS)
+
+        # todo: speed this up with threading?
+        for username in tqdm(TRUSTED_USERS, desc='Getting connectors by trusted annotators', file=sys.stdout):
+            responses.update(self.catmaid.get_connectors(username, date_from, date_to))
+
+        coord_transformer = self.catmaid.get_coord_transformer(STACK_ID)
+        print('Sampling responses')
+        rand = random.Random(SEED)
+        sample = {
+            key: coord_transformer.project_to_stack(responses[key])
+            for key in rand.sample(responses, sample_size)
+        }
+
+        bookmarks = []
+        sample_items = sorted(sample.items())
+        rand.shuffle(sample_items)
+        for idx, (conn_id, coords) in tqdm(enumerate(sample_items), desc='Converting connectors to bookmarks',
+                                           file=sys.stdout):
+            bookmarks.append(Bookmark(
+                x_px=int(coords['x']), y_px=int(coords['y']), z_px=int(coords['z']),
+                label='Synapse #{} (connector {})'.format(idx, conn_id)
+            ))
+
+        self._dump_bookmarks(bookmarks, output_path)
+
+        return bookmarks
+
+    def get_treenode_bookmarks(self, sample_size=DEFAULT_SAMPLE_SIZE, output_path=None):
+        response = self.catmaid.sample_treenodes(sample_size, seed=self.seed)
+        bookmarks = []
+        for idx, row in tqdm(enumerate(response['data']), desc='Converting treenodes to bookmarks', file=sys.stdout):
+            bookmarks.append(Bookmark(
+                x_px=int(self.coord_transformer.project_to_stack_coord('x', row[1])),
+                y_px=int(self.coord_transformer.project_to_stack_coord('y', row[2])),
+                z_px=int(self.coord_transformer.project_to_stack_coord('z', row[3])),
+                label='Location #{} (treenode {})'.format(idx, row[0])
+            ))
+
+        self._dump_bookmarks(bookmarks, output_path)
+
+        return bookmarks
+
+    def get_tag_bookmarks(self, tags, output_path=None):
+        response = self.catmaid.treenodes_by_tag(*tags)
+        bookmarks = []
+        for idx, row in tqdm(enumerate(response['data']), desc='Converting tags to bookmarks', file=sys.stdout):
+            bookmarks.append(Bookmark(
+                x_px=int(self.coord_transformer.project_to_stack_coord('x', row[2])),
+                y_px=int(self.coord_transformer.project_to_stack_coord('y', row[3])),
+                z_px=int(self.coord_transformer.project_to_stack_coord('z', row[4])),
+                label='{} #{} (treenode {})'.format(row[0], idx, row[1])
+            ))
+
+        self._dump_bookmarks(bookmarks, output_path)
+
+        return bookmarks
 
 
 if __name__ == "__main__":
@@ -136,21 +133,34 @@ if __name__ == "__main__":
         print("USING DEBUG ARGUMENTS")
 
         CREDENTIALS_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-        credentials_path = os.path.join(CREDENTIALS_ROOT, 'credentials_real.json')
-        OUTPUT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'synapse_sample.json')
-        sample_size = 50
 
-        args_list = [credentials_path, sample_size, OUTPUT_PATH]
-
+        credentials_path = os.path.join(CREDENTIALS_ROOT, 'credentials_catsop.json')
+        output = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'bookmarks')
+        random_seed = 1
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('credentials_path',
                             help='Path to a JSON file containing CATMAID credentials (see credentials.jsonEXAMPLE)')
         parser.add_argument('-o', '--output', default='',
-                            help="Optional path to output JSON file")
+                            help="Optional path to folder containing output json files.")
+        parser.add_argument('-r', '--random-seed', default=None,
+                            help='Random seed to use for samplers.')
 
         args = parser.parse_args()
-        args_list = [args.credentials_path, DEFAULT_SAMPLE_SIZE, args.output]
+        credentials_path = args.credentials_path
+        output = args.output
+        sample_size = args.sample_size
+        random_seed = None if args.random_seed is None else int(args.random_seed)
 
-    output = get_exemplar_synapses(*args_list)
-    print('{} slices returned'.format(len(output)))
+    bookmarker = TrainingDataBookmarker(credentials_path, random_seed, output)
+
+    print('Getting connectors')
+    bookmarker.get_connector_bookmarks(output_path='connector_bookmarks.json')
+    print('Getting treenodes')
+    bookmarker.get_treenode_bookmarks(output_path='treenode_bookmarks.json')
+    print('Getting not-synapses')
+    bookmarker.get_tag_bookmarks(('not a synapse', ), output_path='not_synapse_bookmarks.json')
+    print('Getting vesicles')
+    bookmarker.get_tag_bookmarks(('example of clathrin-coated vesicle', ), output_path='vesicle_bookmarks.json')
+    print('Getting noise')
+    bookmarker.get_tag_bookmarks(('noise', ), output_path='noise_bookmarks.json')
