@@ -166,7 +166,8 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
 
         Returns
         -------
-        list
+        dict
+            Keys are connector IDs, values are coordinate dicts in project space
         """
         params = dict()
 
@@ -177,7 +178,12 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         if date_to:
             params['to'] = date_to.strftime('%Y%m%d')
 
-        return self.get((self.project_id, 'connector/list/completed'), params)
+        output = dict()
+
+        for row in self.get((self.project_id, 'connector/list/completed'), params):
+            output[row[0]] = {dim: val for dim, val in zip('xyz', row[1])}
+
+        return output
 
     def get_stack_info(self, stack_id_or_title):
         stack_id = self._get_stack_id(stack_id_or_title)
@@ -341,3 +347,15 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         params = {'synapse_object_ids': list(synapse_ids), 'z_padding': int(z_padding), 'xy_padding': int(xy_padding)}
 
         return self.get('synapsesuggestor/analysis/synapse-extents', params)
+
+    def sample_treenodes(self, count=None, seed=None):
+        params = dict()
+        if count:
+            params['count'] = count
+        if seed is not None:
+            params['seed'] = seed
+
+        return self.get(('synapsesuggestor/training-data', self.project_id, 'treenodes/sample'), params)
+
+    def treenodes_by_tag(self, *tags):
+        return self.get(('synapsesuggestor/training-data', self.project_id, 'treenodes/label'), {'tags': tags})
