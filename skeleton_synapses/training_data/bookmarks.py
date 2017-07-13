@@ -1,8 +1,11 @@
 import os
 import re
 import json
+import logging
 
 import h5py
+
+logger = logging.getLogger('bookmarks')
 
 this_dir = os.path.dirname(os.path.realpath(__file__))
 rel_path_to_projects = '../../projects-2017/L1-CNS/projects'
@@ -111,6 +114,13 @@ class Bookmark(object):
     def __repr__(self):
         return 'Bookmark(x_px={x_px}, y_px={y_px}, z_px={z_px}, label="{label}")'.format(**self.__dict__)
 
+    def __eq__(self, other):
+        try:
+            other_attrs = (other.x_px, other.y_px, other.z_px)
+        except KeyError:
+            return False
+        return (self.x_px, self.y_px, self.z_px) == other_attrs
+
 
 def read_bookmarks(path, lane):
     """Read bookmarks directly from an ILP file"""
@@ -121,7 +131,7 @@ def read_bookmarks(path, lane):
     return Bookmark.deserialise(bookmark_str)
 
 
-def write_bookmarks(path, lane, *bookmarks):
+def write_bookmarks(path, lane, bookmarks):
     """Write bookmarks directly to an ILP file"""
     assert lane in (0, 1)
     bookmark_str = Bookmark.serialise(*bookmarks)
@@ -129,16 +139,30 @@ def write_bookmarks(path, lane, *bookmarks):
         inner_path = lane_paths[lane] + inner_leaf
         try:
             del f[inner_path]
+            logger.info('Deleted existing bookmark dataset')
         except KeyError:
-            pass
+            logger.info('No existing bookmark dataset')
+
         f.create_dataset(inner_path, data=bookmark_str)
+        logger.info('Adding new bookmarks')
 
 
-def append_bookmarks(path, lane, *bookmarks):
+def append_bookmarks(path, lane, bookmarks, check=True):
     """Append bookmarks to an existing ILP file"""
     old_bookmarks = read_bookmarks(path, lane)
-    all_bookmarks = old_bookmarks + bookmarks
-    write_bookmarks(path, lane, *all_bookmarks)
+
+    if check:
+        bookmarks_to_add = []
+        for bookmark in bookmarks:
+            if bookmark in old_bookmarks:
+                logger.warning('{} is already in the project (possibly with a different label), skipping')
+            else:
+                bookmarks_to_add.append(bookmark)
+    else:
+        bookmarks_to_add = bookmarks
+
+    all_bookmarks = old_bookmarks + bookmarks_to_add
+    write_bookmarks(path, lane, all_bookmarks)
 
 
 if __name__ == '__main__':
