@@ -1,16 +1,21 @@
+import os
 import re
 import json
 
 import h5py
 
-ILP_PATH = 'full-vol-autocontext.ilp'
+this_dir = os.path.dirname(os.path.realpath(__file__))
+rel_path_to_projects = '../../projects-2017/L1-CNS/projects'
+ilp_name = 'full-vol-autocontext.ilp'
+
+ILP_PATH = os.path.join(this_dir, rel_path_to_projects, ilp_name)
 
 lane_paths = ['PixelClassification', 'PixelClassification01']
 inner_leaf = '/Bookmarks/0000'
 
 entry_form = '''I{z_px}
-I{y_px}
 I{x_px}
+I{y_px}
 tp{idx}
 S'{label}'
 p{idx_plus_one}
@@ -19,7 +24,7 @@ a'''
 
 entry_re = re.compile(
     entry_form.format(
-        z_px='(?P<z_px>\d+)', y_px='(?P<y_px>\d+)', x_px='(?P<x_px>\d+)',
+        z_px='(?P<z_px>\d+)', x_px='(?P<x_px>\d+)', y_px='(?P<y_px>\d+)',
         idx='(?P<idx1>\d+)', idx_plus_one='(?P<idx2>\d+)', idx_plus_two='(?P<idx3>\d+)',
         label='(?P<label>.*)',
     ), re.MULTILINE
@@ -122,7 +127,10 @@ def write_bookmarks(path, lane, *bookmarks):
     bookmark_str = Bookmark.serialise(*bookmarks)
     with h5py.File(path) as f:
         inner_path = lane_paths[lane] + inner_leaf
-        del f[inner_path]
+        try:
+            del f[inner_path]
+        except KeyError:
+            pass
         f.create_dataset(inner_path, data=bookmark_str)
 
 
@@ -131,3 +139,8 @@ def append_bookmarks(path, lane, *bookmarks):
     old_bookmarks = read_bookmarks(path, lane)
     all_bookmarks = old_bookmarks + bookmarks
     write_bookmarks(path, lane, *all_bookmarks)
+
+
+if __name__ == '__main__':
+    bookmarks = read_bookmarks(ILP_PATH, 0)
+    print(bookmarks)
