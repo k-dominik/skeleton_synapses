@@ -83,12 +83,13 @@ def log_timestamp(msg):
 
 def hash_algorithm(*paths):
     """
-    Calculate an MD5 sum of the current git commit hash and the contents of some arbitrary files.
+    Calculate a combined hash of the algorithm. Included for hashing are the commit hash of this repo, the hashes of
+    any files whose paths are given, and the git commit hash inside any directories whose paths are given.
 
     Parameters
     ----------
     paths
-        Paths to files outside of git control which affect the algorithm
+        Paths to files or directories outside of this git repo which affect the algorithm
 
     Returns
     -------
@@ -98,16 +99,28 @@ def hash_algorithm(*paths):
     commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
 
     md5 = hashlib.md5(commit_hash)
-    for path in paths:
-        with open(path, 'rb') as f:
-            for chunk in iter(lambda: f.read(128*md5.block_size), b''):
-                md5.update(chunk)
+
+    for path in sorted(paths):
+        if os.path.isdir(path):
+            logger.debug('Getting git commit hash of directory %s', path)
+            try:
+                output = subprocess.check_output(['git', '-C', path, 'rev-parse', 'HEAD']).strip()
+                md5.update(output)
+            except subprocess.CalledProcessError:
+                logger.exception('Error encountered while finding git hash of directory %s', path)
+        elif os.path.isfile(path):
+            logger.debug('Getting hash of file %s', path)
+            with open(path, 'rb') as f:
+                for chunk in iter(lambda: f.read(128 * md5.block_size), b''):
+                    md5.update(chunk)
+        else:
+            logger.warning('No file, symlink or directory found at %s', path)
 
     digest = md5.hexdigest()
     logger.debug('Algorithm hash is %s', digest)
     # todo: remove this
-    logger.warning('Ignoring real algorithm hash, using {}'.format(ALGO_HASH))
-    digest = ALGO_HASH
+    # logger.warning('Ignoring real algorithm hash, using {}'.format(ALGO_HASH))
+    # digest = ALGO_HASH
     return digest
 
 
@@ -125,6 +138,8 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
     stack_info = catmaid.get_stack_info(stack_id)
 
     ensure_hdf5(stack_info, force=force)
+
+    algo_hash = hash_algorithm(os.path.join(project_dir, 'projects'))
 
     log_timestamp('finished setup')
 
@@ -236,7 +251,8 @@ def locate_synapses_catmaid(
         skel_output_dir,
         skeleton_id,
         roi_radius_px,
-        stack_info
+        stack_info,
+        algo_hash=None
 ):
     """
 
@@ -260,7 +276,9 @@ def locate_synapses_catmaid(
     """
     global catmaid
 
-    algo_hash = hash_algorithm(autocontext_project_path, multicut_project)
+    if algo_hash is None:
+        algo_hash = hash_algorithm(autocontext_project_path, multicut_project)
+
     workflow_id = catmaid.get_workflow_id(stack_info['sid'], algo_hash, TILE_SIZE)
 
     logger.info('Populating tile queue')

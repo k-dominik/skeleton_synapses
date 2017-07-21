@@ -1,6 +1,7 @@
 import os
 
-from bookmarks import Bookmark, append_bookmarks, ILP_PATH
+from skeleton_synapses.training_data.common import ILP_PATH
+from skeleton_synapses.training_data.bookmarks import Bookmark, append_bookmarks
 
 root = 'bookmarks'
 fnames = [

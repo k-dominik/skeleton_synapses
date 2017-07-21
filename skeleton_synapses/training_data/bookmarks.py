@@ -1,19 +1,20 @@
-import os
 import re
 import json
 import logging
 
 import h5py
 
+from skeleton_synapses.training_data.common import ILP_PATH, lane_paths
+
 logger = logging.getLogger('bookmarks')
 
-this_dir = os.path.dirname(os.path.realpath(__file__))
-rel_path_to_projects = '../../projects-2017/L1-CNS/projects'
-ilp_name = 'full-vol-autocontext.ilp'
+# this_dir = os.path.dirname(os.path.realpath(__file__))
+# rel_path_to_projects = '../../projects-2017/L1-CNS/projects'
+# ilp_name = 'full-vol-autocontext.ilp'
+#
+# ILP_PATH = os.path.join(this_dir, rel_path_to_projects, ilp_name)
 
-ILP_PATH = os.path.join(this_dir, rel_path_to_projects, ilp_name)
 
-lane_paths = ['PixelClassification', 'PixelClassification01']
 inner_leaf = '/Bookmarks/0000'
 
 entry_form = '''I{z_px}
