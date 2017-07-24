@@ -13,6 +13,7 @@ import hashlib
 import subprocess
 import signal
 import psutil
+from datetime import datetime
 
 import h5py
 import numpy as np
@@ -184,8 +185,10 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
 
 def ensure_hdf5(stack_info, force=False):
     if force or not os.path.isfile(HDF5_PATH):
+        if os.path.isfile(HDF5_PATH):
+            os.rename(HDF5_PATH, '{}BACKUP{}'.format(HDF5_PATH, datetime.now().strftime('%Y-%m-%D_%H:%M:%S')))
         logger.info('Creating HDF5 volumes in %s', HDF5_PATH)
-        with h5py.File(HDF5_PATH, 'w') as f:
+        with h5py.File(HDF5_PATH) as f:
             # f.attrs['workflow_id'] = workflow_id  # todo
             f.attrs['source_stack_id'] = stack_info['sid']
 
@@ -280,7 +283,7 @@ def locate_synapses_catmaid(
     """
     global catmaid
 
-    workflow_id = catmaid.get_workflow_id(stack_info['sid'], algo_hash, TILE_SIZE, detection_algo_notes=DETECTION_NOTES)
+    workflow_id = catmaid.get_workflow_id(stack_info['sid'], algo_hash, TILE_SIZE, detection_notes=DETECTION_NOTES)
 
     logger.info('Populating tile queue')
 
