@@ -230,16 +230,16 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
     #     fastest_idx = min(speeds.items(), key=lambda x: x[1])[0]
     #     return stack_info['mirrors'][fastest_idx]
 
-    def get_workflow_id(self, stack_id, detection_hash, tile_size=512, notes=None):
+    def get_workflow_id(self, stack_id, detection_hash, tile_size=512, detection_notes=None):
         params = {'stack_id': stack_id, 'detection_hash': detection_hash, 'tile_size': tile_size}
-        if notes:
-            params['notes'] = notes
+        if detection_notes:
+            params['algo_notes'] = detection_notes
         return self.get(('synapsesuggestor/synapse-detection/workflow'), params)['workflow_id']
 
-    def get_project_workflow_id(self, workflow_id, association_hash, notes=None):
+    def get_project_workflow_id(self, workflow_id, association_hash, association_notes=None):
         params = {'workflow_id': workflow_id, 'association_hash': association_hash}
-        if notes:
-            params['notes'] = notes
+        if association_notes:
+            params['algo_notes'] = association_notes
         return self.get(
             ('synapsesuggestor/treenode-association', self.project_id, 'workflow'), params
         )['project_workflow_id']
