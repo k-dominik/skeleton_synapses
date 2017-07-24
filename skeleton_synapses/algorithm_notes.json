@@ -1,0 +1,4 @@
+{
+  "synapse_detection": "Training data v2 (~5 examples of each added)",
+  "skeleton_association": "Pixel classification training data v2 (~5 examples of each added)"
+}

@@ -71,8 +71,12 @@ logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROC
 DEBUG = False
 
 # ALGO_HASH = '1'
-DETECTION_NOTES = 'Training data v2 (~5 examples of each added)'
-ASSOCIATION_NOTES = 'Pixel classification training data v2 (~5 examples of each added)'
+NOTES_PATH = './algorithm_notes.json'
+
+with open(NOTES_PATH) as f:
+    d = json.load(f)
+DETECTION_NOTES = d['synapse_detection']
+ASSOCIATION_NOTES = d['skeleton_association']
 
 
 catmaid = None
