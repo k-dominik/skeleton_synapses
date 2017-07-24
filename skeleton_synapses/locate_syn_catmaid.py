@@ -139,7 +139,7 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
 
     ensure_hdf5(stack_info, force=force)
 
-    algo_hash = hash_algorithm(os.path.join(project_dir, 'projects'))
+    algo_hash = hash_algorithm(autocontext_project, multicut_project)
 
     log_timestamp('finished setup')
 
@@ -152,7 +152,8 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
         skel_output_dir,
         skeleton_id,
         roi_radius_px,
-        stack_info
+        stack_info,
+        algo_hash
     )
 
 
@@ -252,7 +253,7 @@ def locate_synapses_catmaid(
         skeleton_id,
         roi_radius_px,
         stack_info,
-        algo_hash=None
+        algo_hash
 ):
     """
 
@@ -275,9 +276,6 @@ def locate_synapses_catmaid(
 
     """
     global catmaid
-
-    if algo_hash is None:
-        algo_hash = hash_algorithm(autocontext_project_path, multicut_project)
 
     workflow_id = catmaid.get_workflow_id(stack_info['sid'], algo_hash, TILE_SIZE)
 
