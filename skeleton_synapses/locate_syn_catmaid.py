@@ -186,7 +186,7 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
 def ensure_hdf5(stack_info, force=False):
     if force or not os.path.isfile(HDF5_PATH):
         if os.path.isfile(HDF5_PATH):
-            os.rename(HDF5_PATH, '{}BACKUP{}'.format(HDF5_PATH, datetime.now().strftime('%Y-%m-%D_%H:%M:%S')))
+            os.rename(HDF5_PATH, '{}BACKUP{}'.format(HDF5_PATH, datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))
         logger.info('Creating HDF5 volumes in %s', HDF5_PATH)
         with h5py.File(HDF5_PATH) as f:
             # f.attrs['workflow_id'] = workflow_id  # todo
