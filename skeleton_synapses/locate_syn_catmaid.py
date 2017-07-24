@@ -69,7 +69,10 @@ logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROC
 
 DEBUG = False
 
-ALGO_HASH = '1'
+# ALGO_HASH = '1'
+DETECTION_NOTES = 'Training data v2 (~5 examples of each added)'
+ASSOCIATION_NOTES = 'Pixel classification training data v2 (~5 examples of each added)'
+
 
 catmaid = None
 
@@ -277,7 +280,7 @@ def locate_synapses_catmaid(
     """
     global catmaid
 
-    workflow_id = catmaid.get_workflow_id(stack_info['sid'], algo_hash, TILE_SIZE)
+    workflow_id = catmaid.get_workflow_id(stack_info['sid'], algo_hash, TILE_SIZE, detection_algo_notes=DETECTION_NOTES)
 
     logger.info('Populating tile queue')
 
@@ -338,7 +341,7 @@ def locate_synapses_catmaid(
 
     log_timestamp('started getting nodes')
 
-    project_workflow_id = catmaid.get_project_workflow_id(workflow_id, algo_hash)
+    project_workflow_id = catmaid.get_project_workflow_id(workflow_id, algo_hash, association_notes=ASSOCIATION_NOTES)
     treenode_slice_mappings = catmaid.get_treenode_synapse_associations(skeleton_id, project_workflow_id)
     associated_treenodes = {int(pair[0]) for pair in treenode_slice_mappings}
 
