@@ -31,7 +31,7 @@ from locate_synapses import (
     # constants/singletons
     DEFAULT_ROI_RADIUS, LOGGER_FORMAT,
     # functions
-    setup_files, setup_classifier, setup_classifier_and_multicut, ensure_list,
+    setup_files, setup_classifier, setup_classifier_and_multicut, ensure_list, mkdir_p,
     fetch_raw_and_predict_for_node, raw_data_for_node, labeled_synapses_for_node, segmentation_for_node,
     # classes
     CaretakerProcess, LeakyProcess
@@ -43,14 +43,7 @@ from skeleton_utils import roi_around_node
 #     return AsIs(numpy_float64)
 # register_adapter(np.float64, addapt_numpy_float64)
 
-logging.basicConfig(level=0, format=LOGGER_FORMAT)
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
-
-logger.info('STARTING CATMAID-COMPATIBLE DETECTION')
+TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
 
 HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
 
@@ -63,10 +56,8 @@ PIXEL_PREDICTION_DTYPE = np.float32
 TILE_SIZE = 512
 
 THREADS = int(os.getenv('SYNAPSE_DETECTION_THREADS', 3))
-logger.debug('Parallelising over {} threads'.format(THREADS))
 # NODES_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500))
 RAM_MB_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000))
-logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROCESS))
 
 DEBUG = False
 
@@ -717,6 +708,23 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
     catmaid.add_synapse_treenode_associations(assoc_tuples, project_workflow_id)
 
 
+def setup_logging(project_dir, level=logging.NOTSET):
+    log_dir = os.path.join(project_dir, 'logs', TIMESTAMP)
+    mkdir_p(log_dir)
+    log_file = os.path.join(log_dir, 'locate_synapses.txt')
+    root = logging.getLogger()
+    formatter = logging.Formatter(LOGGER_FORMAT)
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(level)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    stream_handler.setLevel(level)
+    root.addHandler(file_handler)
+    root.addHandler(stream_handler)
+    root.setLevel(level)
+
+
 def kill_child_processes(signum=None, frame=None):
     current_proc = psutil.Process()
     for child_proc in current_proc.children(recursive=True):
@@ -735,9 +743,10 @@ if __name__ == "__main__":
         force = 1
 
         args_list = [
-            cred_path, stack_id, project_dir, skel_ids
+            cred_path, stack_id, skel_ids, project_dir
         ]
         kwargs_dict = {'force': force}
+        setup_logging(project_dir)
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('--roi-radius-px', default=DEFAULT_ROI_RADIUS,
@@ -759,6 +768,16 @@ if __name__ == "__main__":
             args.credentials_path, args.stack_id, args.skeleton_ids, args.project_dir, args.roi_radius_px, args.force
         ]
         kwargs_dict = {}  # must be empty
+        setup_logging(args.project_dir)
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
+    performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
+
+    logger.info('STARTING CATMAID-COMPATIBLE DETECTION')
+    logger.debug('Parallelising over {} threads'.format(THREADS))
+    logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROCESS))
 
     signal.signal(signal.SIGTERM, kill_child_processes)
 
