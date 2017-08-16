@@ -94,6 +94,28 @@ def get_and_print_env(name, default, constructor=str):
     return constructor(val)
 
 
+def ensure_description_file(catmaid, description_path, stack_id, include_offset=False, force=False):
+    """
+
+    Parameters
+    ----------
+    catmaid : CatmaidSynapseSuggestionAPI
+    description_path : str
+    stack_id : int
+    include_offset : bool
+
+    Returns
+    -------
+    bool
+        Whether a new volume description was created
+    """
+    if force or not os.path.isfile(description_path):
+        volume_description_dict = catmaid.get_stack_description(stack_id, include_offset=include_offset)
+        with open(description_path, 'w') as f:
+            json.dump(volume_description_dict, f, sort_keys=True, indent=2)
+        return True
+
+
 def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=False):
     """
 
@@ -122,10 +144,7 @@ def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=Fals
         project_dir, PROJECT_NAME + '-description{}.json'.format('' if include_offset else '-NO-OFFSET')
     )
 
-    if not os.path.isfile(volume_description_path):
-        volume_description_dict = catmaid.get_stack_description(stack_id, include_offset=include_offset)
-        with open(volume_description_path, 'w') as f:
-            json.dump(volume_description_dict, f, sort_keys=True, indent=2)
+    ensure_description_file(catmaid, volume_description_path, stack_id, include_offset)
 
     # Name the output directory with the skeleton id
     skel_output_dir = os.path.join(project_dir, 'skeletons', str(skeleton_id))
