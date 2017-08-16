@@ -1,12 +1,9 @@
 #!/usr/bin/env python
 import os
-import sys
 import shutil
-import csv
 import errno
 import signal
 import logging
-import argparse
 import tempfile
 import warnings
 from itertools import starmap
