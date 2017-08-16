@@ -1,6 +1,7 @@
 import re
 import json
 import logging
+import pickle
 
 import h5py
 
@@ -47,41 +48,19 @@ class Bookmark(object):
         self.z_px = z_px
         self.label = label
 
-    @classmethod
-    def from_ilp(cls, s):
-        """Convert a string with no prefix or suffix into a Bookmark object"""
-        d = entry_re.search(s).groupdict()
-        return cls(int(d['x_px']), int(d['y_px']), int(d['z_px']), d['label'])
-
-    def to_ilp(self, current_max=1, with_fixes=False):
+    def to_tuple(self):
         """Convert a Bookmark object into a string for use in an ILP file"""
-        middle = entry_form.format(
-            z_px=self.z_px, y_px=self.y_px, x_px=self.x_px,
-            idx=current_max + 1, idx_plus_one=current_max + 2, idx_plus_two=current_max + 3,
-            label=self.label
-        )
-
-        if with_fixes:
-            return prefix + middle + suffix
-        else:
-            return middle
+        return (self.z_px, self.x_px, self.y_px), self.label
 
     @classmethod
     def deserialise(cls, s):
         """Convert a string from an ILP file into a list of Bookmark objects"""
-        trimmed = s.lstrip(prefix).rstrip(suffix)
-        return [Bookmark.from_ilp(item) for item in trimmed.split('((')]
+        return [Bookmark(x, y, z, label) for (z, x, y), label in pickle.loads(s)]
 
     @staticmethod
     def serialise(*bookmarks):
         """Convert a list of Bookmark objects into a string to be inserted into an ILP file"""
-        items = []
-        current_max = 1
-        for bookmark in bookmarks:
-            items.append(bookmark.to_ilp(current_max))
-            current_max += 3
-
-        return prefix + '(('.join(items) + suffix
+        return pickle.dumps([bookmark.to_tuple() for bookmark in bookmarks])
 
     def to_dict(self):
         return {
