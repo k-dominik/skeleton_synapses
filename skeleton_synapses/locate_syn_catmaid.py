@@ -43,6 +43,8 @@ from skeleton_utils import roi_around_node
 #     return AsIs(numpy_float64)
 # register_adapter(np.float64, addapt_numpy_float64)
 
+LOG_LEVEL = logging.DEBUG
+
 TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
 
 HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
@@ -708,10 +710,17 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
     catmaid.add_synapse_treenode_associations(assoc_tuples, project_workflow_id)
 
 
-def setup_logging(project_dir, level=logging.NOTSET):
+def setup_logging(project_dir, args, kwargs, level=logging.NOTSET):
+
+    # set up the log files and symlinks
+    latest_ln = os.path.join(project_dir, 'logs', 'latest')
+    os.remove(latest_ln)
     log_dir = os.path.join(project_dir, 'logs', TIMESTAMP)
     mkdir_p(log_dir)
+    os.symlink(log_dir, latest_ln)
     log_file = os.path.join(log_dir, 'locate_synapses.txt')
+
+    # set up the root logger
     root = logging.getLogger()
     formatter = logging.Formatter(LOGGER_FORMAT)
     file_handler = logging.FileHandler(log_file)
@@ -723,6 +732,26 @@ def setup_logging(project_dir, level=logging.NOTSET):
     root.addHandler(file_handler)
     root.addHandler(stream_handler)
     root.setLevel(level)
+
+    # set up the performance logger
+    performance_formatter = logging.Formatter('%(asctime)s: elapsed %(message)s')
+    performance_handler = logging.FileHandler(os.path.join(log_dir, 'timing.txt'))
+    performance_handler.setFormatter(performance_formatter)
+    performance_handler.setLevel(logging.INFO)
+    performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
+    performance_logger.addHandler(performance_handler)
+    performance_logger.propagate = True
+
+    # write version information
+    commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
+    git_diff = subprocess.check_output(['git', 'diff']).strip()
+    version_string = 'Commit hash: {}\n\nCurrent diff:\n{}'.format(commit_hash, git_diff)
+    with open(os.path.join(log_dir, 'version.txt'), 'w') as f:
+        f.write(version_string)
+
+    # write argument information
+    with open(os.path.join(log_dir, 'arguments.txt')) as f:
+        f.write('Arguments:\n\t{}\nKeyword arguments:\n\t{}'.format(args, kwargs))
 
 
 def kill_child_processes(signum=None, frame=None):
@@ -746,7 +775,7 @@ if __name__ == "__main__":
             cred_path, stack_id, skel_ids, project_dir
         ]
         kwargs_dict = {'force': force}
-        setup_logging(project_dir)
+        setup_logging(project_dir, args_list, kwargs_dict, LOG_LEVEL)
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('--roi-radius-px', default=DEFAULT_ROI_RADIUS,
@@ -768,10 +797,10 @@ if __name__ == "__main__":
             args.credentials_path, args.stack_id, args.skeleton_ids, args.project_dir, args.roi_radius_px, args.force
         ]
         kwargs_dict = {}  # must be empty
-        setup_logging(args.project_dir)
+        setup_logging(args.project_dir, args_list, kwargs_dict, LOG_LEVEL)
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.NOTSET)
 
     performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
 
