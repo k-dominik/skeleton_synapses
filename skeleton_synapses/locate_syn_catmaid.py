@@ -750,7 +750,7 @@ def setup_logging(project_dir, args, kwargs, level=logging.NOTSET):
         f.write(version_string)
 
     # write argument information
-    with open(os.path.join(log_dir, 'arguments.txt')) as f:
+    with open(os.path.join(log_dir, 'arguments.txt'), 'w') as f:
         f.write('Arguments:\n\t{}\nKeyword arguments:\n\t{}'.format(args, kwargs))
 
 
