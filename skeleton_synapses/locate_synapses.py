@@ -21,6 +21,8 @@ warnings.filterwarnings("ignore", message='.*second conversion method ignored.',
 # warnings before we actually configure logging below.
 # logging.getLogger().addHandler(logging.NullHandler())
 
+import six
+
 import numpy as np
 import h5py
 import vigra
@@ -70,6 +72,20 @@ DEFAULT_ROI_RADIUS = 150
 LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
 
 
+def ensure_list(value):
+    """Ensure that a given value is a non-string sequence (making it the sole element of a list if not).
+
+    Used for compatibility purposes.
+    """
+    try:
+        len(value)
+        if isinstance(value, six.string_types):
+            raise TypeError
+        return value
+    except TypeError:
+        return [value]
+
+
 def get_and_print_env(name, default, constructor=str):
     """
 
@@ -113,22 +129,22 @@ def ensure_description_file(catmaid, description_path, stack_id, include_offset=
         return True
 
 
-def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=False):
+def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=False):
     """
 
     Parameters
     ----------
     credentials_path
     stack_id
-    skeleton_id
+    skeleton_ids
     project_dir
     force
 
     Returns
     -------
-    tuple of (str, str, str, str, skeleton_utils.Skeleton)
-        (volume_description_path, skel_output_dir, skeleton)
+    tuple of (str, str, str, list of str)
     """
+    skeleton_ids = ensure_list(skeleton_ids)
 
     autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
     multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
@@ -143,18 +159,21 @@ def setup_files(credentials_path, stack_id, skeleton_id, project_dir, force=Fals
 
     ensure_description_file(catmaid, volume_description_path, stack_id, include_offset)
 
+    skel_output_dirs = []
+    for skeleton_id in skeleton_ids:
     # Name the output directory with the skeleton id
-    skel_output_dir = os.path.join(project_dir, 'skeletons', str(skeleton_id))
-    if force:
-        shutil.rmtree(skel_output_dir, ignore_errors=True)
-    mkdir_p(skel_output_dir)
+        skel_output_dir = os.path.join(project_dir, 'skeletons', str(skeleton_id))
+        if force:
+            shutil.rmtree(skel_output_dir, ignore_errors=True)
+        mkdir_p(skel_output_dir)
 
-    skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
-    skel_data = catmaid.get_transformed_treenode_and_connector_geometry(stack_id, skeleton_id)
-    with open(skel_path, 'w') as f:
-        json.dump(skel_data, f)
+        skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
+        skel_data = catmaid.get_transformed_treenode_and_connector_geometry(stack_id, skeleton_id)
+        with open(skel_path, 'w') as f:
+            json.dump(skel_data, f)
+        skel_output_dirs.append(skel_output_dir)
 
-    return autocontext_project, multicut_project, volume_description_path, skel_output_dir
+    return autocontext_project, multicut_project, volume_description_path, skel_output_dirs
 
 
 def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClassification, multicut_workflow,

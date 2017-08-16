@@ -31,7 +31,7 @@ from locate_synapses import (
     # constants/singletons
     DEFAULT_ROI_RADIUS, LOGGER_FORMAT,
     # functions
-    setup_files, setup_classifier, setup_classifier_and_multicut,
+    setup_files, setup_classifier, setup_classifier_and_multicut, ensure_list,
     fetch_raw_and_predict_for_node, raw_data_for_node, labeled_synapses_for_node, segmentation_for_node,
     # classes
     CaretakerProcess, LeakyProcess
@@ -132,10 +132,7 @@ def hash_algorithm(*paths):
     return digest
 
 
-def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150, force=False):
-    autocontext_project, multicut_project, volume_description_path, skel_output_dir = setup_files(
-        credentials_path, stack_id, skeleton_id, project_dir, force
-    )
+def main(credentials_path, stack_id, skeleton_ids, project_dir, roi_radius_px=150, force=False):
     global catmaid
 
     logger.info("STARTING TILEWISE")
@@ -147,22 +144,28 @@ def main(credentials_path, stack_id, skeleton_id, project_dir, roi_radius_px=150
 
     ensure_hdf5(stack_info, force=force)
 
-    algo_hash = hash_algorithm(autocontext_project, multicut_project)
-
     log_timestamp('finished setup')
+    skeleton_ids = ensure_list(skeleton_ids)
+
+    autocontext_project, multicut_project, volume_description_path, skel_output_dirs = setup_files(
+        credentials_path, stack_id, skeleton_ids, project_dir, force
+    )
+
+    algo_hash = hash_algorithm(autocontext_project, multicut_project)
 
     performance_logger.info('{}: finished setup')
 
-    locate_synapses_catmaid(
-        autocontext_project,
-        multicut_project,
-        volume_description_path,
-        skel_output_dir,
-        skeleton_id,
-        roi_radius_px,
-        stack_info,
-        algo_hash
-    )
+    for skeleton_id, skel_output_dir in zip(skeleton_ids, skel_output_dirs):
+        locate_synapses_catmaid(
+            autocontext_project,
+            multicut_project,
+            volume_description_path,
+            skel_output_dir,
+            skeleton_id,
+            roi_radius_px,
+            stack_info,
+            algo_hash
+        )
 
 
 def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=LABEL_DTYPE, extra_dim=None):
@@ -727,13 +730,12 @@ if __name__ == "__main__":
         project_dir = "../projects-2017/L1-CNS"
         cred_path = "credentials_dev.json"
         stack_id = 1
-        # skel_id = 18531735  # small test skeleton only on CLB's local instance
-        skel_id = 18531745  # single-node skeleton on de moivre tile [9485, 7413, 582] on CLB's local instance
+        skel_ids = [18531735]  # small test skeleton only on CLB's local instance
 
         force = 1
 
         args_list = [
-            cred_path, stack_id, skel_id, project_dir
+            cred_path, stack_id, project_dir, skel_ids
         ]
         kwargs_dict = {'force': force}
     else:
@@ -744,17 +746,17 @@ if __name__ == "__main__":
                             help='Path to a JSON file containing CATMAID credentials (see credentials.jsonEXAMPLE)')
         parser.add_argument('stack_id',
                             help='ID or name of image stack in CATMAID')
-        parser.add_argument('skeleton_id',
-                            help="A skeleton ID in CATMAID")
         parser.add_argument('project_dir',
                             help="A directory containing project files in ./projects, and which output files will be "
                                  "dropped into.")
+        parser.add_argument('skeleton_ids', nargs='+',
+                            help="Skeleton IDs in CATMAID")
         parser.add_argument('-f', '--force', type=int, default=0,
                             help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
 
         args = parser.parse_args()
         args_list = [
-            args.credentials_path, args.stack_id, args.skeleton_id, args.project_dir, args.roi_radius_px, args.force
+            args.credentials_path, args.stack_id, args.skeleton_ids, args.project_dir, args.roi_radius_px, args.force
         ]
         kwargs_dict = {}  # must be empty
 
