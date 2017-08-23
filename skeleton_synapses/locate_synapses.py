@@ -142,7 +142,7 @@ def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=Fal
 
     Returns
     -------
-    tuple of (str, str, str, list of str)
+    tuple of (str, str, str, list of str, dict of {str:str})
     """
     skeleton_ids = ensure_list(skeleton_ids)
 
@@ -157,11 +157,18 @@ def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=Fal
         project_dir, PROJECT_NAME + '-description{}.json'.format('' if include_offset else '-NO-OFFSET')
     )
 
+    try:
+        with open(os.path.join(project_dir, 'projects', 'algorithm_notes.json')) as f:
+            algo_notes = json.load(f)
+    except IOError:
+        logger.warning('Algorithm notes not found, using empty strings')
+        algo_notes = {'synapse_detection': '', 'skeleton_association': ''}
+
     ensure_description_file(catmaid, volume_description_path, stack_id, include_offset)
 
     skel_output_dirs = []
     for skeleton_id in skeleton_ids:
-    # Name the output directory with the skeleton id
+        # Name the output directory with the skeleton id
         skel_output_dir = os.path.join(project_dir, 'skeletons', str(skeleton_id))
         if force:
             shutil.rmtree(skel_output_dir, ignore_errors=True)
@@ -173,7 +180,7 @@ def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=Fal
             json.dump(skel_data, f)
         skel_output_dirs.append(skel_output_dir)
 
-    return autocontext_project, multicut_project, volume_description_path, skel_output_dirs
+    return autocontext_project, multicut_project, volume_description_path, skel_output_dirs, algo_notes
 
 
 def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClassification, multicut_workflow,
