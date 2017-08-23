@@ -578,19 +578,27 @@ def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw
     skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
     logger.debug("skeleton point: {}".format( skeleton_coord ))
 
+    segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow)
+
+    if output_dir:
+        write_output_image(output_dir, segmentation_xy[:, :, None], "segmentation", roi_name, 'slices')
+    return segmentation_xy
+
+
+def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
+    assert raw_xy.shape[:2] == predictions_xyc.shape[:2]
+
     opEdgeTrainingWithMulticut = multicut_workflow.edgeTrainingWithMulticutApplet.topLevelOperator
     assert isinstance(opEdgeTrainingWithMulticut, OpEdgeTrainingWithMulticut)
 
     opDataExport = multicut_workflow.dataExportApplet.topLevelOperator
     opDataExport.OutputAxisOrder.setValue('xy')
 
-    role_data_dict = OrderedDict([ ("Raw Data", [ DatasetInfo(preloaded_array=raw_xy) ]),
-                                   ("Probabilities", [ DatasetInfo(preloaded_array=predictions_xyc) ])])
+    role_data_dict = OrderedDict([("Raw Data", [DatasetInfo(preloaded_array=raw_xy)]),
+                                  ("Probabilities", [DatasetInfo(preloaded_array=predictions_xyc)])])
     batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
     assert len(batch_results) == 1
     segmentation_xy = batch_results[0]
-    if output_dir:
-        write_output_image(output_dir, segmentation_xy[:, :, None], "segmentation", roi_name, 'slices')
     return segmentation_xy
 
 
