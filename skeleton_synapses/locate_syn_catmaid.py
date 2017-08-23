@@ -64,13 +64,6 @@ RAM_MB_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000)
 DEBUG = False
 
 # ALGO_HASH = '1'
-NOTES_PATH = './algorithm_notes.json'
-
-with open(NOTES_PATH) as f:
-    d = json.load(f)
-DETECTION_NOTES = d['synapse_detection']
-ASSOCIATION_NOTES = d['skeleton_association']
-
 
 catmaid = None
 
@@ -140,7 +133,7 @@ def main(credentials_path, stack_id, skeleton_ids, project_dir, roi_radius_px=15
     log_timestamp('finished setup')
     skeleton_ids = ensure_list(skeleton_ids)
 
-    autocontext_project, multicut_project, volume_description_path, skel_output_dirs = setup_files(
+    autocontext_project, multicut_project, volume_description_path, skel_output_dirs, algo_notes = setup_files(
         credentials_path, stack_id, skeleton_ids, project_dir, force
     )
 
@@ -157,7 +150,8 @@ def main(credentials_path, stack_id, skeleton_ids, project_dir, roi_radius_px=15
             skeleton_id,
             roi_radius_px,
             stack_info,
-            algo_hash
+            algo_hash,
+            algo_notes
         )
 
 
@@ -259,7 +253,8 @@ def locate_synapses_catmaid(
         skeleton_id,
         roi_radius_px,
         stack_info,
-        algo_hash
+        algo_hash,
+        algo_notes
 ):
     """
 
@@ -283,7 +278,8 @@ def locate_synapses_catmaid(
     """
     global catmaid
 
-    workflow_id = catmaid.get_workflow_id(stack_info['sid'], algo_hash, TILE_SIZE, detection_notes=DETECTION_NOTES)
+    workflow_id = catmaid.get_workflow_id(
+        stack_info['sid'], algo_hash, TILE_SIZE, detection_notes=algo_notes['synapse_detection'])
 
     logger.info('Populating tile queue')
 
@@ -344,7 +340,9 @@ def locate_synapses_catmaid(
 
     log_timestamp('started getting nodes')
 
-    project_workflow_id = catmaid.get_project_workflow_id(workflow_id, algo_hash, association_notes=ASSOCIATION_NOTES)
+    project_workflow_id = catmaid.get_project_workflow_id(
+        workflow_id, algo_hash, association_notes=algo_notes['skeleton_association']
+    )
     treenode_slice_mappings = catmaid.get_treenode_synapse_associations(skeleton_id, project_workflow_id)
     associated_treenodes = {int(pair[0]) for pair in treenode_slice_mappings}
 
