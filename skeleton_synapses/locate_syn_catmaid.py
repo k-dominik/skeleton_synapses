@@ -12,6 +12,7 @@ import time
 import hashlib
 import subprocess
 import signal
+
 import psutil
 from datetime import datetime
 
@@ -32,10 +33,10 @@ from locate_synapses import (
     DEFAULT_ROI_RADIUS, LOGGER_FORMAT,
     # functions
     setup_files, setup_classifier, setup_classifier_and_multicut, ensure_list, mkdir_p,
-    fetch_raw_and_predict_for_node, raw_data_for_node, labeled_synapses_for_node, segmentation_for_node,
+    fetch_raw_and_predict_for_node, raw_data_for_roi, labeled_synapses_for_node, segmentation_for_node,
     # classes
-    CaretakerProcess, LeakyProcess
-)
+    CaretakerProcess, LeakyProcess,
+    segmentation_for_img, cached_synapses_predictions_for_roi)
 from skeleton_utils import roi_around_node
 
 
@@ -125,7 +126,7 @@ def main(credentials_path, stack_id, skeleton_ids, project_dir, roi_radius_px=15
 
     log_timestamp('started setup')
 
-    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path))
+    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
     stack_info = catmaid.get_stack_info(stack_id)
 
     ensure_hdf5(stack_info, force=force)
@@ -343,34 +344,51 @@ def locate_synapses_catmaid(
     project_workflow_id = catmaid.get_project_workflow_id(
         workflow_id, algo_hash, association_notes=algo_notes['skeleton_association']
     )
-    treenode_slice_mappings = catmaid.get_treenode_synapse_associations(skeleton_id, project_workflow_id)
-    associated_treenodes = {int(pair[0]) for pair in treenode_slice_mappings}
 
-    node_queue, node_result_queue = mp.Queue(), mp.Queue()
+    synapse_queue, synapse_result_queue = mp.Queue(), mp.Queue()
     node_count = 0
-    for node_info in node_infos:
-        if int(node_info.id) not in associated_treenodes:
-            node_queue.put(NeuronSegmenterInput(node_info, roi_radius_px))
-            node_count += 1
+
+    roi_radius_nm = roi_radius_px * stack_info['resolution']['x']  # assumes XY isotropy
+    synapses_near_skeleton = catmaid.get_synapses_near_skeleton(skeleton_id, project_workflow_id, roi_radius_nm)
+    logger.debug('Found {} synapse planes near skeleton {}'.format(len(synapses_near_skeleton), skeleton_id))
+    slice_id_tuples = set()
+    for synapse in synapses_near_skeleton:
+        slice_id_tuple = tuple(synapse['synapse_slice_ids'])
+        if slice_id_tuple in slice_id_tuples:
+            continue
+
+        slice_id_tuples.add(slice_id_tuple)
+
+        radius = np.array([[-roi_radius_px, -roi_radius_px, 0], [roi_radius_px, roi_radius_px, 1]])
+        roi_xyz = radius + np.array([
+            synapse['synapse_bounds_s'][:2] + [synapse['synapse_z_s']],
+            synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]
+        ])
+
+        node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_id)
+        item = NeuronSegmenterInput(roi_xyz, slice_id_tuple, node_locations)
+        logger.debug('Adding {} to neuron segmentation queue'.format(item))
+        synapse_queue.put(item)
+        node_count += 1
 
     log_timestamp('finished getting nodes')
 
     if node_count:
-        logger.info('Segmenting node windows')
+        logger.info('Segmenting synapse windows')
 
         neuron_seg_containers = [
             CaretakerProcess(
-                NeuronSegmenterProcess, node_queue, RAM_MB_PER_PROCESS,
-                (node_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir),
+                NeuronSegmenterProcess, synapse_queue, RAM_MB_PER_PROCESS,
+                (synapse_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir),
                 name='CaretakerProcess{}'.format(idx)
             )
             for idx in range(min(THREADS, node_count))
             # for _ in range(1)
         ]
 
-        log_timestamp('started segmenting neurons ({} nodes, {} threads)'.format(node_count, THREADS))
+        log_timestamp('started segmenting neurons ({} items, {} threads)'.format(node_count, THREADS))
 
-        while node_queue.qsize() < min(THREADS, node_count):
+        while synapse_queue.qsize() < min(THREADS, node_count):
             logger.debug('Waiting for node queue to populate...')
             time.sleep(1)
 
@@ -378,14 +396,14 @@ def locate_synapses_catmaid(
             neuron_seg_container.start()
             assert neuron_seg_container.is_alive()
 
-        commit_node_association_results_from_queue(node_result_queue, node_count, project_workflow_id)
+        commit_node_association_results_from_queue(synapse_result_queue, node_count, project_workflow_id)
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.join()
 
         log_timestamp('finished segmenting neurons')
     else:
-        logger.debug('No nodes required re-segmenting')
+        logger.debug('No synapses required re-segmenting')
 
     logger.info("DONE with skeleton.")
 
@@ -435,8 +453,8 @@ class DetectorProcess(LeakyProcess):
         self.output_queue.put(DetectorOutput(tile_idx, np.array(predictions_xyc), np.array(synapse_cc_xy)))
 
 
-NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['node_info', 'roi_radius_px'])
-NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', ['node_info', 'synapse_slice_id', 'contact_px'])
+NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['roi_xyz', 'synapse_slice_ids', 'node_locations'])
+NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', ['node_id', 'synapse_slice_id', 'contact_px'])
 
 
 # class NeuronSegmenterProcess(DebuggableProcess):
@@ -491,44 +509,54 @@ class NeuronSegmenterProcess(LeakyProcess):
         Request.reset_thread_pool(1)
 
     def execute(self):
-        node_info, roi_radius_px = self.input_queue.get()
+        roi_xyz, synapse_slice_ids, node_locations = self.input_queue.get()
 
-        self.inner_logger.debug("Addressing node {}; {} nodes remaining".format(node_info.id, self.input_queue.qsize()))
+        node_locations_arr = node_locations_to_array(roi_xyz, node_locations)
+
+        self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(roi_xyz, self.input_queue.qsize()))
 
         with Timer() as node_timer:
-            roi_xyz = roi_around_node(node_info, roi_radius_px)
-            raw_xy = raw_data_for_node(node_info, roi_xyz, None, self.opPixelClassification)
+            raw_xy = raw_data_for_roi(roi_xyz, None, self.opPixelClassification)
 
-            # convert roi into a tuple of slice objects which can be used by numpy for indexing
-            roi_slices = (roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0]))
+            synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, HDF5_PATH)
+            segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, self.multicut_shell.workflow)
 
-            # N.B. might involve parallel reads - consider a single reader process
-            with h5py.File(HDF5_PATH, 'r') as f:
-                synapse_cc_xy = np.array(f['slice_labels'][roi_slices]).T
-                predictions_xyc = np.array(f['pixel_predictions'][roi_slices]).transpose((1, 0, 2))
+            overlapping_segments = dict()
+            for synapse_slice_id in synapse_slice_ids:
+                # todo: need to cast some types?
+                segments = np.unique(segmentation_xy[synapse_cc_xy == synapse_slice_id])
+                self.inner_logger.debug('Synapse slice {} overlaps with segments {}'.format(synapse_slice_id, segments))
+                for overlapping_segment in segments:
+                    if overlapping_segment not in overlapping_segments:
+                        overlapping_segments[overlapping_segment] = set()
+                    overlapping_segments[overlapping_segment].add(synapse_slice_id)
 
-            segmentation_xy = segmentation_for_node(
-                node_info, roi_xyz, self.skel_output_dir, self.multicut_shell.workflow, raw_xy, predictions_xyc
-            )
+            if len(overlapping_segments) < 2:  # synapse is only in 1 segment
+                self.inner_logger.debug(
+                    'Synapse slice IDs {} in ROI {} are only in 1 neuron'.format(synapse_slice_ids, roi_xyz)
+                )
+                return
 
-            center_coord = np.array(segmentation_xy.shape) // 2
-            node_segment = segmentation_xy[tuple(center_coord)]
-
-            synapse_overlaps = synapse_cc_xy * (segmentation_xy == node_segment)
-            outputs = []
-            slice_ids = np.unique(synapse_overlaps[synapse_overlaps > 1])
-            self.inner_logger.debug('Found overlapping IDs {} in roi_xyz {}', slice_ids, roi_xyz)
-            for syn_id in slice_ids:
-                contact_px = skeletonize(synapse_overlaps == syn_id).sum()  # todo: improve this?
-                outputs.append(NeuronSegmenterOutput(node_info, syn_id, contact_px))
+            not_nans = ~np.isnan(node_locations_arr)
+            for segment, node_id in zip(segmentation_xy[not_nans], node_locations_arr[not_nans]):
+                for synapse_slice_id in overlapping_segments[segment]:
+                    contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
+                    self.output_queue.put(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
 
             logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
 
-        self.inner_logger.debug('Adding segmentation output of node {} to output queue; {} nodes remaining'.format(
-            node_info.id, self.input_queue.qsize()
+        self.inner_logger.debug('Adding segmentation output of ROI {} to output queue; {} nodes remaining'.format(
+            roi_xyz, self.input_queue.qsize()
         ))
 
-        self.output_queue.put(tuple(outputs))
+
+def node_locations_to_array(roi_xyz, node_locations):
+    arr = np.full(roi_xyz[1, :] - roi_xyz[0, :], np.nan)
+    for node_location in node_locations.values():
+        coords = node_locations['coords']
+        arr[coords['x'], coords['y'], coords['z']] = int(node_location['treenode_id'])
+
+    return arr
 
 
 def coords_to_multipoint_wkt_str(x_coords, y_coords):
@@ -696,11 +724,10 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
 
     logger.debug('Getting node association results')
     assoc_tuples = []
-    for node_result in result_generator:
-        for result in node_result:
-            assoc_tuple = (result.synapse_slice_id, result.node_info.id, result.contact_px)
-            logger.debug('Appending segmentation result to args: %s', repr(assoc_tuple))
-            assoc_tuples.append(assoc_tuple)
+    for result in result_generator:
+        assoc_tuple = (result.synapse_slice_id, result.node_id, result.contact_px)
+        logger.debug('Appending segmentation result to args: %s', repr(assoc_tuple))
+        assoc_tuples.append(assoc_tuple)
 
     logger.debug('Node association results are\n%s', repr(assoc_tuples))
     logger.info('Inserting new slice:treenode mappings')
