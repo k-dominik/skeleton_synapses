@@ -454,7 +454,7 @@ def fetch_raw_and_predict_for_node(node_info, roi_xyz, output_dir, opPixelClassi
 
 def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     """
-    DEPRECATED. This should only be called through fetch_raw_and_predict_for_node.
+    DEPRECATED. This should only be called through fetch_raw_and_predict_for_node. Left for compatibility purposes.
 
     Parameters
     ----------
@@ -468,13 +468,28 @@ def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
     -------
 
     """
+    return raw_data_for_roi(roi_xyz, output_dir, opPixelClassification)
+
+
+def raw_data_for_roi(roi_xyz, output_dir, opPixelClassification):
     roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
     raw_xyzc = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1]).wait()
     raw_xyzc = vigra.taggedView(raw_xyzc, 'xyzc')
     if output_dir:
-        write_output_image(output_dir, raw_xyzc[:,:,0,:], "raw", roi_name, 'slices')
-    raw_xy = raw_xyzc[:,:,0,0]
+        write_output_image(output_dir, raw_xyzc[:, :, 0, :], "raw", roi_name, 'slices')
+    raw_xy = raw_xyzc[:, :, 0, 0]
     return raw_xy
+
+
+def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path):
+    # convert roi into a tuple of slice objects which can be used by numpy for indexing
+    roi_slices = (roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0]))
+
+    with h5py.File(hdf5_path, 'r') as f:
+        synapse_cc_xy = np.array(f['slice_labels'][roi_slices]).T
+        predictions_xyc = np.array(f['pixel_predictions'][roi_slices]).transpose((1, 0, 2))
+
+    return synapse_cc_xy, predictions_xyc
 
 
 def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
