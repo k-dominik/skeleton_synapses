@@ -83,7 +83,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
     def _get_stack_id(self, stack_id_or_title):
         try:
             return int(stack_id_or_title)
-        except ValueError:
+        except TypeError:
             if stack_id_or_title is None:
                 return None
             stacks = self.get((self.project_id, 'stacks'))
