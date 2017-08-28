@@ -149,7 +149,7 @@ def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=Fal
     autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
     multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
 
-    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path))
+    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
 
     include_offset = False
 
