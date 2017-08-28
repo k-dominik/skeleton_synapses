@@ -75,14 +75,17 @@ def make_tile_url_template(image_base):
 
 
 class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
-    def __init__(self, catmaid_client):
+    def __init__(self, catmaid_client, stack_id_or_title=None):
         super(CatmaidSynapseSuggestionAPI, self).__init__(catmaid_client)
         self.export_widget = ExportWidget(catmaid_client)
+        self.stack_id = self._get_stack_id(stack_id_or_title)
 
     def _get_stack_id(self, stack_id_or_title):
         try:
             return int(stack_id_or_title)
         except ValueError:
+            if stack_id_or_title is None:
+                return None
             stacks = self.get((self.project_id, 'stacks'))
             for stack in stacks:
                 if stack['title'] == stack_id_or_title:
@@ -363,3 +366,52 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
 
     def treenodes_by_tag(self, *tags):
         return self.get(('synapsesuggestor/training-data', self.project_id, 'treenodes/label'), {'tags': tags})
+
+    def get_synapses_near_skeleton(self, skeleton_id, project_workflow_id=None, distance=600):
+        params = {'skid': skeleton_id, 'distance': distance}
+        if project_workflow_id is not None:
+            params['project_workflow_id'] = project_workflow_id
+
+        response = self.get(('synapsesuggestor/treenode-association', self.project_id, 'get-distance'), params)
+
+        return [dict(zip(response['columns'], row)) for row in response['data']]
+
+    def get_nodes_in_roi(self, roi_xyz, stack_id_or_title=None):
+        """
+        Get the nodes in the ROI with their coordinates relative to the top-left corner of the ROI.
+
+        Parameters
+        ----------
+        roi_xyz : np.array
+            [[xmin, ymin, zmin],[xmax, ymax, zmax]] in stack space
+        stack_id_or_title
+
+        Returns
+        -------
+
+        """
+        transformer = self.get_coord_transformer(stack_id_or_title)
+        roi_xyz_p = transformer.stack_to_project_array(roi_xyz)
+        data = {
+            'left': roi_xyz_p[0, 0],
+            'top': roi_xyz_p[0, 1],
+            'z1': roi_xyz_p[0, 2],
+            'right': roi_xyz_p[1, 0],
+            'bottom': roi_xyz_p[1, 1],
+            'z2': roi_xyz_p[1, 2]
+        }
+        response = self.post((self.project_id, '/node/list'), data)
+        treenodes = dict()
+        for treenode_row in response[0]:
+            tnid, x, y, z, _, _, skid, _, _ = treenode_row
+            treenodes[tnid] = {
+                'coords': {
+                    'x': int(transformer.project_to_stack_coord('x', x) - roi_xyz[0, 0]),
+                    'y': int(transformer.project_to_stack_coord('y', y) - roi_xyz[0, 1]),
+                    'z': int(transformer.project_to_stack_coord('z', z) - roi_xyz[0, 2])
+                },
+                'skeleton_id': skid,
+                'treenode_id': tnid
+            }
+
+        return treenodes
