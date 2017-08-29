@@ -351,6 +351,7 @@ def locate_synapses_catmaid(
     node_count = 0
 
     roi_radius_nm = roi_radius_px * stack_info['resolution']['x']  # assumes XY isotropy
+    logger.debug('Getting synapses spatially near skeleton {}'.format(skeleton_id))
     synapses_near_skeleton = catmaid.get_synapses_near_skeleton(skeleton_id, project_workflow_id, roi_radius_nm)
     logger.debug('Found {} synapse planes near skeleton {}'.format(len(synapses_near_skeleton), skeleton_id))
     slice_id_tuples = set()
@@ -362,10 +363,10 @@ def locate_synapses_catmaid(
         slice_id_tuples.add(slice_id_tuple)
 
         radius = np.array([[-roi_radius_px, -roi_radius_px, 0], [roi_radius_px, roi_radius_px, 1]])
-        roi_xyz = radius + np.array([
+        roi_xyz = (radius + np.array([
             synapse['synapse_bounds_s'][:2] + [synapse['synapse_z_s']],
             synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]
-        ])
+        ])).astype(int)
 
         logger.debug('Getting treenodes in roi {}'.format(roi_xyz))
         # node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_info['sid'])
