@@ -481,7 +481,7 @@ def raw_data_for_roi(roi_xyz, output_dir, opPixelClassification):
     return raw_xy
 
 
-def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path):
+def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
     # convert roi into a tuple of slice objects which can be used by numpy for indexing
     roi_slices = (roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0]))
 
@@ -489,7 +489,10 @@ def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path):
         synapse_cc_xy = np.array(f['slice_labels'][roi_slices]).T
         predictions_xyc = np.array(f['pixel_predictions'][roi_slices]).transpose((1, 0, 2))
 
-    return synapse_cc_xy, predictions_xyc
+    if squeeze:
+        return synapse_cc_xy.squeeze(), predictions_xyc.squeeze()
+    else:
+        return synapse_cc_xy, predictions_xyc
 
 
 def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
