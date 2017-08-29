@@ -368,8 +368,8 @@ def locate_synapses_catmaid(
         ])
 
         logger.debug('Getting treenodes in roi {}'.format(roi_xyz))
-        node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_info['sid'])
-        item = NeuronSegmenterInput(roi_xyz, slice_id_tuple, node_locations)
+        # node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_info['sid'])
+        item = NeuronSegmenterInput(roi_xyz, slice_id_tuple)
         logger.debug('Adding {} to neuron segmentation queue'.format(item))
         synapse_queue.put(item)
         node_count += 1
@@ -456,7 +456,7 @@ class DetectorProcess(LeakyProcess):
         self.output_queue.put(DetectorOutput(tile_idx, np.array(predictions_xyc), np.array(synapse_cc_xy)))
 
 
-NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['roi_xyz', 'synapse_slice_ids', 'node_locations'])
+NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['roi_xyz', 'synapse_slice_ids'])
 NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', ['node_id', 'synapse_slice_id', 'contact_px'])
 
 
@@ -512,10 +512,7 @@ class NeuronSegmenterProcess(LeakyProcess):
         Request.reset_thread_pool(1)
 
     def execute(self):
-        roi_xyz, synapse_slice_ids, node_locations = self.input_queue.get()
-
-        node_locations_arr = node_locations_to_array(roi_xyz, node_locations)
-
+        roi_xyz, synapse_slice_ids = self.input_queue.get()
         self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(roi_xyz, self.input_queue.qsize()))
 
         with Timer() as node_timer:
@@ -539,6 +536,9 @@ class NeuronSegmenterProcess(LeakyProcess):
                     'Synapse slice IDs {} in ROI {} are only in 1 neuron'.format(synapse_slice_ids, roi_xyz)
                 )
                 return
+
+            node_locations = catmaid.get_nodes_in_roi(roi_xyz, catmaid.stack_id)
+            node_locations_arr = node_locations_to_array(roi_xyz, node_locations)
 
             not_nans = ~np.isnan(node_locations_arr)
             for segment, node_id in zip(segmentation_xy[not_nans], node_locations_arr[not_nans]):
