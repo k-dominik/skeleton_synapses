@@ -367,6 +367,7 @@ def locate_synapses_catmaid(
             synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]
         ])
 
+        logger.debug('Getting treenodes in roi {}'.format(roi_xyz))
         node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_info['sid'])
         item = NeuronSegmenterInput(roi_xyz, slice_id_tuple, node_locations)
         logger.debug('Adding {} to neuron segmentation queue'.format(item))
