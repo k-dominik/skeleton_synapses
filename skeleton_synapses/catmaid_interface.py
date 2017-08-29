@@ -403,7 +403,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         response = self.post((self.project_id, '/node/list'), data)
         treenodes = dict()
         for treenode_row in response[0]:
-            tnid, x, y, z, _, _, skid, _, _ = treenode_row
+            tnid, _, x, y, z, _, _, skid, _, _ = treenode_row
             treenodes[tnid] = {
                 'coords': {
                     'x': int(transformer.project_to_stack_coord('x', x) - roi_xyz[0, 0]),
