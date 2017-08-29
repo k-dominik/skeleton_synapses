@@ -621,7 +621,15 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
 
     role_data_dict = OrderedDict([("Raw Data", [DatasetInfo(preloaded_array=raw_xy)]),
                                   ("Probabilities", [DatasetInfo(preloaded_array=predictions_xyc)])])
-    batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
+    try:
+        batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
+    except AssertionError as e:
+        if "Can't stack images whose shapes differ (other than the stacked axis itself)" in str(e):
+            logger.debug('ERROR IMAGE SHAPES: \n\tRaw {}\n\tPredictions {}'.format(
+                raw_xy.shape, predictions_xyc.shape
+            ))
+        raise e
+
     assert len(batch_results) == 1
     segmentation_xy = batch_results[0]
     return segmentation_xy
