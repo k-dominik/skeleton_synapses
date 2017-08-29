@@ -520,9 +520,12 @@ class NeuronSegmenterProcess(LeakyProcess):
             raw_xy = raw_data_for_roi(roi_xyz, None, self.opPixelClassification)
             synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, HDF5_PATH)
 
-            self.inner_logger.debug('Image shapes: \n\tRaw {}\n\tSynapse_cc {}\n\tPredictions {}'.format(
+            log_str = 'Image shapes: \n\tRaw {}\n\tSynapse_cc {}\n\tPredictions {}'.format(
                 raw_xy.shape, synapse_cc_xy.shape, predictions_xyc.shape
-            ))
+            )
+            self.inner_logger.debug(log_str)
+            logger.debug(log_str)
+            print(log_str)
 
             segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, self.multicut_shell.workflow)
 
