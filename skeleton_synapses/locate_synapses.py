@@ -489,10 +489,10 @@ def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
         synapse_cc_xy = np.array(f['slice_labels'][roi_slices]).T
         predictions_xyc = np.array(f['pixel_predictions'][roi_slices]).transpose((1, 0, 2))
 
-    if squeeze:
-        return synapse_cc_xy.squeeze(), predictions_xyc.squeeze()
-    else:
-        return synapse_cc_xy, predictions_xyc
+    # if squeeze:
+    #     return synapse_cc_xy.squeeze(), predictions_xyc.squeeze()
+    # else:
+    return synapse_cc_xy, predictions_xyc
 
 
 def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
