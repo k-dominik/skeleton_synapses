@@ -64,7 +64,7 @@ RAM_MB_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000)
 
 DEBUG = False
 
-# ALGO_HASH = '1'
+ALGO_HASH = None
 
 catmaid = None
 
@@ -112,10 +112,12 @@ def hash_algorithm(*paths):
             logger.warning('No file, symlink or directory found at %s', path)
 
     digest = md5.hexdigest()
-    logger.debug('Algorithm hash is %s', digest)
+
     # todo: remove this
-    # logger.warning('Ignoring real algorithm hash, using {}'.format(ALGO_HASH))
-    # digest = ALGO_HASH
+    if ALGO_HASH is not None:
+        digest = ALGO_HASH
+        logger.warning('Ignoring real algorithm hash, using hardcoded value'.format(ALGO_HASH))
+    logger.debug('Algorithm hash is %s', digest)
     return digest
 
 
@@ -365,7 +367,7 @@ def locate_synapses_catmaid(
             synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]
         ])
 
-        node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_id)
+        node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_info['sid'])
         item = NeuronSegmenterInput(roi_xyz, slice_id_tuple, node_locations)
         logger.debug('Adding {} to neuron segmentation queue'.format(item))
         synapse_queue.put(item)
