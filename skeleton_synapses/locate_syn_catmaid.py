@@ -140,7 +140,11 @@ def main(credentials_path, stack_id, skeleton_ids, project_dir, roi_radius_px=15
         credentials_path, stack_id, skeleton_ids, project_dir, force
     )
 
-    algo_hash = hash_algorithm(autocontext_project, multicut_project)
+    if force:
+        logger.info('Using random hash')
+        algo_hash = hash(np.random.random())
+    else:
+        algo_hash = hash_algorithm(autocontext_project, multicut_project)
 
     performance_logger.info('{}: finished setup')
 
