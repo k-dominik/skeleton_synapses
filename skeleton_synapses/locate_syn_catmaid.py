@@ -599,7 +599,7 @@ class NeuronSegmenterProcess(LeakyProcess):
 def node_locations_to_array(roi_xyz, node_locations):
     arr = np.full(roi_xyz[1, :] - roi_xyz[0, :], np.nan)
     for node_location in node_locations.values():
-        coords = node_locations['coords']
+        coords = node_location['coords']
         arr[coords['x'], coords['y'], coords['z']] = int(node_location['treenode_id'])
 
     return arr
