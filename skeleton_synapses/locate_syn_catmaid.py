@@ -248,6 +248,25 @@ def tile_index_to_bounds(tile_index, tile_size):
     return np.stack((topleft, topleft+1)) * tile_size_xyz  # todo: might need to -1 to bottom row
 
 
+def square_bounds(roi_xyz):
+    """Convert a rectangular ROI array into the minimum square in which the original ROI is centered"""
+    shape = np.diff(roi_xyz[:, :2], axis=0).squeeze()
+    size_diff = shape[0] - shape[1]
+    if size_diff == 0:
+        return roi_xyz
+    elif size_diff > 0:
+        half_diff = float(size_diff) / 2
+        smaller_dim = 1
+    else:
+        half_diff = float(size_diff) / -2
+        smaller_dim = 0
+
+    roi_xyz[0, smaller_dim] -= np.floor(half_diff)
+    roi_xyz[1, smaller_dim] += np.ceil(half_diff)
+
+    return roi_xyz
+
+
 def locate_synapses_catmaid(
         autocontext_project_path,
         multicut_project,
@@ -363,10 +382,22 @@ def locate_synapses_catmaid(
         slice_id_tuples.add(slice_id_tuple)
 
         radius = np.array([[-roi_radius_px, -roi_radius_px, 0], [roi_radius_px, roi_radius_px, 1]])
+
+        # synapse plane bounds + buffer
         roi_xyz = (radius + np.array([
-            synapse['synapse_bounds_s'][:2] + [synapse['synapse_z_s']],
-            synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]
+            synapse['synapse_bounds_s'][:2] + [synapse['synapse_z_s']],  # xmin, ymin, zmin
+            synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]  # xmax, ymax, zmax
         ])).astype(int)
+
+        # make it into a square
+        # roi_xyz = square_bounds(roi_xyz)
+
+        # synapse plane centroid + buffer
+        # centroid_xyz = np.array([
+        #     synapse['synapse_bounds_s'][:2] + [synapse['synapse_z_s']],
+        #     synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]
+        # ]).mean(axis=0)
+        # roi_xyz = (radius + centroid_xyz).astype(int)
 
         logger.debug('Getting treenodes in roi {}'.format(roi_xyz))
         # node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_info['sid'])
