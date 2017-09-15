@@ -482,6 +482,18 @@ def raw_data_for_roi(roi_xyz, output_dir, opPixelClassification):
 
 
 def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
+    """
+
+    Parameters
+    ----------
+    roi_xyz
+    hdf5_path
+    squeeze
+
+    Returns
+    -------
+    (vigra.VigraArray, vigra.VigraArray)
+    """
     # convert roi into a tuple of slice objects which can be used by numpy for indexing
     roi_slices = (roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0]))
 
@@ -492,7 +504,7 @@ def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
     # if squeeze:
     #     return synapse_cc_xy.squeeze(), predictions_xyc.squeeze()
     # else:
-    return synapse_cc_xy, predictions_xyc
+    return vigra.taggedView(synapse_cc_xy, axistags='xy'), vigra.taggedView(predictions_xyc, axistags='xyc')
 
 
 def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
@@ -592,8 +604,8 @@ def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw
     roi_xyz
     output_dir
     multicut_workflow
-    raw_xy
-    predictions_xyc
+    raw_xy : vigra.VigraArray
+    predictions_xyc : vigra.VigraArray
 
     Returns
     -------
@@ -611,6 +623,18 @@ def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw
 
 
 def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
+    """
+
+    Parameters
+    ----------
+    raw_xy : vigra.VigraArray
+    predictions_xyc : vigra.VigraArray
+    multicut_workflow
+
+    Returns
+    -------
+
+    """
     assert raw_xy.shape[:2] == predictions_xyc.shape[:2]
 
     opEdgeTrainingWithMulticut = multicut_workflow.edgeTrainingWithMulticutApplet.topLevelOperator
@@ -619,8 +643,10 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
     opDataExport = multicut_workflow.dataExportApplet.topLevelOperator
     opDataExport.OutputAxisOrder.setValue('xy')
 
-    role_data_dict = OrderedDict([("Raw Data", [DatasetInfo(preloaded_array=raw_xy)]),
-                                  ("Probabilities", [DatasetInfo(preloaded_array=predictions_xyc)])])
+    role_data_dict = OrderedDict([
+        ("Raw Data", [DatasetInfo(preloaded_array=raw_xy)]),
+        ("Probabilities", [DatasetInfo(preloaded_array=predictions_xyc)])
+    ])
     try:
         batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
     except AssertionError as e:
