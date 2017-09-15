@@ -670,7 +670,7 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
         raise e
 
     assert len(batch_results) == 1
-    segmentation_xy = batch_results[0]
+    segmentation_xy = vigra.taggedView(batch_results[0], axistags='xy')
     assert_same_xy(segmentation_xy, raw_xy, predictions_xyc)
     return segmentation_xy
 
