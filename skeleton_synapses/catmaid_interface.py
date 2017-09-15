@@ -391,7 +391,9 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
 
         """
         transformer = self.get_coord_transformer(stack_id_or_title)
-        roi_xyz_p = transformer.stack_to_project_array(roi_xyz)
+        # convert a [xyz, xyz) ROI for slice indexing into [xyz, xyz] for geometric intersection
+        intersection_roi = roi_xyz - np.array([[0, 0, 0], [1, 1, 1]])
+        roi_xyz_p = transformer.stack_to_project_array(intersection_roi)
         data = {
             'left': roi_xyz_p[0, 0],
             'top': roi_xyz_p[0, 1],
