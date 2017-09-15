@@ -600,7 +600,8 @@ class NeuronSegmenterProcess(LeakyProcess):
 def node_locations_to_array(template_array_xy, node_locations):
     if not isinstance(template_array_xy, vigra.VigraArray):
         template_array_xy = vigra.taggedView(template_array_xy, axistags='xy')
-    arr_xy = template_array_xy.copy().fill(np.nan)
+    arr_xy = template_array_xy.copy()
+    arr_xy.fill(np.nan)
     for node_location in node_locations.values():
         coords = node_location['coords']
         arr_xy[coords['x'], coords['y']] = int(node_location['treenode_id'])
