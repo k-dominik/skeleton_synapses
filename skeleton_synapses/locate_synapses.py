@@ -622,6 +622,17 @@ def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw
     return segmentation_xy
 
 
+def assert_same_xy(*args):
+    if not args:
+        return
+    it = iter(args)
+    prev = next(it)
+    for arg in it:
+        assert prev.shape[:2] == arg.shape[:2]
+        assert tuple(prev.axistags)[:2] == tuple(arg.axistags)[:2]
+        prev = arg
+
+
 def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
     """
 
@@ -635,7 +646,7 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
     -------
 
     """
-    assert raw_xy.shape[:2] == predictions_xyc.shape[:2]
+    assert_same_xy(raw_xy, predictions_xyc)
 
     opEdgeTrainingWithMulticut = multicut_workflow.edgeTrainingWithMulticutApplet.topLevelOperator
     assert isinstance(opEdgeTrainingWithMulticut, OpEdgeTrainingWithMulticut)
@@ -660,6 +671,7 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
 
     assert len(batch_results) == 1
     segmentation_xy = batch_results[0]
+    assert_same_xy(segmentation_xy, raw_xy, predictions_xyc)
     return segmentation_xy
 
 
