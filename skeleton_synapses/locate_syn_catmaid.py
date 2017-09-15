@@ -21,6 +21,7 @@ import numpy as np
 from six.moves import range
 from skimage.morphology import skeletonize
 from skimage.measure import find_contours
+import vigra
 
 from lazyflow.utility import Timer
 from lazyflow.request import Request
@@ -581,7 +582,7 @@ class NeuronSegmenterProcess(LeakyProcess):
                 return
 
             node_locations = catmaid.get_nodes_in_roi(roi_xyz, catmaid.stack_id)
-            node_locations_arr = node_locations_to_array(roi_xyz, node_locations)
+            node_locations_arr = node_locations_to_array(synapse_cc_xy, node_locations)
 
             not_nans = ~np.isnan(node_locations_arr)
             for segment, node_id in zip(segmentation_xy[not_nans], node_locations_arr[not_nans]):
@@ -596,13 +597,15 @@ class NeuronSegmenterProcess(LeakyProcess):
         ))
 
 
-def node_locations_to_array(roi_xyz, node_locations):
-    arr = np.full(roi_xyz[1, :] - roi_xyz[0, :], np.nan)
+def node_locations_to_array(template_array_xy, node_locations):
+    if not isinstance(template_array_xy, vigra.VigraArray):
+        template_array_xy = vigra.taggedView(template_array_xy, axistags='xy')
+    arr_xy = template_array_xy.copy().fill(np.nan)
     for node_location in node_locations.values():
         coords = node_location['coords']
-        arr[coords['x'], coords['y'], coords['z']] = int(node_location['treenode_id'])
+        arr_xy[coords['x'], coords['y']] = int(node_location['treenode_id'])
 
-    return arr
+    return arr_xy
 
 
 def coords_to_multipoint_wkt_str(x_coords, y_coords):
