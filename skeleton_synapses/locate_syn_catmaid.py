@@ -586,7 +586,7 @@ class NeuronSegmenterProcess(LeakyProcess):
 
             not_nans = ~np.isnan(node_locations_arr)
             for segment, node_id in zip(segmentation_xy[not_nans], node_locations_arr[not_nans]):
-                for synapse_slice_id in overlapping_segments[segment]:
+                for synapse_slice_id in overlapping_segments.get(segment, []):
                     contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
                     self.output_queue.put(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
 
