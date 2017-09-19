@@ -584,17 +584,16 @@ class NeuronSegmenterProcess(LeakyProcess):
             node_locations = catmaid.get_nodes_in_roi(roi_xyz, catmaid.stack_id)
             node_locations_arr = node_locations_to_array(synapse_cc_xy, node_locations)
 
-            not_nans = node_locations_arr >= 0
-            for segment, node_id in zip(segmentation_xy[not_nans], node_locations_arr[not_nans]):
+            where_nodes_exist = node_locations_arr >= 0
+            if where_nodes_exist.sum() == 0:
+                self.inner_logger.debug('ROI {} has no nodes'.format(roi_xyz))
+
+            for segment, node_id in zip(segmentation_xy[where_nodes_exist], node_locations_arr[where_nodes_exist]):
                 for synapse_slice_id in overlapping_segments.get(segment, []):
                     contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
                     self.output_queue.put(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
 
             logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
-
-        self.inner_logger.debug('Adding segmentation output of ROI {} to output queue; {} nodes remaining'.format(
-            roi_xyz, self.input_queue.qsize()
-        ))
 
 
 def node_locations_to_array(template_array_xy, node_locations):

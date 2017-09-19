@@ -406,7 +406,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         treenodes = dict()
         for treenode_row in response[0]:
             tnid, _, x, y, z, _, _, skid, _, _ = treenode_row
-            if not in_roi(intersection_roi, [x, y, z]):
+            if not in_roi(roi_xyz_p, [x, y, z]):
                 # API returns treenodes which are out of ROI if they have an edge which passes through the ROI
                 continue
 
