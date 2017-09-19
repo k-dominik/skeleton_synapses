@@ -658,16 +658,7 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
         ("Raw Data", [DatasetInfo(preloaded_array=raw_xy)]),
         ("Probabilities", [DatasetInfo(preloaded_array=predictions_xyc)])
     ])
-    try:
-        batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
-    except AssertionError as e:
-        if "Can't stack images whose shapes differ (other than the stacked axis itself)" in str(e):
-            log_str = 'ERROR IMAGE SHAPES: \n\tRaw {}\n\tPredictions {}'.format(
-                raw_xy.shape, predictions_xyc.shape
-            )
-            logger.debug(log_str)
-            print(log_str)
-        raise e
+    batch_results = multicut_workflow.batchProcessingApplet.run_export(role_data_dict, export_to_array=True)
 
     assert len(batch_results) == 1
     segmentation_xy = vigra.taggedView(batch_results[0], axistags='xy')

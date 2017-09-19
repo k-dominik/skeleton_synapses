@@ -594,20 +594,6 @@ class NeuronSegmenterProcess(LeakyProcess):
                     contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
                     self.output_queue.put(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
 
-            # todo: remove
-            if '24203474' in node_locations or 24203474 in node_locations:
-                with open(os.path.join(os.getenv('HOME'), 'DEBUG_DUMPS', 'node_seg.pickle'), 'w') as f:
-                    pickle.dump({
-                        'raw_xy': raw_xy,
-                        'synapse_cc_xy': synapse_cc_xy,
-                        'predictions_xyz': predictions_xyc,
-                        'segmentation_xy': segmentation_xy,
-                        'overlapping_segments': overlapping_segments,
-                        'node_locations': node_locations,
-                        'node_locations_arr': node_locations_arr,
-                        'where_nodes_exist': where_nodes_exist
-                    }, f)
-
             logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
 
 
