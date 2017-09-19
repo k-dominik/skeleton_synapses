@@ -12,6 +12,7 @@ import time
 import hashlib
 import subprocess
 import signal
+import pickle
 
 import psutil
 from datetime import datetime
@@ -593,23 +594,45 @@ class NeuronSegmenterProcess(LeakyProcess):
                     contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
                     self.output_queue.put(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
 
+            # todo: remove
+            if '24203474' in node_locations or 24203474 in node_locations:
+                with open(os.path.join(os.getenv('HOME'), 'DEBUG_DUMPS', 'node_seg.pickle'), 'w') as f:
+                    pickle.dump({
+                        'raw_xy': raw_xy,
+                        'synapse_cc_xy': synapse_cc_xy,
+                        'predictions_xyz': predictions_xyc,
+                        'segmentation_xy': segmentation_xy,
+                        'overlapping_segments': overlapping_segments,
+                        'node_locations': node_locations,
+                        'node_locations_arr': node_locations_arr,
+                        'where_nodes_exist': where_nodes_exist
+                    }, f)
+
             logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
 
 
 def node_locations_to_array(template_array_xy, node_locations):
+    """
+    Given a vigra image in xy and a dict containing xy coordinates, return a vigra image of the same shape, where nodes
+    are represented by their integer ID, and every other pixel is -1.
+
+    Parameters
+    ----------
+    template_array_xy : vigra.VigraArray
+    node_locations : dict
+        dict whose values are a dicts containing a 'coords' dict and a 'treenode_id' value
+
+    Returns
+    -------
+    vigra.VigraArray
+    """
     if not isinstance(template_array_xy, vigra.VigraArray):
         template_array_xy = vigra.taggedView(template_array_xy, axistags='xy')
     arr_xy = template_array_xy.copy()
     arr_xy.fill(-1)
     for node_location in node_locations.values():
         coords = node_location['coords']
-        try:
-            arr_xy[coords['x'], coords['y']] = int(node_location['treenode_id'])
-        except IndexError:
-            print('\n\n\n')
-            print('arr_xy has shape {} and axistags {}'.format(arr_xy.shape, list(arr_xy.axistags)))
-            print('\n\n\n')
-            raise
+        arr_xy[coords['x'], coords['y']] = int(node_location['treenode_id'])
 
     return arr_xy
 
