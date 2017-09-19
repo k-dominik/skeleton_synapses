@@ -604,7 +604,13 @@ def node_locations_to_array(template_array_xy, node_locations):
     arr_xy.fill(np.nan)
     for node_location in node_locations.values():
         coords = node_location['coords']
-        arr_xy[coords['x'], coords['y']] = int(node_location['treenode_id'])
+        try:
+            arr_xy[coords['x'], coords['y']] = int(node_location['treenode_id'])
+        except IndexError:
+            print('\n\n\n')
+            print('arr_xy has shape {} and axistags {}'.format(arr_xy.shape, list(arr_xy.axistags)))
+            print('\n\n\n')
+            raise
 
     return arr_xy
 
