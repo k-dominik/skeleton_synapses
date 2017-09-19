@@ -584,7 +584,7 @@ class NeuronSegmenterProcess(LeakyProcess):
             node_locations = catmaid.get_nodes_in_roi(roi_xyz, catmaid.stack_id)
             node_locations_arr = node_locations_to_array(synapse_cc_xy, node_locations)
 
-            not_nans = ~np.isnan(node_locations_arr)
+            not_nans = node_locations_arr >= 0
             for segment, node_id in zip(segmentation_xy[not_nans], node_locations_arr[not_nans]):
                 for synapse_slice_id in overlapping_segments.get(segment, []):
                     contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
@@ -601,7 +601,7 @@ def node_locations_to_array(template_array_xy, node_locations):
     if not isinstance(template_array_xy, vigra.VigraArray):
         template_array_xy = vigra.taggedView(template_array_xy, axistags='xy')
     arr_xy = template_array_xy.copy()
-    arr_xy.fill(np.nan)
+    arr_xy.fill(-1)
     for node_location in node_locations.values():
         coords = node_location['coords']
         try:
