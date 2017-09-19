@@ -391,7 +391,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
 
         """
         transformer = self.get_coord_transformer(stack_id_or_title)
-        # convert a [xyz, xyz) ROI for slice indexing into [xyz, xyz] for geometric intersection
+        # convert a half-closed [xyz, xyz) ROI for slice indexing into closed [xyz, xyz] for geometric intersection
         intersection_roi = roi_xyz - np.array([[0, 0, 0], [1, 1, 1]])
         roi_xyz_p = transformer.stack_to_project_array(intersection_roi)
         data = {
@@ -406,6 +406,10 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         treenodes = dict()
         for treenode_row in response[0]:
             tnid, _, x, y, z, _, _, skid, _, _ = treenode_row
+            if not in_roi(intersection_roi, [x, y, z]):
+                # API returns treenodes which are out of ROI if they have an edge which passes through the ROI
+                continue
+
             treenodes[tnid] = {
                 'coords': {
                     'x': int(transformer.project_to_stack_coord('x', x) - roi_xyz[0, 0]),
@@ -417,3 +421,13 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
             }
 
         return treenodes
+
+
+def in_roi(roi_xyz, coords_xyz):
+    """Closed interval: use intersection_roi"""
+    x, y, z = coords_xyz
+    return all([
+        roi_xyz[0, 0] <= x <= roi_xyz[1, 0],
+        roi_xyz[0, 1] <= y <= roi_xyz[1, 1],
+        roi_xyz[0, 2] <= z <= roi_xyz[1, 2]
+    ])
