@@ -906,5 +906,6 @@ if __name__ == "__main__":
     except Exception as e:
         logger.exception('Errored, killing all child processes and exiting')
         kill_child_processes()
+        raise
     finally:
         sys.exit(exit_code)
