@@ -237,14 +237,14 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         params = {'stack_id': stack_id, 'detection_hash': detection_hash, 'tile_size': tile_size}
         if detection_notes:
             params['algo_notes'] = detection_notes
-        return self.get(('synapsesuggestor/synapse-detection/workflow'), params)['workflow_id']
+        return self.get(('ext/synapsesuggestor/synapse-detection/workflow'), params)['workflow_id']
 
     def get_project_workflow_id(self, workflow_id, association_hash, association_notes=None):
         params = {'workflow_id': workflow_id, 'association_hash': association_hash}
         if association_notes:
             params['algo_notes'] = association_notes
         return self.get(
-            ('synapsesuggestor/treenode-association', self.project_id, 'workflow'), params
+            ('ext/synapsesuggestor/treenode-association', self.project_id, 'workflow'), params
         )['project_workflow_id']
 
     def get_treenode_locations(self, skeleton_id, stack_id_or_title=None):
@@ -285,7 +285,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         set of tuple
             Tuples of tile indices in XYZ order
         """
-        data = self.get('synapsesuggestor/synapse-detection/tiles/detected', {'workflow_id': workflow_id})
+        data = self.get('ext/synapsesuggestor/synapse-detection/tiles/detected', {'workflow_id': workflow_id})
         return {tuple(item) for item in data}
 
     def add_synapse_slices_to_tile(self, workflow_id, synapse_slices, tile_idx):
@@ -312,7 +312,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
             'x_idx': tile_idx[2]
         }
 
-        url = 'synapsesuggestor/synapse-detection/tiles/insert-synapse-slices'
+        url = 'ext/synapsesuggestor/synapse-detection/tiles/insert-synapse-slices'
         api_logger.debug('POST to {}\n{}'.format(url, data))
         response_data = self.post(url, data)
         api_logger.debug('Returned\n{}'.format(response_data))
@@ -321,7 +321,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
 
     def agglomerate_synapses(self, synapse_slice_ids):
         return self.post(
-            'synapsesuggestor/synapse-detection/slices/agglomerate',
+            'ext/synapsesuggestor/synapse-detection/slices/agglomerate',
             {'synapse_slices': list(synapse_slice_ids)}
         )
 
@@ -341,19 +341,19 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         data = {'associations': [json.dumps(association) for association in associations]}
         if project_workflow_id is not None:
             data['project_workflow_id'] = project_workflow_id
-        return self.post(('synapsesuggestor/treenode-association', self.project_id, 'add'), data)
+        return self.post(('ext/synapsesuggestor/treenode-association', self.project_id, 'add'), data)
 
     def get_treenode_synapse_associations(self, skeleton_id, project_workflow_id=None):
         params = {'skid': skeleton_id}
         if project_workflow_id is not None:
             params['project_workflow_id'] = project_workflow_id
 
-        return self.get(('synapsesuggestor/treenode-association', self.project_id, 'get'), params)
+        return self.get(('ext/synapsesuggestor/treenode-association', self.project_id, 'get'), params)
 
     def get_synapse_bounds(self, synapse_ids, z_padding=1, xy_padding=10):
         params = {'synapse_object_ids': list(synapse_ids), 'z_padding': int(z_padding), 'xy_padding': int(xy_padding)}
 
-        return self.get('synapsesuggestor/analysis/synapse-extents', params)
+        return self.get('ext/synapsesuggestor/analysis/synapse-extents', params)
 
     def sample_treenodes(self, count=None, seed=None):
         params = dict()
@@ -362,17 +362,17 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         if seed is not None:
             params['seed'] = seed
 
-        return self.get(('synapsesuggestor/training-data', self.project_id, 'treenodes/sample'), params)
+        return self.get(('ext/synapsesuggestor/training-data', self.project_id, 'treenodes/sample'), params)
 
     def treenodes_by_tag(self, *tags):
-        return self.get(('synapsesuggestor/training-data', self.project_id, 'treenodes/label'), {'tags': tags})
+        return self.get(('ext/synapsesuggestor/training-data', self.project_id, 'treenodes/label'), {'tags': tags})
 
     def get_synapses_near_skeleton(self, skeleton_id, project_workflow_id=None, distance=600):
         params = {'skid': skeleton_id, 'distance': distance}
         if project_workflow_id is not None:
             params['project_workflow_id'] = project_workflow_id
 
-        response = self.get(('synapsesuggestor/treenode-association', self.project_id, 'get-distance'), params)
+        response = self.get(('ext/synapsesuggestor/treenode-association', self.project_id, 'get-distance'), params)
 
         return [dict(zip(response['columns'], row)) for row in response['data']]
 
