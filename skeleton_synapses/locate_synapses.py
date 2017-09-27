@@ -12,6 +12,7 @@ import json
 import datetime
 import multiprocessing as mp
 import psutil
+import cPickle as pickle
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
@@ -214,6 +215,38 @@ def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClass
                                             predictions_xyc)
 
     return predictions_xyc, synapse_cc_xy, segmentation_xy
+
+
+def deepcopy(obj):
+    return pickle.loads(pickle.dumps(obj, pickle.HIGHEST_PROTOCOL))
+
+
+class IlastikProjectOpener(object):
+    opPixelClassification = None
+    multicut_shell = None
+
+    def __init__(self):
+        raise NotImplementedError('{} should not be instantiated'.format(type(self).__name__))
+
+    @classmethod
+    def prewarm(cls, description_file_path, autocontext_project_path, multicut_project_path):
+        cls.opPixelClassification, cls.multicut_shell = setup_classifier_and_multicut(
+            description_file_path, autocontext_project_path, multicut_project_path
+        )
+
+    @classmethod
+    def get_classifier(cls):
+        assert cls.opPixelClassification, "IlastikProjectOpener must be prewarmed"
+        return deepcopy(cls.opPixelClassification)
+
+    @classmethod
+    def get_multicut(cls):
+        assert cls.multicut_shell, "IlastikProjectOpener must be prewarmed"
+        return deepcopy(cls.multicut_shell)
+
+    @classmethod
+    def get_classifier_and_multicut(cls):
+        return cls.get_classifier(), cls.get_multicut()
 
 
 def setup_classifier(description_file, autocontext_project_path):
