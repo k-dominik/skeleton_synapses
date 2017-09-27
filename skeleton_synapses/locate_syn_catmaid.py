@@ -12,7 +12,6 @@ import time
 import hashlib
 import subprocess
 import signal
-import pickle
 
 import psutil
 from datetime import datetime
@@ -37,7 +36,7 @@ from locate_synapses import (
     setup_files, setup_classifier, setup_classifier_and_multicut, ensure_list, mkdir_p,
     fetch_raw_and_predict_for_node, raw_data_for_roi, labeled_synapses_for_node, segmentation_for_node,
     # classes
-    CaretakerProcess, LeakyProcess,
+    CaretakerProcess, LeakyProcess, IlastikProjectOpener,
     segmentation_for_img, cached_synapses_predictions_for_roi)
 from skeleton_utils import roi_around_node
 
@@ -309,6 +308,9 @@ def locate_synapses_catmaid(
     workflow_id = catmaid.get_workflow_id(
         stack_info['sid'], algo_hash, TILE_SIZE, detection_notes=algo_notes['synapse_detection'])
 
+    logger.info('Preloading ilastik projects')
+    IlastikProjectOpener.prewarm(input_filepath, autocontext_project_path, multicut_project)
+
     logger.info('Populating tile queue')
 
     log_timestamp('started getting tiles')
@@ -468,7 +470,8 @@ class DetectorProcess(LeakyProcess):
         self.setup_args = (description_file, autocontext_project_path)
 
     def setup(self):
-        self.opPixelClassification = setup_classifier(*self.setup_args)
+        self.opPixelClassification = IlastikProjectOpener.get_classifier()
+        # self.opPixelClassification = setup_classifier(*self.setup_args)
         Request.reset_thread_pool(1)  # todo: set to 0?
 
     def execute(self):
@@ -542,9 +545,10 @@ class NeuronSegmenterProcess(LeakyProcess):
 
     def setup(self):
         self.inner_logger.debug('Setting up opPixelClassification and multicut_shell...')
-        self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
-            *self.setup_args
-        )
+        # self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
+        #     *self.setup_args
+        # )
+        self.opPixelClassification, self.multicut_shell = IlastikProjectOpener.get_classifier_and_multicut()
         self.inner_logger.debug('opPixelClassification and multicut_shell set up')
 
         Request.reset_thread_pool(1)
