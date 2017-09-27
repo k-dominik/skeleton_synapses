@@ -12,7 +12,7 @@ import json
 import datetime
 import multiprocessing as mp
 import psutil
-import cPickle as pickle
+from copy import deepcopy
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
@@ -215,10 +215,6 @@ def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClass
                                             predictions_xyc)
 
     return predictions_xyc, synapse_cc_xy, segmentation_xy
-
-
-def deepcopy(obj):
-    return pickle.loads(pickle.dumps(obj, pickle.HIGHEST_PROTOCOL))
 
 
 class IlastikProjectOpener(object):
