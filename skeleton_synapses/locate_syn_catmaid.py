@@ -12,7 +12,7 @@ import time
 import hashlib
 import subprocess
 import signal
-import pickle
+from Queue import Empty
 
 import psutil
 from datetime import datetime
@@ -45,6 +45,8 @@ from skeleton_utils import roi_around_node
 # def addapt_numpy_float64(numpy_float64):
 #     return AsIs(numpy_float64)
 # register_adapter(np.float64, addapt_numpy_float64)
+
+RESULTS_TIMEOUT_SECONDS = 5*60  # 5 minutes
 
 LOG_LEVEL = logging.DEBUG
 
@@ -652,7 +654,11 @@ def iterate_queue(queue, final_size, queue_name=None):
         queue_name = repr(queue)
     for idx in range(final_size):
         logger.debug('Waiting for item {} from queue {} (expect {} more)'.format(idx, queue_name, final_size - idx))
-        item = queue.get()
+        try:
+            item = queue.get(RESULTS_TIMEOUT_SECONDS)
+        except Empty:
+            logger.exception('Result queue timed out after {} seconds'.format(RESULTS_TIMEOUT_SECONDS))
+            raise
         logger.debug('Got item {} from queue {}: {} (expect {} more)'.format(idx, queue_name, item, final_size - idx))
         yield item
 
