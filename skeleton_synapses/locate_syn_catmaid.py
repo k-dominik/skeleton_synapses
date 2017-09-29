@@ -337,7 +337,7 @@ def locate_synapses_catmaid(
     skel_output_dir = skel_output_dir if DEBUG else None
 
     if tile_count:
-        logger.info('Classifying pixels in tilewise')
+        logger.info('Classifying pixels in {} tiles'.format(tile_count))
 
         detector_containers = [
             CaretakerProcess(
@@ -350,7 +350,9 @@ def locate_synapses_catmaid(
 
         logger.debug('{} tiles queued'.format(tile_count))
 
-        log_timestamp('started synapse detection ({} tiles, 512x512 each, {} threads)'.format(tile_count, THREADS))
+        log_timestamp('started synapse detection ({} tiles, 512x512 each, {} threads)'.format(
+            tile_count, len(detector_containers)
+        ))
 
         while tile_queue.qsize() < min(THREADS, tile_count):
             logger.debug('Waiting for tile queue to populate...')
@@ -375,7 +377,7 @@ def locate_synapses_catmaid(
     )
 
     synapse_queue, synapse_result_queue = mp.Queue(), mp.Queue()
-    node_count = 0
+    synapse_count = 0
 
     roi_radius_nm = roi_radius_px * stack_info['resolution']['x']  # assumes XY isotropy
     logger.debug('Getting synapses spatially near skeleton {}'.format(skeleton_id))
@@ -412,12 +414,12 @@ def locate_synapses_catmaid(
         item = NeuronSegmenterInput(roi_xyz, slice_id_tuple)
         logger.debug('Adding {} to neuron segmentation queue'.format(item))
         synapse_queue.put(item)
-        node_count += 1
+        synapse_count += 1
 
-    log_timestamp('finished getting nodes')
+    log_timestamp('finished getting synapse planes'.format(synapse_count))
 
-    if node_count:
-        logger.info('Segmenting synapse windows')
+    if synapse_count:
+        logger.info('Segmenting {} synapse windows'.format(synapse_count))
 
         neuron_seg_containers = [
             CaretakerProcess(
@@ -425,13 +427,15 @@ def locate_synapses_catmaid(
                 (synapse_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir),
                 name='CaretakerProcess{}'.format(idx)
             )
-            for idx in range(min(THREADS, node_count))
+            for idx in range(min(THREADS, synapse_count))
             # for _ in range(1)
         ]
 
-        log_timestamp('started segmenting neurons ({} items, {} threads)'.format(node_count, THREADS))
+        log_timestamp('started segmenting neurons ({} items, {} threads)'.format(
+            synapse_count, len(neuron_seg_containers)
+        ))
 
-        while synapse_queue.qsize() < min(THREADS, node_count):
+        while synapse_queue.qsize() < min(THREADS, synapse_count):
             logger.debug('Waiting for node queue to populate...')
             time.sleep(1)
 
@@ -439,7 +443,7 @@ def locate_synapses_catmaid(
             neuron_seg_container.start()
             assert neuron_seg_container.is_alive()
 
-        commit_node_association_results_from_queue(synapse_result_queue, node_count, project_workflow_id)
+        commit_node_association_results_from_queue(synapse_result_queue, synapse_count, project_workflow_id)
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.join()
@@ -552,6 +556,7 @@ class NeuronSegmenterProcess(LeakyProcess):
         Request.reset_thread_pool(1)
 
     def execute(self):
+        logger.debug('Waiting for item')
         roi_xyz, synapse_slice_ids = self.input_queue.get()
         self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(roi_xyz, self.input_queue.qsize()))
 
@@ -566,7 +571,6 @@ class NeuronSegmenterProcess(LeakyProcess):
             )
             self.inner_logger.debug(log_str)
             logger.debug(log_str)
-            print(log_str)
 
             segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, self.multicut_shell.workflow)
 
@@ -584,6 +588,7 @@ class NeuronSegmenterProcess(LeakyProcess):
                 self.inner_logger.debug(
                     'Synapse slice IDs {} in ROI {} are only in 1 neuron'.format(synapse_slice_ids, roi_xyz)
                 )
+                self.output_queue.put(outputs)
                 return
 
             node_locations = catmaid.get_nodes_in_roi(roi_xyz, catmaid.stack_id)
@@ -857,6 +862,7 @@ def setup_logging(project_dir, args, kwargs, level=logging.NOTSET):
 def kill_child_processes(signum=None, frame=None):
     current_proc = psutil.Process()
     for child_proc in current_proc.children(recursive=True):
+        logger.debug('Killing process: {} with status {}'.format(child_proc.name(), child_proc.status()))
         child_proc.kill()
 
 
