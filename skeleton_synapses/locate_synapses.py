@@ -149,8 +149,10 @@ def setup_files(
     """
     skeleton_ids = ensure_list(skeleton_ids)
 
-    autocontext_project = os.path.join(input_file_dir, 'full-vol-autocontext.ilp')
-    multicut_project = os.path.join(input_file_dir, 'multicut', PROJECT_NAME + '-multicut.ilp')
+    projects_dir = os.path.join(input_file_dir, 'projects')
+
+    autocontext_project = os.path.join(projects_dir, 'full-vol-autocontext.ilp')
+    multicut_project = os.path.join(projects_dir, 'multicut', PROJECT_NAME + '-multicut.ilp')
 
     catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
 
@@ -161,7 +163,7 @@ def setup_files(
     )
 
     try:
-        with open(os.path.join(input_file_dir, 'algorithm_notes.json')) as f:
+        with open(os.path.join(projects_dir, 'algorithm_notes.json')) as f:
             algo_notes = json.load(f)
     except IOError:
         logger.warning('Algorithm notes not found, using empty strings')
