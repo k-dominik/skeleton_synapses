@@ -668,7 +668,7 @@ def iterate_queue(queue, final_size, queue_name=None):
         except Empty:
             logger.exception('Result queue timed out after {} seconds'.format(RESULTS_TIMEOUT_SECONDS))
             raise
-        logger.debug('Got item {} from queue {}: {} (expect {} more)'.format(idx, queue_name, item, final_size - idx))
+        logger.debug('Got item {} from queue {}: {} (expect {} more)'.format(idx, queue_name, item, final_size-idx-1))
         yield item
 
 
