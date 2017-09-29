@@ -3,7 +3,7 @@
 set -e
 
 output_dir=$(realpath "../projects-2017/L1-CNS")
-input_dir=$(realpath "../projects-2017/L1-CNS/projects")
+input_dir=$(realpath "../projects-2017/L1-CNS")
 cred_path="credentials_dev.json"
 stack_id=1
 # skel_id=18531735  # small test skeleton only on CLB's local instance
