@@ -4,7 +4,6 @@ import shutil
 import errno
 import signal
 import logging
-import tempfile
 import warnings
 from itertools import starmap
 from collections import OrderedDict, namedtuple
@@ -12,6 +11,7 @@ import json
 import datetime
 import multiprocessing as mp
 import psutil
+import tempfile
 
 # Don't warn about duplicate python bindings for opengm
 # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
@@ -129,7 +129,9 @@ def ensure_description_file(catmaid, description_path, stack_id, include_offset=
         return True
 
 
-def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=False):
+def setup_files(
+        credentials_path, stack_id, skeleton_ids, input_file_dir, force=False, output_file_dir=None
+):
     """
 
     Parameters
@@ -137,8 +139,9 @@ def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=Fal
     credentials_path
     stack_id
     skeleton_ids
-    project_dir
+    input_file_dir
     force
+    output_file_dir
 
     Returns
     -------
@@ -146,19 +149,19 @@ def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=Fal
     """
     skeleton_ids = ensure_list(skeleton_ids)
 
-    autocontext_project = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
-    multicut_project = os.path.join(project_dir, 'projects', 'multicut', PROJECT_NAME + '-multicut.ilp')
+    autocontext_project = os.path.join(input_file_dir, 'full-vol-autocontext.ilp')
+    multicut_project = os.path.join(input_file_dir, 'multicut', PROJECT_NAME + '-multicut.ilp')
 
     catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
 
     include_offset = False
 
     volume_description_path = os.path.join(
-        project_dir, PROJECT_NAME + '-description{}.json'.format('' if include_offset else '-NO-OFFSET')
+        input_file_dir, PROJECT_NAME + '-description{}.json'.format('' if include_offset else '-NO-OFFSET')
     )
 
     try:
-        with open(os.path.join(project_dir, 'projects', 'algorithm_notes.json')) as f:
+        with open(os.path.join(input_file_dir, 'algorithm_notes.json')) as f:
             algo_notes = json.load(f)
     except IOError:
         logger.warning('Algorithm notes not found, using empty strings')
@@ -168,16 +171,24 @@ def setup_files(credentials_path, stack_id, skeleton_ids, project_dir, force=Fal
 
     skel_output_dirs = []
     for skeleton_id in skeleton_ids:
-        # Name the output directory with the skeleton id
-        skel_output_dir = os.path.join(project_dir, 'skeletons', str(skeleton_id))
-        if force:
-            shutil.rmtree(skel_output_dir, ignore_errors=True)
-        mkdir_p(skel_output_dir)
+        if output_file_dir:
+            # Name the output directory with the skeleton id
+            skel_output_dir = os.path.join(output_file_dir, 'skeletons', str(skeleton_id))
+            if force:
+                try:
+                    shutil.rmtree(skel_output_dir, ignore_errors=True)
+                except OSError:
+                    pass
 
-        skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
-        skel_data = catmaid.get_transformed_treenode_and_connector_geometry(stack_id, skeleton_id)
-        with open(skel_path, 'w') as f:
-            json.dump(skel_data, f)
+            mkdir_p(skel_output_dir)
+
+            skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
+            skel_data = catmaid.get_transformed_treenode_and_connector_geometry(stack_id, skeleton_id)
+            with open(skel_path, 'w') as f:
+                json.dump(skel_data, f)
+        else:
+            skel_output_dir = None
+
         skel_output_dirs.append(skel_output_dir)
 
     return autocontext_project, multicut_project, volume_description_path, skel_output_dirs, algo_notes
@@ -697,6 +708,7 @@ def append_lane(workflow, input_filepath, axisorder=None):
     Globstrings are supported, in which case the files are converted to HDF5 first.
     """
     # If the filepath is a globstring, convert the stack to h5
+    # todo: delete this temporary directory!
     input_filepath = DataSelectionApplet.convertStacksToH5( [input_filepath], tempfile.mkdtemp() )[0]
 
     info = DatasetInfo()
