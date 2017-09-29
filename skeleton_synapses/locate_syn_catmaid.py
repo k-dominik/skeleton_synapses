@@ -555,6 +555,8 @@ class NeuronSegmenterProcess(LeakyProcess):
         roi_xyz, synapse_slice_ids = self.input_queue.get()
         self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(roi_xyz, self.input_queue.qsize()))
 
+        outputs = []
+
         with Timer() as node_timer:
             raw_xy = raw_data_for_roi(roi_xyz, None, self.opPixelClassification)
             synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, HDF5_PATH)
@@ -594,7 +596,9 @@ class NeuronSegmenterProcess(LeakyProcess):
             for segment, node_id in zip(segmentation_xy[where_nodes_exist], node_locations_arr[where_nodes_exist]):
                 for synapse_slice_id in overlapping_segments.get(segment, []):
                     contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
-                    self.output_queue.put(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
+                    outputs.append(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
+
+            self.output_queue.put(outputs)
 
             logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
 
@@ -655,7 +659,7 @@ def iterate_queue(queue, final_size, queue_name=None):
     for idx in range(final_size):
         logger.debug('Waiting for item {} from queue {} (expect {} more)'.format(idx, queue_name, final_size - idx))
         try:
-            item = queue.get(RESULTS_TIMEOUT_SECONDS)
+            item = queue.get(timeout=RESULTS_TIMEOUT_SECONDS)
         except Empty:
             logger.exception('Result queue timed out after {} seconds'.format(RESULTS_TIMEOUT_SECONDS))
             raise
@@ -790,14 +794,15 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
 
     logger.debug('Committing node association results')
 
-    result_generator = iterate_queue(node_result_queue, total_nodes, 'node_result_queue')
+    result_list_generator = iterate_queue(node_result_queue, total_nodes, 'node_result_queue')
 
     logger.debug('Getting node association results')
     assoc_tuples = []
-    for result in result_generator:
-        assoc_tuple = (result.synapse_slice_id, result.node_id, result.contact_px)
-        logger.debug('Appending segmentation result to args: %s', repr(assoc_tuple))
-        assoc_tuples.append(assoc_tuple)
+    for result_list in result_list_generator:
+        for result in result_list:
+            assoc_tuple = (result.synapse_slice_id, result.node_id, result.contact_px)
+            logger.debug('Appending segmentation result to args: %s', repr(assoc_tuple))
+            assoc_tuples.append(assoc_tuple)
 
     logger.debug('Node association results are\n%s', repr(assoc_tuples))
     logger.info('Inserting new slice:treenode mappings')
