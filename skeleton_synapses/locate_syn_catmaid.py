@@ -46,13 +46,11 @@ from skeleton_utils import roi_around_node
 #     return AsIs(numpy_float64)
 # register_adapter(np.float64, addapt_numpy_float64)
 
-RESULTS_TIMEOUT_SECONDS = 5*60  # 5 minutes
 
+HDF5_NAME = "tilewise_image_store.hdf5"
 LOG_LEVEL = logging.DEBUG
 
-TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
-
-HDF5_PATH = "../projects-2017/L1-CNS/tilewise_image_store.hdf5"
+RESULTS_TIMEOUT_SECONDS = 5*60  # 5 minutes
 
 UNKNOWN_LABEL = 0  # should be smallest label
 BACKGROUND_LABEL = 1  # should be smaller than synapse labels
@@ -125,7 +123,7 @@ def hash_algorithm(*paths):
     return digest
 
 
-def main(credentials_path, stack_id, skeleton_ids, project_dir, roi_radius_px=150, force=False):
+def main(credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_dir, roi_radius_px=150, force=False):
     global catmaid
 
     logger.info("STARTING TILEWISE")
@@ -135,13 +133,13 @@ def main(credentials_path, stack_id, skeleton_ids, project_dir, roi_radius_px=15
     catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
     stack_info = catmaid.get_stack_info(stack_id)
 
-    ensure_hdf5(stack_info, force=force)
+    ensure_hdf5(stack_info, output_file_dir, force=force)
 
     log_timestamp('finished setup')
     skeleton_ids = ensure_list(skeleton_ids)
 
     autocontext_project, multicut_project, volume_description_path, skel_output_dirs, algo_notes = setup_files(
-        credentials_path, stack_id, skeleton_ids, project_dir, force
+        credentials_path, stack_id, skeleton_ids, input_file_dir, force, output_file_dir if DEBUG else None
     )
 
     if force:
@@ -152,12 +150,12 @@ def main(credentials_path, stack_id, skeleton_ids, project_dir, roi_radius_px=15
 
     performance_logger.info('{}: finished setup')
 
-    for skeleton_id, skel_output_dir in zip(skeleton_ids, skel_output_dirs):
+    for skeleton_id in skeleton_ids:
         locate_synapses_catmaid(
             autocontext_project,
             multicut_project,
             volume_description_path,
-            skel_output_dir,
+            output_file_dir,
             skeleton_id,
             roi_radius_px,
             stack_info,
@@ -188,12 +186,13 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
     return labels
 
 
-def ensure_hdf5(stack_info, force=False):
-    if force or not os.path.isfile(HDF5_PATH):
-        if os.path.isfile(HDF5_PATH):
-            os.rename(HDF5_PATH, '{}BACKUP{}'.format(HDF5_PATH, datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))
-        logger.info('Creating HDF5 volumes in %s', HDF5_PATH)
-        with h5py.File(HDF5_PATH) as f:
+def ensure_hdf5(stack_info, output_file_dir, force=False):
+    hdf5_path = os.path.join(output_file_dir, HDF5_NAME)
+    if force or not os.path.isfile(hdf5_path):
+        if os.path.isfile(hdf5_path):
+            os.rename(hdf5_path, '{}BACKUP{}'.format(hdf5_path, datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))
+        logger.info('Creating HDF5 volumes in %s', hdf5_path)
+        with h5py.File(hdf5_path) as f:
             # f.attrs['workflow_id'] = workflow_id  # todo
             f.attrs['source_stack_id'] = stack_info['sid']
 
@@ -203,6 +202,8 @@ def ensure_hdf5(stack_info, force=False):
                                 extra_dim=3)
 
             f.flush()
+
+    return hdf5_path
 
 
 TileIndex = namedtuple('TileIndex', 'z_idx y_idx x_idx')
@@ -279,7 +280,7 @@ def locate_synapses_catmaid(
         autocontext_project_path,
         multicut_project,
         input_filepath,
-        skel_output_dir,
+        output_file_dir,
         skeleton_id,
         roi_radius_px,
         stack_info,
@@ -296,8 +297,7 @@ def locate_synapses_catmaid(
         .ilp file path
     input_filepath : str
         Stack description JSON file
-    skel_output_dir : str
-        {project_dir}/skeletons/{skel_id}/
+    output_file_dir : str
     skeleton : Skeleton
     roi_radius_px : int
         Default 150
@@ -307,6 +307,9 @@ def locate_synapses_catmaid(
 
     """
     global catmaid
+
+    hdf5_path = os.path.join(output_file_dir, HDF5_NAME)
+    skel_output_dir = os.path.join(output_file_dir, 'skeletons', str(skeleton_id)) if DEBUG else None
 
     workflow_id = catmaid.get_workflow_id(
         stack_info['sid'], algo_hash, TILE_SIZE, detection_notes=algo_notes['synapse_detection'])
@@ -333,9 +336,6 @@ def locate_synapses_catmaid(
 
     log_timestamp('finished getting tiles')
 
-    # don't save out individual tiles
-    skel_output_dir = skel_output_dir if DEBUG else None
-
     if tile_count:
         logger.info('Classifying pixels in {} tiles'.format(tile_count))
 
@@ -361,7 +361,7 @@ def locate_synapses_catmaid(
         for detector_container in detector_containers:
             detector_container.start()
 
-        commit_tilewise_results_from_queue(tile_result_queue, HDF5_PATH, tile_count, TILE_SIZE, workflow_id)
+        commit_tilewise_results_from_queue(tile_result_queue, hdf5_path, tile_count, TILE_SIZE, workflow_id)
 
         for detector_container in detector_containers:
             detector_container.join()
@@ -399,10 +399,10 @@ def locate_synapses_catmaid(
             synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]  # xmax, ymax, zmax
         ])).astype(int)
 
-        # make it into a square
+        ## make it into a square
         # roi_xyz = square_bounds(roi_xyz)
 
-        # synapse plane centroid + buffer
+        ## synapse plane centroid + buffer
         # centroid_xyz = np.array([
         #     synapse['synapse_bounds_s'][:2] + [synapse['synapse_z_s']],
         #     synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]
@@ -424,7 +424,7 @@ def locate_synapses_catmaid(
         neuron_seg_containers = [
             CaretakerProcess(
                 NeuronSegmenterProcess, synapse_queue, RAM_MB_PER_PROCESS,
-                (synapse_result_queue, input_filepath, autocontext_project_path, multicut_project, skel_output_dir),
+                (synapse_result_queue, input_filepath, autocontext_project_path, multicut_project, hdf5_path),
                 name='CaretakerProcess{}'.format(idx)
             )
             for idx in range(min(THREADS, synapse_count))
@@ -512,7 +512,7 @@ class NeuronSegmenterProcess(LeakyProcess):
     """
     def __init__(
             self, input_queue, max_ram_MB, output_queue, description_file, autocontext_project_path, multicut_project,
-            skel_output_dir, debug=False, name=None
+            hdf5_path, debug=False, name=None
     ):
         """
 
@@ -525,7 +525,7 @@ class NeuronSegmenterProcess(LeakyProcess):
         autocontext_project_path
         multicut_project : str
             path
-        skel_output_dir : str
+        hdf5_path : str
         debug : bool
             Whether to instantiate a serial version for debugging purposes
         """
@@ -534,7 +534,7 @@ class NeuronSegmenterProcess(LeakyProcess):
         self.input_queue = input_queue
         self.output_queue = output_queue
 
-        self.skel_output_dir = skel_output_dir
+        self.hdf5_path = hdf5_path
 
         self.opPixelClassification = self.multicut_shell = None
         self.setup_args = (description_file, autocontext_project_path, multicut_project)
@@ -564,7 +564,7 @@ class NeuronSegmenterProcess(LeakyProcess):
 
         with Timer() as node_timer:
             raw_xy = raw_data_for_roi(roi_xyz, None, self.opPixelClassification)
-            synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, HDF5_PATH)
+            synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, self.hdf5_path)
 
             log_str = 'Image shapes: \n\tRaw {}\n\tSynapse_cc {}\n\tPredictions {}'.format(
                 raw_xy.shape, synapse_cc_xy.shape, predictions_xyc.shape
@@ -815,12 +815,12 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
     catmaid.add_synapse_treenode_associations(assoc_tuples, project_workflow_id)
 
 
-def setup_logging(project_dir, args, kwargs, level=logging.NOTSET):
-
+def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     # set up the log files and symlinks
-    latest_ln = os.path.join(project_dir, 'logs', 'latest')
+    latest_ln = os.path.join(output_file_dir, 'logs', 'latest')
     os.remove(latest_ln)
-    log_dir = os.path.join(project_dir, 'logs', TIMESTAMP)
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+    log_dir = os.path.join(output_file_dir, 'logs', timestamp)
     mkdir_p(log_dir)
     os.symlink(log_dir, latest_ln)
     log_file = os.path.join(log_dir, 'locate_synapses.txt')
@@ -870,7 +870,8 @@ if __name__ == "__main__":
     if DEBUG:
         print("USING DEBUG ARGUMENTS")
 
-        project_dir = "../projects-2017/L1-CNS"
+        input_dir = "../projects-2017/L1-CNS/projects"
+        output_dir = "../projects-2017/L1-CNS"
         cred_path = "credentials_dev.json"
         stack_id = 1
         skel_ids = [18531735]  # small test skeleton only on CLB's local instance
@@ -878,10 +879,10 @@ if __name__ == "__main__":
         force = 1
 
         args_list = [
-            cred_path, stack_id, skel_ids, project_dir
+            cred_path, stack_id, skel_ids, input_dir, output_dir
         ]
         kwargs_dict = {'force': force}
-        setup_logging(project_dir, args_list, kwargs_dict, LOG_LEVEL)
+        setup_logging(input_dir, args_list, kwargs_dict, LOG_LEVEL)
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('--roi-radius-px', default=DEFAULT_ROI_RADIUS,
@@ -890,9 +891,8 @@ if __name__ == "__main__":
                             help='Path to a JSON file containing CATMAID credentials (see credentials.jsonEXAMPLE)')
         parser.add_argument('stack_id',
                             help='ID or name of image stack in CATMAID')
-        parser.add_argument('project_dir',
-                            help="A directory containing project files in ./projects, and which output files will be "
-                                 "dropped into.")
+        parser.add_argument('input_file_dir', help="A directory containing project files.")
+        parser.add_argument('output_file_dir', help='A directory containing output files')
         parser.add_argument('skeleton_ids', nargs='+',
                             help="Skeleton IDs in CATMAID")
         parser.add_argument('-f', '--force', type=int, default=0,
@@ -900,10 +900,11 @@ if __name__ == "__main__":
 
         args = parser.parse_args()
         args_list = [
-            args.credentials_path, args.stack_id, args.skeleton_ids, args.project_dir, args.roi_radius_px, args.force
+            args.credentials_path, args.stack_id, args.skeleton_ids, args.input_file_dir, args.output_file_dir,
+            args.roi_radius_px, args.force
         ]
         kwargs_dict = {}  # must be empty
-        setup_logging(args.project_dir, args_list, kwargs_dict, LOG_LEVEL)
+        setup_logging(args.output_file_dir, args_list, kwargs_dict, LOG_LEVEL)
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.NOTSET)
