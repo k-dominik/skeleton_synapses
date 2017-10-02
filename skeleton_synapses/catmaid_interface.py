@@ -1,6 +1,7 @@
 import json
 from collections import defaultdict
 import logging
+import networkx as nx
 
 import numpy as np
 
@@ -72,6 +73,36 @@ def make_tile_url_template(image_base):
     May not be correct for all bases
     """
     return make_url(image_base, "{z_index}/0/{y_index}_{x_index}.jpg")
+
+
+def get_nodes_between(graph, root, leaves=None):
+    output_set = set()
+    root_set = set(nx.descendants(graph, root))
+    for leaf in (leaves or []):
+        output_set.update(root_set.intersection(nx.ancestors(graph, int(leaf))))
+    return output_set
+
+
+def get_subarbor_node_infos(tnid_parentid, coords_xyz, root=None, leaves=None):
+    node_infos = []
+    if root is None and leaves is None:
+        for (node_id, parent_id), (x, y, z) in zip(tnid_parentid, coords_xyz):
+            node_infos.append(NodeInfo(int(node_id), x, y, z, None if parent_id is None else int(parent_id)))
+        return node_infos
+
+    g = nx.DiGraph()
+    for (node_id, parent_id), (x, y, z) in zip(tnid_parentid, coords_xyz):
+        node_id = int(node_id)
+        g.add_node(node_id, node_info=NodeInfo(node_id, x, y, z, None if parent_id is None else int(parent_id)))
+        if not parent_id:
+            root = root or node_id
+        else:
+            g.add_edge(int(parent_id), node_id)
+
+    for node_id in get_nodes_between(g, int(root), leaves):
+        node_infos.append(g.node[node_id]['node_info'])
+
+    return node_infos
 
 
 class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
@@ -247,7 +278,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
             ('ext/synapsesuggestor/treenode-association', self.project_id, 'workflow'), params
         )['project_workflow_id']
 
-    def get_treenode_locations(self, skeleton_id, stack_id_or_title=None):
+    def get_node_infos(self, skeleton_id, stack_id_or_title=None, root=None, leaves=None):
         """
         Get locations of treenodes as xyz coordinates. If a stack id or title is given, transform the coordinates into
         stack coords.
@@ -267,10 +298,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         treenodes = self.get((self.project_id, 'skeletons', skeleton_id, 'compact-detail'))[0]
         treenodes_arr = np.array(treenodes)
         coords = transformer.project_to_stack_array(treenodes_arr[:, 3:6].astype(float))
-        node_infos = []
-        for (node_id, parent_id), (x, y, z) in zip(treenodes_arr[:, :2], coords.astype(coord_type)):
-            node_infos.append(NodeInfo(int(node_id), x, y, z, None if parent_id is None else int(parent_id)))
-        return node_infos
+        return get_subarbor_node_infos(treenodes_arr[:, :2], coords.astype(coord_type), root, leaves)
 
     def get_detected_tiles(self, workflow_id):
         """
