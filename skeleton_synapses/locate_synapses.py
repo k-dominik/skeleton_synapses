@@ -709,9 +709,17 @@ def append_lane(workflow, input_filepath, axisorder=None):
 
     Globstrings are supported, in which case the files are converted to HDF5 first.
     """
-    # If the filepath is a globstring, convert the stack to h5
-    # todo: delete this temporary directory!
-    input_filepath = DataSelectionApplet.convertStacksToH5( [input_filepath], tempfile.mkdtemp() )[0]
+    # If the filepath is a globstring, convert the stack to h5  # todo: skip this?
+    tmp_dir = tempfile.mkdtemp()
+    input_filepath = DataSelectionApplet.convertStacksToH5( [input_filepath], tmp_dir )[0]
+
+    try:
+        os.rmdir(tmp_dir)
+    except OSError as e:
+        if e.errno == 39:
+            logger.warning('Temporary directory {} was populated: should be deleted')
+        else:
+            raise
 
     info = DatasetInfo()
     info.location = DatasetInfo.Location.FileSystem
