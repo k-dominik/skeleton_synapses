@@ -318,7 +318,7 @@ def locate_synapses_catmaid(
 
     log_timestamp('started getting tiles')
 
-    node_infos = catmaid.get_treenode_locations(skeleton_id, stack_info['sid'])
+    node_infos = catmaid.get_node_infos(skeleton_id, stack_info['sid'])
 
     tile_index_set = nodes_to_tile_indexes(node_infos, TILE_SIZE, roi_radius_px)
 
@@ -382,9 +382,13 @@ def locate_synapses_catmaid(
     roi_radius_nm = roi_radius_px * stack_info['resolution']['x']  # assumes XY isotropy
     logger.debug('Getting synapses spatially near skeleton {}'.format(skeleton_id))
     synapses_near_skeleton = catmaid.get_synapses_near_skeleton(skeleton_id, project_workflow_id, roi_radius_nm)
+    nodes_of_interest = {node_info.id for node_info in node_infos}
     logger.debug('Found {} synapse planes near skeleton {}'.format(len(synapses_near_skeleton), skeleton_id))
     slice_id_tuples = set()
     for synapse in synapses_near_skeleton:
+        if int(synapse['treenode_id']) not in nodes_of_interest:
+            continue
+
         slice_id_tuple = tuple(synapse['synapse_slice_ids'])
         if slice_id_tuple in slice_id_tuples:
             continue
@@ -588,7 +592,7 @@ class NeuronSegmenterProcess(LeakyProcess):
                 self.inner_logger.debug(
                     'Synapse slice IDs {} in ROI {} are only in 1 neuron'.format(synapse_slice_ids, roi_xyz)
                 )
-                self.output_queue.put(outputs)
+                self.output_queue.put(outputs)  # outputs will be empty
                 return
 
             node_locations = catmaid.get_nodes_in_roi(roi_xyz, catmaid.stack_id)
