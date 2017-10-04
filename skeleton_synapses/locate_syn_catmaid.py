@@ -638,30 +638,6 @@ def node_locations_to_array(template_array_xy, node_locations):
     return arr_xy
 
 
-def coords_to_multipoint_wkt_str(x_coords, y_coords):
-    """
-    Convert arrays of coordinates into a WKT string describing a MultiPoint geometry of those coordinates,
-    where point i has the coordinates (x_coords[i], y_coords[i]).
-
-    x_coords, y_coords = np.where(binary_array)
-
-    Parameters
-    ----------
-    x_coords : array-like
-        Array of x coordinates
-    y_coords : array-like
-        Array of y coordinates
-
-    Returns
-    -------
-    str
-        MultiPoint geometry expressed as a WKT string
-    """
-    coords_str = ','.join('{} {}'.format(x_coord, y_coord) for x_coord, y_coord in zip(x_coords, y_coords))
-    # could use scipy to find contour to reduce workload on database, or SQL concave hull, or SQL simplify geometry
-    return "MULTIPOINT({})".format(coords_str)
-
-
 def iterate_queue(queue, final_size, queue_name=None):
     if queue_name is None:
         queue_name = repr(queue)
@@ -676,31 +652,9 @@ def iterate_queue(queue, final_size, queue_name=None):
         yield item
 
 
-def coords_to_polygon_wkt_str(x_coords, y_coords):
+def image_to_geojson(array_xy, x_offset, y_offset):
     """
-    x_coords and y_coords must be in anti-clockwise order (e.g. output of
-    skimage.measure.find_contours(binary_im, 0.5)[0]
-    )
-
-    Returns a POLYGON wkt string
-
-    Parameters
-    ----------
-    x_coords : array-like
-    y_coords : array-like
-
-    Returns
-    -------
-    str
-    """
-    coords_str = ','.join('{} {}'.format(x_coord, y_coord) for x_coord, y_coord in zip(x_coords, y_coords))
-    coords_str += ',{} {}'.format(x_coords[0], y_coords[0])
-    return 'POLYGON(({}))'.format(coords_str)
-
-
-def simplify_image(array_xy, x_offset, y_offset):
-    """
-    Return wkt polygon string of binary image
+    Return geojson polygon string of binary image
 
     Parameters
     ----------
@@ -712,8 +666,15 @@ def simplify_image(array_xy, x_offset, y_offset):
     -------
     str
     """
-    outline_coords_xy = find_contours(array_xy, 0.5)[0]
-    return coords_to_polygon_wkt_str(outline_coords_xy[:, 0] + x_offset, outline_coords_xy[:, 1] + y_offset)
+    contours = find_contours(array_xy, 0.5, positive_orientation='high')
+    rings = []
+    for contour in contours:
+        coords_list = [list(row) for row in contour + [x_offset, y_offset]]
+        if coords_list[0] != coords_list[-1]:
+            coords_list.append(coords_list[0])
+        rings.append(coords_list)
+
+    return json.dumps({'type': 'Polygon', 'coordinates': rings})
 
 
 def commit_tilewise_results_from_queue(
@@ -766,11 +727,11 @@ def commit_tilewise_results_from_queue(
                 avg_certainty = np.mean(certainties)
                 uncertainty = 1.0 - avg_certainty
 
-                wkt_str = simplify_image(binary_arr_xy, bounds_xyz[0, 0], bounds_xyz[0, 1])
+                geojson_str = image_to_geojson(binary_arr_xy, bounds_xyz[0, 0], bounds_xyz[0, 1])
 
                 synapse_slices.append({
                     'id': int(local_label),
-                    'wkt_str': wkt_str,
+                    'geom': geojson_str,
                     'size_px': int(size_px),
                     'xs_centroid': int(x_centroid_px),
                     'ys_centroid': int(y_centroid_px),
