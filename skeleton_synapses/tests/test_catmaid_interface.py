@@ -9,7 +9,7 @@ from skeleton_synapses.catmaid_interface import (
 )
 from skeleton_synapses.skeleton_utils import NodeInfo
 
-from common import get_fixture_data
+from fixtures import get_fixture_data
 
 
 def test_get_consecutive():
