@@ -70,12 +70,16 @@ ALGO_HASH = None
 
 catmaid = None
 
-last_event = time.time()
-def log_timestamp(msg):
-    global last_event
-    now = time.time()
-    performance_logger.info('{}: {}'.format(now - last_event, msg))
-    last_event = now
+
+class Timestamper(object):
+    def __init__(self):
+        self.last_event = time.time()
+        self.performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
+
+    def log(self, msg):
+        now = time.time()
+        self.performance_logger.info('{}: {}'.format(now - self.last_event, msg))
+        self.last_event = now
 
 
 def hash_algorithm(*paths):
@@ -128,14 +132,14 @@ def main(credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_d
 
     logger.info("STARTING TILEWISE")
 
-    log_timestamp('started setup')
+    timestamper.log('started setup')
 
     catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
     stack_info = catmaid.get_stack_info(stack_id)
 
     ensure_hdf5(stack_info, output_file_dir, force=force)
 
-    log_timestamp('finished setup')
+    timestamper.log('finished setup')
     skeleton_ids = ensure_list(skeleton_ids)
 
     autocontext_project, multicut_project, volume_description_path, skel_output_dirs, algo_notes = setup_files(
@@ -148,7 +152,7 @@ def main(credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_d
     else:
         algo_hash = hash_algorithm(autocontext_project, multicut_project)
 
-    performance_logger.info('{}: finished setup')
+    timestamper.log('finished setup')
 
     for skeleton_id in skeleton_ids:
         locate_synapses_catmaid(
@@ -316,7 +320,7 @@ def locate_synapses_catmaid(
 
     logger.info('Populating tile queue')
 
-    log_timestamp('started getting tiles')
+    timestamper.log('started getting tiles')
 
     node_infos = catmaid.get_node_infos(skeleton_id, stack_info['sid'])
 
@@ -334,7 +338,7 @@ def locate_synapses_catmaid(
             tile_count += 1
             tile_queue.put(tile_idx)
 
-    log_timestamp('finished getting tiles')
+    timestamper.log('finished getting tiles')
 
     if tile_count:
         logger.info('Classifying pixels in {} tiles'.format(tile_count))
@@ -350,7 +354,7 @@ def locate_synapses_catmaid(
 
         logger.debug('{} tiles queued'.format(tile_count))
 
-        log_timestamp('started synapse detection ({} tiles, 512x512 each, {} threads)'.format(
+        timestamper.log('started synapse detection ({} tiles, 512x512 each, {} threads)'.format(
             tile_count, len(detector_containers)
         ))
 
@@ -366,11 +370,11 @@ def locate_synapses_catmaid(
         for detector_container in detector_containers:
             detector_container.join()
 
-        log_timestamp('finished synapse detection')
+        timestamper.log('finished synapse detection')
     else:
         logger.debug('No tiles found (probably already processed)')
 
-    log_timestamp('started getting nodes')
+    timestamper.log('started getting nodes')
 
     project_workflow_id = catmaid.get_project_workflow_id(
         workflow_id, algo_hash, association_notes=algo_notes['skeleton_association']
@@ -420,7 +424,7 @@ def locate_synapses_catmaid(
         synapse_queue.put(item)
         synapse_count += 1
 
-    log_timestamp('finished getting synapse planes'.format(synapse_count))
+    timestamper.log('finished getting synapse planes'.format(synapse_count))
 
     if synapse_count:
         logger.info('Segmenting {} synapse windows'.format(synapse_count))
@@ -435,7 +439,7 @@ def locate_synapses_catmaid(
             # for _ in range(1)
         ]
 
-        log_timestamp('started segmenting neurons ({} items, {} threads)'.format(
+        timestamper.log('started segmenting neurons ({} items, {} threads)'.format(
             synapse_count, len(neuron_seg_containers)
         ))
 
@@ -452,7 +456,7 @@ def locate_synapses_catmaid(
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.join()
 
-        log_timestamp('finished segmenting neurons')
+        timestamper.log('finished segmenting neurons')
     else:
         logger.debug('No synapses required re-segmenting')
 
@@ -874,7 +878,7 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.NOTSET)
 
-    performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
+    timestamper = Timestamper()
 
     logger.info('STARTING CATMAID-COMPATIBLE DETECTION')
     logger.debug('Parallelising over {} threads'.format(THREADS))
