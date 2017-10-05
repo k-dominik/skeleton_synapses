@@ -5,7 +5,7 @@ import shutil
 
 import pytest
 
-FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixture_data')
 
 
 def get_fixture_path(*args):
@@ -25,6 +25,6 @@ def get_fixture_data(*args):
 
 @pytest.fixture
 def tmp_dir(request):
-    path = tempfile.mkdtemp(suffix='_' + request.function)
+    path = tempfile.mkdtemp(suffix='{}.{}'.format(request.module.__name__, request.function.__name__))
     yield path
     shutil.rmtree(path, True)
