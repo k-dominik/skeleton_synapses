@@ -73,6 +73,7 @@ LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
 
 
 def ensure_list(value):
+    # todo: test
     """Ensure that a given value is a non-string sequence (making it the sole element of a list if not).
 
     Used for compatibility purposes.
@@ -87,6 +88,7 @@ def ensure_list(value):
 
 
 def get_and_print_env(name, default, constructor=str):
+    # todo: test
     """
 
     Parameters
@@ -108,6 +110,7 @@ def get_and_print_env(name, default, constructor=str):
 
 
 def ensure_description_file(catmaid, description_path, stack_id, include_offset=False, force=False):
+    # todo: test (mock catmaid)
     """
 
     Parameters
@@ -132,6 +135,7 @@ def ensure_description_file(catmaid, description_path, stack_id, include_offset=
 def setup_files(
         credentials_path, stack_id, skeleton_ids, input_file_dir, force=False, output_file_dir=None
 ):
+    # todo: test?
     """
 
     Parameters
@@ -667,11 +671,14 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
     """
     assert_same_xy(raw_xy, predictions_xyc)
 
+    # move these into setup_multicut?
+    #####
     opEdgeTrainingWithMulticut = multicut_workflow.edgeTrainingWithMulticutApplet.topLevelOperator
     assert isinstance(opEdgeTrainingWithMulticut, OpEdgeTrainingWithMulticut)
 
     opDataExport = multicut_workflow.dataExportApplet.topLevelOperator
     opDataExport.OutputAxisOrder.setValue('xy')
+    #####
 
     role_data_dict = OrderedDict([
         ("Raw Data", [DatasetInfo(preloaded_array=raw_xy)]),
@@ -689,7 +696,7 @@ def open_project( project_path, init_logging=True ):
     """
     Open a project file and return the HeadlessShell instance.
     """
-    # todo: do not init logging
+    # todo: do not init logging?
     parsed_args = ilastik_main.parser.parse_args([])
     parsed_args.headless = True
     parsed_args.project = project_path
@@ -754,6 +761,7 @@ initialized_files = set()
 
 
 def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacked"):
+    # todo: test?
     """
     Write the given image to an hdf5 file.
 
@@ -819,6 +827,7 @@ def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacke
 
 
 def intersection(roi_a, roi_b):
+    # todo: test
     """
     Compute the intersection (overlap) of the two rois A and B.
 
@@ -848,6 +857,7 @@ def intersection(roi_a, roi_b):
 
 
 def slicing(roi):
+    # todo: test?
     """
     Convert the roi to a slicing that can be used with ndarray.__getitem__()
     """
@@ -855,6 +865,7 @@ def slicing(roi):
 
 
 def mkdir_p(path):
+    # todo: test
     """
     Like the bash command 'mkdir -p'
     """
