@@ -169,6 +169,7 @@ def main(credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_d
 
 
 def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=LABEL_DTYPE, extra_dim=None):
+    # todo: test
     dimension = [stack_info['dimension'][dim] for dim in 'zyx']
     chunksize = (1, tile_size, tile_size)
 
@@ -191,6 +192,7 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
 
 
 def ensure_hdf5(stack_info, output_file_dir, force=False):
+    # todo: test
     hdf5_path = os.path.join(output_file_dir, HDF5_NAME)
     if force or not os.path.isfile(hdf5_path):
         if os.path.isfile(hdf5_path):
@@ -214,6 +216,7 @@ TileIndex = namedtuple('TileIndex', 'z_idx y_idx x_idx')
 
 
 def nodes_to_tile_indexes(node_infos, tile_size, minimum_radius=DEFAULT_ROI_RADIUS):
+    # todo: test
     """
 
     Parameters
@@ -244,6 +247,7 @@ def nodes_to_tile_indexes(node_infos, tile_size, minimum_radius=DEFAULT_ROI_RADI
 
 
 def tile_index_to_bounds(tile_index, tile_size):
+    # todo: test
     """
 
     Parameters
@@ -262,6 +266,7 @@ def tile_index_to_bounds(tile_index, tile_size):
 
 
 def square_bounds(roi_xyz):
+    # todo: test
     """Convert a rectangular ROI array into the minimum square in which the original ROI is centered"""
     shape = np.diff(roi_xyz[:, :2], axis=0).squeeze()
     size_diff = shape[0] - shape[1]
@@ -291,6 +296,7 @@ def locate_synapses_catmaid(
         algo_hash,
         algo_notes
 ):
+    # todo: test (needs refactors)
     """
 
     Parameters
@@ -486,6 +492,7 @@ class DetectorProcess(LeakyProcess):
         Request.reset_thread_pool(1)  # todo: set to 0?
 
     def execute(self):
+        # todo: test? with refactors, mocks
         tile_idx = self.input_queue.get()
 
         self.inner_logger.debug("Addressing tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize()))
@@ -564,6 +571,7 @@ class NeuronSegmenterProcess(LeakyProcess):
         Request.reset_thread_pool(1)
 
     def execute(self):
+        # todo: test (needs refactors)
         logger.debug('Waiting for item')
         roi_xyz, synapse_slice_ids = self.input_queue.get()
         self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(roi_xyz, self.input_queue.qsize()))
@@ -617,6 +625,7 @@ class NeuronSegmenterProcess(LeakyProcess):
 
 
 def node_locations_to_array(template_array_xy, node_locations):
+    # todo: test
     """
     Given a vigra image in xy and a dict containing xy coordinates, return a vigra image of the same shape, where nodes
     are represented by their integer ID, and every other pixel is -1.
@@ -643,6 +652,7 @@ def node_locations_to_array(template_array_xy, node_locations):
 
 
 def iterate_queue(queue, final_size, queue_name=None):
+    # todo: test
     if queue_name is None:
         queue_name = repr(queue)
     for idx in range(final_size):
@@ -657,6 +667,7 @@ def iterate_queue(queue, final_size, queue_name=None):
 
 
 def image_to_geojson(array_xy, x_offset, y_offset):
+    # todo: test
     """
     Return geojson polygon string of binary image
 
@@ -684,6 +695,7 @@ def image_to_geojson(array_xy, x_offset, y_offset):
 def commit_tilewise_results_from_queue(
         tile_result_queue, output_path, total_tiles, tile_size, workflow_id
 ):
+    # todo: test (needs refactors)
     global catmaid
     result_iterator = iterate_queue(tile_result_queue, total_tiles, 'tile_result_queue')
 
@@ -764,6 +776,7 @@ def commit_tilewise_results_from_queue(
 
 
 def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id):
+    # todo: test (needs refactors)
     global catmaid
 
     logger.debug('Committing node association results')
@@ -829,6 +842,7 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
 
 
 def kill_child_processes(signum=None, frame=None):
+    # todo: test?
     current_proc = psutil.Process()
     for child_proc in current_proc.children(recursive=True):
         logger.debug('Killing process: {} with status {}'.format(child_proc.name(), child_proc.status()))
