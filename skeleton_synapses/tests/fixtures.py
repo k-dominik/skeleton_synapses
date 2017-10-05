@@ -1,5 +1,9 @@
 import os
 import json
+import tempfile
+import shutil
+
+import pytest
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
 
@@ -17,3 +21,10 @@ def get_fixture_data(*args):
             return json.load(f)
     else:
         raise ValueError('Unknown extension {} for fixture at path {}'.format(ext, path))
+
+
+@pytest.fixture
+def tmp_dir(request):
+    path = tempfile.mkdtemp(suffix='_' + request.function)
+    yield path
+    shutil.rmtree(path, True)
