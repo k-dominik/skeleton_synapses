@@ -75,12 +75,23 @@ def make_tile_url_template(image_base):
     return make_url(image_base, "{z_index}/0/{y_index}_{x_index}.jpg")
 
 
-def get_nodes_between(graph, root, leaves=None):
-    output_set = set()
-    root_set = set(nx.descendants(graph, root))
-    for leaf in (leaves or []):
-        output_set.update(root_set.intersection(nx.ancestors(graph, int(leaf))))
-    return output_set
+def get_nodes_between(graph, root=None, leaves=None):
+    assert nx.is_directed_acyclic_graph(graph)
+
+    if root is None:
+        for node, degree in graph.in_degree_iter():
+            if degree == 0:
+                root = node
+                break
+
+    if leaves is None:
+        leaves = [node for node, degree in graph.out_degree_iter() if degree == 0]
+
+    output_set = set(leaves)
+    for leaf in leaves:
+        output_set.update(nx.ancestors(graph, leaf))
+
+    return output_set - nx.ancestors(graph, root)
 
 
 def get_subarbor_node_infos(tnid_parentid, coords_xyz, root=None, leaves=None):
@@ -99,7 +110,7 @@ def get_subarbor_node_infos(tnid_parentid, coords_xyz, root=None, leaves=None):
         else:
             g.add_edge(int(parent_id), node_id)
 
-    for node_id in get_nodes_between(g, int(root), leaves):
+    for node_id in get_nodes_between(g, root, leaves):
         node_infos.append(g.node[node_id]['node_info'])
 
     return node_infos
