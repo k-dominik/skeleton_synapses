@@ -1,3 +1,4 @@
 git+https://github.com/catmaid/catpy.git
 tqdm
 pytest
+mock
