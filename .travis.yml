@@ -14,7 +14,7 @@ install:
   - conda config --set always_yes yes --set changeps1 no
   - conda update -q conda
   - conda info -a
-  - conda create -n ilastik-devel -c ilastik ilastik-everything-no-solvers
+  - conda create -n ilastik-devel python=$TRAVIS_PYTHON_VERSION -c ilastik ilastik-everything-no-solvers
   - source activate ilastik-devel
   # apply opReorderAxes.patch?
   - pip install -U pip
