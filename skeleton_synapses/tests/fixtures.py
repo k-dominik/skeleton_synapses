@@ -26,5 +26,6 @@ def get_fixture_data(*args):
 @pytest.fixture
 def tmp_dir(request):
     path = tempfile.mkdtemp(suffix='{}.{}'.format(request.module.__name__, request.function.__name__))
+    assert len(os.listdir(path)) == 0
     yield path
     shutil.rmtree(path, True)
