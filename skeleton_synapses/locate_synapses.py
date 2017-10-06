@@ -166,7 +166,6 @@ def get_algo_notes(projects_dir):
 def setup_files(
         credentials_path, stack_id, skeleton_ids, input_file_dir, force=False, output_file_dir=None
 ):
-    # todo: test?
     """
 
     Parameters
@@ -763,7 +762,6 @@ initialized_files = set()
 
 
 def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacked"):
-    # todo: test?
     """
     Write the given image to an hdf5 file.
 
