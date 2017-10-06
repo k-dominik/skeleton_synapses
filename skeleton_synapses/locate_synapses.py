@@ -73,7 +73,6 @@ LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
 
 
 def ensure_list(value):
-    # todo: test
     """Ensure that a given value is a non-string sequence (making it the sole element of a list if not).
 
     Used for compatibility purposes.
@@ -88,7 +87,6 @@ def ensure_list(value):
 
 
 def get_and_print_env(name, default, constructor=str):
-    # todo: test
     """
 
     Parameters
@@ -110,7 +108,6 @@ def get_and_print_env(name, default, constructor=str):
 
 
 def ensure_description_file(catmaid, description_path, stack_id, include_offset=False, force=False):
-    # todo: test (mock catmaid)
     """
 
     Parameters
@@ -132,6 +129,40 @@ def ensure_description_file(catmaid, description_path, stack_id, include_offset=
         return True
 
 
+def ensure_skel_output_dirs(output_file_dir, skel_ids, catmaid_ss, stack_id, force=False):
+    skel_output_dirs = []
+    for skeleton_id in ensure_list(skel_ids):
+        # Name the output directory with the skeleton id
+        skel_output_dir = os.path.join(output_file_dir, 'skeletons', str(skeleton_id))
+        if force:
+            try:
+                shutil.rmtree(skel_output_dir, ignore_errors=True)
+            except OSError:
+                pass
+
+        mkdir_p(skel_output_dir)
+
+        skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
+        skel_data = catmaid_ss.get_transformed_treenode_and_connector_geometry(stack_id, skeleton_id)
+        with open(skel_path, 'w') as f:
+            json.dump(skel_data, f)
+
+        skel_output_dirs.append(skel_output_dir)
+
+    return skel_output_dirs
+
+
+def get_algo_notes(projects_dir):
+    try:
+        with open(os.path.join(projects_dir, 'algorithm_notes.json')) as f:
+            algo_notes = json.load(f)
+    except IOError:
+        logger.warning('Algorithm notes not found, using empty strings')
+        algo_notes = {'synapse_detection': '', 'skeleton_association': ''}
+
+    return algo_notes
+
+
 def setup_files(
         credentials_path, stack_id, skeleton_ids, input_file_dir, force=False, output_file_dir=None
 ):
@@ -151,51 +182,24 @@ def setup_files(
     -------
     tuple of (str, str, str, list of str, dict of {str:str})
     """
-    skeleton_ids = ensure_list(skeleton_ids)
-
+    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
     projects_dir = os.path.join(input_file_dir, 'projects')
 
     autocontext_project = os.path.join(projects_dir, 'full-vol-autocontext.ilp')
     multicut_project = os.path.join(projects_dir, 'multicut', PROJECT_NAME + '-multicut.ilp')
 
-    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
-
-    include_offset = False
-
     volume_description_path = os.path.join(
-        input_file_dir, PROJECT_NAME + '-description{}.json'.format('' if include_offset else '-NO-OFFSET')
+        input_file_dir, PROJECT_NAME + '-description-NO-OFFSET.json'
     )
+    ensure_description_file(catmaid, volume_description_path, stack_id, include_offset=False)
 
-    try:
-        with open(os.path.join(projects_dir, 'algorithm_notes.json')) as f:
-            algo_notes = json.load(f)
-    except IOError:
-        logger.warning('Algorithm notes not found, using empty strings')
-        algo_notes = {'synapse_detection': '', 'skeleton_association': ''}
+    skeleton_ids = ensure_list(skeleton_ids)
+    if output_file_dir:
+        skel_output_dirs = ensure_skel_output_dirs(output_file_dir, skeleton_ids, catmaid, stack_id, force)
+    else:
+        skel_output_dirs = [None for _ in skeleton_ids]
 
-    ensure_description_file(catmaid, volume_description_path, stack_id, include_offset)
-
-    skel_output_dirs = []
-    for skeleton_id in skeleton_ids:
-        if output_file_dir:
-            # Name the output directory with the skeleton id
-            skel_output_dir = os.path.join(output_file_dir, 'skeletons', str(skeleton_id))
-            if force:
-                try:
-                    shutil.rmtree(skel_output_dir, ignore_errors=True)
-                except OSError:
-                    pass
-
-            mkdir_p(skel_output_dir)
-
-            skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
-            skel_data = catmaid.get_transformed_treenode_and_connector_geometry(stack_id, skeleton_id)
-            with open(skel_path, 'w') as f:
-                json.dump(skel_data, f)
-        else:
-            skel_output_dir = None
-
-        skel_output_dirs.append(skel_output_dir)
+    algo_notes = get_algo_notes(projects_dir)
 
     return autocontext_project, multicut_project, volume_description_path, skel_output_dirs, algo_notes
 
@@ -645,15 +649,13 @@ def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw
     return segmentation_xy
 
 
-def assert_same_xy(*args):
+def are_same_xy(*args):
     if not args:
-        return
-    it = iter(args)
-    prev = next(it)
-    for arg in it:
-        assert prev.shape[:2] == arg.shape[:2]
-        assert tuple(prev.axistags)[:2] == tuple(arg.axistags)[:2]
-        prev = arg
+        return True
+
+    return all(
+        args[0].shape[:2] == arg.shape[:2] and tuple(args[0].axistags)[:2] == tuple(arg.axistags)[:2] for arg in args
+    )
 
 
 def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
@@ -669,7 +671,7 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
     -------
 
     """
-    assert_same_xy(raw_xy, predictions_xyc)
+    assert are_same_xy(raw_xy, predictions_xyc)
 
     # move these into setup_multicut?
     #####
@@ -688,7 +690,7 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
 
     assert len(batch_results) == 1
     segmentation_xy = vigra.taggedView(batch_results[0], axistags='xy')
-    assert_same_xy(segmentation_xy, raw_xy, predictions_xyc)
+    assert are_same_xy(segmentation_xy, raw_xy, predictions_xyc)
     return segmentation_xy
 
 
@@ -826,38 +828,7 @@ def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacke
     return filepath
 
 
-def intersection(roi_a, roi_b):
-    # todo: test
-    """
-    Compute the intersection (overlap) of the two rois A and B.
-
-    Returns the intersection roi in three forms (as a tuple):
-        - in global coordinates
-        - in coordinates relative to A
-        - in coordinates relative to B
-
-    If they don't overlap at all, returns (None, None, None).
-    """
-    roi_a = np.asarray(roi_a)
-    roi_b = np.asarray(roi_b)
-    assert roi_a.shape == roi_b.shape
-    assert roi_a.shape[0] == 2
-
-    out = roi_a.copy()
-    out[0] = np.maximum( roi_a[0], roi_b[0] )
-    out[1] = np.minimum( roi_a[1], roi_b[1] )
-
-    if not (out[1] > out[0]).all():
-        # No intersection; rois are disjoint
-        return None, None, None
-
-    out_within_a = out - roi_a[0]
-    out_within_b = out - roi_b[0]
-    return out, out_within_a, out_within_b
-
-
 def slicing(roi):
-    # todo: test?
     """
     Convert the roi to a slicing that can be used with ndarray.__getitem__()
     """
@@ -865,7 +836,6 @@ def slicing(roi):
 
 
 def mkdir_p(path):
-    # todo: test
     """
     Like the bash command 'mkdir -p'
     """
