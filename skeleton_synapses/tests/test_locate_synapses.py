@@ -3,13 +3,14 @@ import os
 import numpy as np
 import pytest
 import mock
+import vigra
 
 from skeleton_synapses.locate_synapses import (
-    ensure_list, ensure_description_file, setup_files, assert_same_xy, write_output_image,
-    slicing, mkdir_p
+    ensure_list, ensure_description_file, ensure_skel_output_dirs, get_algo_notes,
+    are_same_xy, slicing, mkdir_p
 )
 
-from fixtures import get_fixture_data, tmp_dir
+from fixtures import tmp_dir
 
 
 def test_ensure_list_list():
@@ -35,52 +36,160 @@ def test_ensure_list_str():
     assert output == expected_output
 
 
-def assert_contents(path, expected_contents):
+def assert_contains(path, expected_contents):
     with open(path) as f:
-        contents = f.read()
+        real_contents = f.read()
 
-    assert contents == expected_contents
+    assert expected_contents in real_contents
 
 
 @pytest.fixture
 def description_file(tmp_dir):
     description_path = os.path.join(tmp_dir, 'description.json')
     with open(description_path, 'w') as f:
-        f.write('existing')
+        f.write('"existing"')
     yield description_path
     os.remove(description_path)
 
 
 @pytest.fixture
-def stack_describer_mock():
+def catmaid():
     catmaid = mock.Mock()
-    catmaid.get_stack_description = mock.Mock(return_value='new')
+    catmaid.get_stack_description = mock.Mock(return_value='new stack description')
+    catmaid.get_transformed_treenode_and_connector_geometry = mock.Mock(return_value='new geometry')
     return catmaid
 
 
-def test_ensure_description_file_created(tmp_dir, stack_describer_mock):
+def test_ensure_description_file_created(catmaid, tmp_dir):
     description_path = os.path.join(tmp_dir, 'description.json')
-    replaced = ensure_description_file(stack_describer_mock, description_path, None, None, force=False)
+    replaced = ensure_description_file(catmaid, description_path, None, None, force=False)
 
     assert replaced
-    stack_describer_mock.get_stack_description.assert_called_once()
-    assert_contents(description_path, '"new"')
+    catmaid.get_stack_description.assert_called_once()
+    assert_contains(description_path, 'new')
 
 
-def test_ensure_description_file_exists(description_file, stack_describer_mock):
-    replaced = ensure_description_file(stack_describer_mock, description_file, None, None, force=False)
+def test_ensure_description_file_exists(catmaid, description_file):
+    replaced = ensure_description_file(catmaid, description_file, None, None, force=False)
 
     assert not replaced
-    stack_describer_mock.get_stack_description.assert_not_called()
-    assert_contents(description_file, 'existing')
+    catmaid.get_stack_description.assert_not_called()
+    assert_contains(description_file, 'existing')
 
 
-def test_ensure_description_file_overwritten(description_file, stack_describer_mock):
-    replaced = ensure_description_file(stack_describer_mock, description_file, None, None, force=True)
+def test_ensure_description_file_overwritten(catmaid, description_file):
+    replaced = ensure_description_file(catmaid, description_file, None, None, force=True)
 
     assert replaced
-    stack_describer_mock.get_stack_description.assert_called_once()
-    assert_contents(description_file, '"new"')
+    catmaid.get_stack_description.assert_called_once()
+    assert_contains(description_file, 'new')
+
+
+def assert_skel_output_dirs(output_dirs, skel_ids, contents='new'):
+    assert len(output_dirs) == len(skel_ids)
+    for output_dir, skel_id in zip(output_dirs, skel_ids):
+        assert output_dir.endswith(str(skel_id))
+        assert_contains(os.path.join(output_dir, 'tree_geometry.json'), contents)
+
+
+@pytest.fixture
+def skel_ids():
+    return 1, 2
+
+
+def test_ensure_skel_output_dirs_new(skel_ids, catmaid, tmp_dir):
+    output_dirs = ensure_skel_output_dirs(tmp_dir, skel_ids, catmaid, None, force=False)
+    assert_skel_output_dirs(output_dirs, skel_ids)
+
+
+@pytest.fixture
+def skel_populated_tmp(skel_ids, tmp_dir):
+    skel_path = os.path.join(tmp_dir, 'skeletons')
+    os.mkdir(skel_path)
+    for skel_id in skel_ids:
+        path = os.path.join(skel_path, str(skel_id))
+        os.mkdir(path)
+        assert os.path.isdir(path)
+
+        geom_path = os.path.join(path, 'tree_geometry.json')
+        with open(geom_path, 'w') as f:
+            f.write('existing')
+        assert os.path.isfile(geom_path)
+
+        other_path = os.path.join(path, 'OTHER')
+        with open(other_path, 'w') as f:
+            f.write('existing')
+        assert os.path.isfile(other_path)
+
+    return tmp_dir
+
+
+def test_ensure_skel_output_dirs_exist(catmaid, skel_ids, skel_populated_tmp):
+    output_dirs = ensure_skel_output_dirs(skel_populated_tmp, skel_ids, catmaid, None, force=False)
+
+    assert_skel_output_dirs(output_dirs, skel_ids)
+    for output_dir in output_dirs:
+        assert 'OTHER' in os.listdir(output_dir)
+
+
+def test_ensure_skel_output_dirs_force(catmaid, skel_ids, skel_populated_tmp):
+    output_dirs = ensure_skel_output_dirs(skel_populated_tmp, skel_ids, catmaid, None, force=True)
+
+    assert_skel_output_dirs(output_dirs, skel_ids)
+    for output_dir in output_dirs:
+        assert 'OTHER' not in os.listdir(output_dir)
+
+
+def test_get_algo_notes_exist(tmp_dir):
+    with open(os.path.join(tmp_dir, 'algorithm_notes.json'), 'w') as f:
+        f.write('"existing"')
+
+    output = get_algo_notes(tmp_dir)
+    assert 'existing' in output
+
+
+def test_get_algo_notes_none(tmp_dir):
+    output = get_algo_notes(tmp_dir)
+    assert {'synapse_detection', 'skeleton_association'} == set(output)
+
+
+@pytest.fixture
+def vigra_arrs():
+    return [
+        vigra.taggedView(np.random.random((5, 5)), axistags='xy')
+        for _ in range(3)
+    ]
+
+
+def test_assert_same_xy_same(vigra_arrs):
+    assert are_same_xy(*vigra_arrs)
+
+
+def test_assert_same_xy_add_dim(vigra_arrs):
+    vigra_arrs += [
+        vigra.taggedView(np.random.random((5, 5, 3)), axistags='xyc'),
+        vigra.taggedView(np.random.random((5, 5, 5)), axistags='xyz'),
+    ]
+    assert are_same_xy(*vigra_arrs)
+
+
+def test_assert_same_xy_different_shape(vigra_arrs):
+    vigra_arrs += [
+        vigra.taggedView(np.random.random((5, 6)), axistags='xy')
+    ]
+    assert not are_same_xy(*vigra_arrs)
+
+
+def test_assert_same_xy_different_axistags(vigra_arrs):
+    vigra_arrs += [
+        vigra.taggedView(np.random.random((5, 6)), axistags='yx')
+    ]
+    assert not are_same_xy(*vigra_arrs)
+
+
+@pytest.skip('write_output_image used for debugging only')
+def test_write_output_image():
+    pass
 
 
 def test_mkdir_p_single(tmp_dir):
