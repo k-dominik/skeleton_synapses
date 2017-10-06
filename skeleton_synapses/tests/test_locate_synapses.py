@@ -187,7 +187,7 @@ def test_assert_same_xy_different_axistags(vigra_arrs):
     assert not are_same_xy(*vigra_arrs)
 
 
-@pytest.skip('write_output_image used for debugging only')
+@pytest.mark.skip('write_output_image used for debugging only')
 def test_write_output_image():
     pass
 
