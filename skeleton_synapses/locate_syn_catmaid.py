@@ -17,6 +17,7 @@ from Queue import Empty
 import psutil
 from datetime import datetime
 
+import geojson
 import h5py
 import numpy as np
 from six.moves import range
@@ -168,14 +169,16 @@ def main(credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_d
         )
 
 
-def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=LABEL_DTYPE, extra_dim=None):
-    # todo: test
-    dimension = [stack_info['dimension'][dim] for dim in 'zyx']
+def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=LABEL_DTYPE, colour_channels=None):
+    spatial_axes = 'zyx'
+    dimension = tuple(stack_info['dimension'][dim] for dim in spatial_axes)
     chunksize = (1, tile_size, tile_size)
 
-    if extra_dim is not None:
-        dimension += [extra_dim]
-        chunksize += (extra_dim, )
+    axistags = spatial_axes
+    if colour_channels is not None:
+        axistags += 'c'
+        dimension += (colour_channels, )
+        chunksize += (colour_channels, )
 
     labels = hdf5_file.create_dataset(
         name,
@@ -186,26 +189,30 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
     )
 
     for key in ['translation', 'dimension', 'resolution']:
-        labels.attrs[key] = json.dumps(stack_info[key])
+        labels.attrs[key] = json.dumps(stack_info[key], sort_keys=True)
+
+    labels.attrs['axistags'] = axistags
+    labels.attrs['order'] = 'C'
 
     return labels
 
 
 def ensure_hdf5(stack_info, output_file_dir, force=False):
-    # todo: test
     hdf5_path = os.path.join(output_file_dir, HDF5_NAME)
     if force or not os.path.isfile(hdf5_path):
         if os.path.isfile(hdf5_path):
-            os.rename(hdf5_path, '{}BACKUP{}'.format(hdf5_path, datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))
+            hdf5_dir = os.path.dirname(hdf5_path)
+            backup_path = os.path.join(hdf5_dir, '{}BACKUP{}'.format(hdf5_path, datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))
+            os.rename(hdf5_path, backup_path)
         logger.info('Creating HDF5 volumes in %s', hdf5_path)
         with h5py.File(hdf5_path) as f:
             # f.attrs['workflow_id'] = workflow_id  # todo
             f.attrs['source_stack_id'] = stack_info['sid']
 
             create_label_volume(stack_info, f, 'slice_labels', TILE_SIZE)
-            # create_label_volume(stack_info, f, 'object_labels')  # todo?
-            create_label_volume(stack_info, f, 'pixel_predictions', TILE_SIZE, dtype=PIXEL_PREDICTION_DTYPE,
-                                extra_dim=3)
+            create_label_volume(
+                stack_info, f, 'pixel_predictions', TILE_SIZE, dtype=PIXEL_PREDICTION_DTYPE, colour_channels=3
+            )
 
             f.flush()
 
@@ -216,14 +223,14 @@ TileIndex = namedtuple('TileIndex', 'z_idx y_idx x_idx')
 
 
 def nodes_to_tile_indexes(node_infos, tile_size, minimum_radius=DEFAULT_ROI_RADIUS):
-    # todo: test
     """
 
     Parameters
     ----------
-    node_infos : skeleton_utils.NodeInfo
-    tile_size
-    minimum_radius
+    node_infos : list of skeleton_utils.NodeInfo
+    tile_size : int
+        side length of square tile
+    minimum_radius : float or int
 
     Returns
     -------
@@ -266,8 +273,8 @@ def tile_index_to_bounds(tile_index, tile_size):
 
 
 def square_bounds(roi_xyz):
-    # todo: test
     """Convert a rectangular ROI array into the minimum square in which the original ROI is centered"""
+    roi_xyz = np.array(roi_xyz)
     shape = np.diff(roi_xyz[:, :2], axis=0).squeeze()
     size_diff = shape[0] - shape[1]
     if size_diff == 0:
@@ -413,18 +420,7 @@ def locate_synapses_catmaid(
             synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]  # xmax, ymax, zmax
         ])).astype(int)
 
-        ## make it into a square
-        # roi_xyz = square_bounds(roi_xyz)
-
-        ## synapse plane centroid + buffer
-        # centroid_xyz = np.array([
-        #     synapse['synapse_bounds_s'][:2] + [synapse['synapse_z_s']],
-        #     synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]
-        # ]).mean(axis=0)
-        # roi_xyz = (radius + centroid_xyz).astype(int)
-
         logger.debug('Getting treenodes in roi {}'.format(roi_xyz))
-        # node_locations = catmaid.get_nodes_in_roi(roi_xyz, stack_info['sid'])
         item = NeuronSegmenterInput(roi_xyz, slice_id_tuple)
         logger.debug('Adding {} to neuron segmentation queue'.format(item))
         synapse_queue.put(item)
@@ -512,7 +508,9 @@ class DetectorProcess(LeakyProcess):
             "Detected synapses in tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize())
         )
 
-        self.output_queue.put(DetectorOutput(tile_idx, np.array(predictions_xyc), np.array(synapse_cc_xy)))
+        self.output_queue.put(DetectorOutput(
+            tile_idx, vigra.taggedView(predictions_xyc, axistags='xyc'), vigra.taggedView(synapse_cc_xy, axistags='xy'))
+        )
 
 
 NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['roi_xyz', 'synapse_slice_ids'])
@@ -625,7 +623,6 @@ class NeuronSegmenterProcess(LeakyProcess):
 
 
 def node_locations_to_array(template_array_xy, node_locations):
-    # todo: test
     """
     Given a vigra image in xy and a dict containing xy coordinates, return a vigra image of the same shape, where nodes
     are represented by their integer ID, and every other pixel is -1.
@@ -642,6 +639,9 @@ def node_locations_to_array(template_array_xy, node_locations):
     """
     if not isinstance(template_array_xy, vigra.VigraArray):
         template_array_xy = vigra.taggedView(template_array_xy, axistags='xy')
+    else:
+        assert template_array_xy.axistags.keys() == ['x', 'y']
+
     arr_xy = template_array_xy.copy()
     arr_xy.fill(-1)
     for node_location in node_locations.values():
@@ -651,23 +651,22 @@ def node_locations_to_array(template_array_xy, node_locations):
     return arr_xy
 
 
-def iterate_queue(queue, final_size, queue_name=None):
-    # todo: test
+def iterate_queue(queue, final_size, queue_name=None, timeout=RESULTS_TIMEOUT_SECONDS):
     if queue_name is None:
         queue_name = repr(queue)
     for idx in range(final_size):
         logger.debug('Waiting for item {} from queue {} (expect {} more)'.format(idx, queue_name, final_size - idx))
         try:
-            item = queue.get(timeout=RESULTS_TIMEOUT_SECONDS)
+            item = queue.get(timeout=timeout)
         except Empty:
-            logger.exception('Result queue timed out after {} seconds'.format(RESULTS_TIMEOUT_SECONDS))
+            logger.exception('Result queue timed out after {} seconds'.format(timeout))
             raise
         logger.debug('Got item {} from queue {}: {} (expect {} more)'.format(idx, queue_name, item, final_size-idx-1))
         yield item
+    assert queue.empty(), 'More enqueued items in {} than expected'.format(queue_name)
 
 
 def image_to_geojson(array_xy, x_offset, y_offset):
-    # todo: test
     """
     Return geojson polygon string of binary image
 
@@ -689,96 +688,126 @@ def image_to_geojson(array_xy, x_offset, y_offset):
             coords_list.append(coords_list[0])
         rings.append(coords_list)
 
-    return json.dumps({'type': 'Polygon', 'coordinates': rings})
+    return geojson.dumps(geojson.Polygon(rings, validate=True), sort_keys=True)
+
+
+def get_synapse_slice_attributes(predictions_xyc, synapse_mask_xy, x_offset, y_offset):
+    # todo: test
+    syn_pixel_coords_xy = np.where(synapse_mask_xy)
+    size_px = len(syn_pixel_coords_xy[0])
+    y_centroid_px = np.average(syn_pixel_coords_xy[1]) + y_offset
+    x_centroid_px = np.average(syn_pixel_coords_xy[0]) + x_offset
+
+    # Determine average uncertainty
+    # Get probabilities for this synapse's pixels
+    flat_predictions = predictions_xyc[synapse_mask_xy]
+    # Sort along channel axis
+    flat_predictions.sort(axis=-1)
+    # What's the difference between the highest and second-highest class?
+    certainties = flat_predictions[:, -1] - flat_predictions[:, -2]
+    avg_certainty = np.mean(certainties)
+    uncertainty = 1.0 - avg_certainty
+
+    geojson_str = image_to_geojson(synapse_mask_xy, x_offset, y_offset)
+
+    return {
+        'geom': geojson_str,
+        'size_px': int(size_px),
+        'xs_centroid': int(x_centroid_px),
+        'ys_centroid': int(y_centroid_px),
+        'uncertainty': uncertainty
+    }
+
+
+def synapse_slices_to_data(predictions_xyc, synapse_cc_xy, x_offset, y_offset):
+    """Given a prediction image"""
+    # todo: test
+
+    data = []
+
+    for local_label in np.unique(synapse_cc_xy)[1:].astype(int):
+        binary_arr_xy = synapse_cc_xy == local_label
+
+        syn_datum = get_synapse_slice_attributes(predictions_xyc, binary_arr_xy, x_offset, y_offset)
+        syn_datum['id'] = int(local_label)
+
+        data.append(syn_datum)
+
+    return data
+
+
+def submit_synapse_slice_data(bounds_xyz, predictions_xyc, synapse_cc_xy, tile_idx, catmaid, workflow_id):
+    # todo: test
+
+    synapse_slices = synapse_slices_to_data(
+        predictions_xyc, synapse_cc_xy, bounds_xyz[0, 0], bounds_xyz[0, 1]
+    )
+
+    id_mapping = catmaid.add_synapse_slices_to_tile(workflow_id, synapse_slices, tile_idx)
+    logger.debug('Got ID mapping from CATMAID:\n{}'.format(id_mapping))
+
+    local_label_set = set(np.unique(synapse_cc_xy)[1:].astype(int))
+    returned_keys = {int(key) for key in id_mapping.keys()}
+    assert returned_keys == local_label_set, 'Returned keys are not the same as sent keys:\n\t{}\n\t{}'.format(
+        returned_keys, local_label_set
+    )
+
+    catmaid.agglomerate_synapses(id_mapping.values())
+
+    return id_mapping
+
+
+def remap_synapse_slices(synapse_cc_xy, id_mapping):
+    # todo: test
+    mapped_synapse_cc_xy = vigra.taggedView(np.ones(synapse_cc_xy.shape, LABEL_DTYPE), axistags='xy')
+    for local_label, synapse_id in id_mapping.items():
+        logger.debug('Addressing ID mapping pair: {}, {}'.format(local_label, synapse_id))
+        mapped_synapse_cc_xy[synapse_cc_xy == int(local_label)] = synapse_id
+
+    return mapped_synapse_cc_xy
 
 
 def commit_tilewise_results_from_queue(
-        tile_result_queue, output_path, total_tiles, tile_size, workflow_id
+        tile_result_queue, output_path, total_tiles, tile_size, workflow_id, catmaid=catmaid
 ):
-    # todo: test (needs refactors)
-    global catmaid
     result_iterator = iterate_queue(tile_result_queue, total_tiles, 'tile_result_queue')
 
     logger.info('Starting to commit tile classification results')
 
-    with h5py.File(output_path, 'r+') as f:
-        pixel_predictions_zyx = f['pixel_predictions']
-        slice_labels_zyx = f['slice_labels']
+    for tile_count, (tile_idx, predictions_xyc, synapse_cc_xy) in enumerate(result_iterator):
+        tilename = 'z{}-y{}-x{}'.format(*tile_idx)
+        logger.debug('Committing results from tile {}, {} of {}'.format(tilename, tile_count, total_tiles))
+        bounds_xyz = tile_index_to_bounds(tile_idx, tile_size)
 
-        for tile_count, (tile_idx, predictions_xyc, synapse_cc_xy) in enumerate(result_iterator):
-            tilename = 'z{}-y{}-x{}'.format(*tile_idx)
-            logger.debug('Committing results from tile {}, {} of {}'.format(tilename, tile_count, total_tiles))
-            bounds_xyz = tile_index_to_bounds(tile_idx, tile_size)
+        id_mapping = submit_synapse_slice_data(
+            bounds_xyz, predictions_xyc, synapse_cc_xy, tile_idx, catmaid, workflow_id
+        )
 
-            pixel_predictions_zyx[
-                bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0], :
-            ] = predictions_xyc.transpose((1, 0, 2))  # xyc to yxc
+        logger.debug('Got ID mapping from CATMAID:\n{}'.format(id_mapping))
 
-            synapse_cc_yx = synapse_cc_xy.T
+        mapped_synapse_cc_xy = remap_synapse_slices(synapse_cc_xy, id_mapping)
 
-            log_prefix = 'Tile {} ({}/{}): '.format(tilename, tile_count, total_tiles)
-
-            synapse_slices = []
-
-            local_label_set = set(np.unique(synapse_cc_yx)[1:].astype(int))
-            for local_label in local_label_set:
-                slice_prefix = log_prefix + '[{}] '.format(local_label)
-
-                logger.debug('%sProcessing slice label'.format(local_label), slice_prefix)
-
-                binary_arr_xy = synapse_cc_xy == local_label
-
-                syn_pixel_coords_xy = np.where(binary_arr_xy)
-                size_px = len(syn_pixel_coords_xy[0])
-                y_centroid_px = np.average(syn_pixel_coords_xy[1]) + bounds_xyz[0, 1]
-                x_centroid_px = np.average(syn_pixel_coords_xy[0]) + bounds_xyz[0, 0]
-
-                # Determine average uncertainty
-                # Get probabilities for this synapse's pixels
-                flat_predictions = predictions_xyc[synapse_cc_xy == local_label]
-                # Sort along channel axis
-                flat_predictions.sort(axis=-1)
-                # What's the difference between the highest and second-highest class?
-                certainties = flat_predictions[:, -1] - flat_predictions[:, -2]
-                avg_certainty = np.mean(certainties)
-                uncertainty = 1.0 - avg_certainty
-
-                geojson_str = image_to_geojson(binary_arr_xy, bounds_xyz[0, 0], bounds_xyz[0, 1])
-
-                synapse_slices.append({
-                    'id': int(local_label),
-                    'geom': geojson_str,
-                    'size_px': int(size_px),
-                    'xs_centroid': int(x_centroid_px),
-                    'ys_centroid': int(y_centroid_px),
-                    'uncertainty': uncertainty
-                })
-
-            id_mapping = catmaid.add_synapse_slices_to_tile(workflow_id, synapse_slices, tile_idx)
-            logger.debug('Got ID mapping from CATMAID:\n{}'.format(id_mapping))
-
-            returned_keys = {int(key) for key in id_mapping.keys()}
-            if returned_keys != local_label_set:
-                logger.error(
-                    'Returned keys are not the same as sent keys:\n\t{}\n\t{}'.format(returned_keys, local_label_set)
-                )
-
-            mapped_synapse_cc_yx = np.ones(synapse_cc_yx.shape, LABEL_DTYPE)
-            for local_label, synapse_id in id_mapping.items():
-                logger.debug('Addressing ID mapping pair: {}, {}'.format(local_label, synapse_id))
-                mapped_synapse_cc_yx[synapse_cc_yx == int(local_label)] = synapse_id
-
-            slice_labels_zyx[
-                bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
-            ] = mapped_synapse_cc_yx
-
-            catmaid.agglomerate_synapses(id_mapping.values())  # maybe do this per larger block?
+        write_predictions_synapses(output_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz)
 
 
-def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id):
-    # todo: test (needs refactors)
-    global catmaid
+def write_predictions_synapses(hdf5_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz):
+    with h5py.File(hdf5_path, 'r+') as f:
+        pred_dataset = f['pixel_predictions']
+        pixel_predictions_zyxc = vigra.taggedView(pred_dataset, axistags=pred_dataset.attrs['axistags'])
+        slice_dataset = f['slice_labels']
+        slice_labels_zyx = vigra.taggedView(slice_dataset, axistags=slice_dataset.attrs['axistags'])
 
+        pixel_predictions_zyxc[
+            bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0], :
+        ] = predictions_xyc.transposeToOrder(pred_dataset.attrs['order'])
+        # .transpose((1, 0, 2))  # xyc to yxc
+
+        slice_labels_zyx[
+            bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
+        ] = mapped_synapse_cc_xy.transposeToOrder(slice_dataset.attrs['order'])
+
+
+def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id, catmaid=catmaid):
     logger.debug('Committing node association results')
 
     result_list_generator = iterate_queue(node_result_queue, total_nodes, 'node_result_queue')
@@ -842,11 +871,13 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
 
 
 def kill_child_processes(signum=None, frame=None):
-    # todo: test?
     current_proc = psutil.Process()
     for child_proc in current_proc.children(recursive=True):
         logger.debug('Killing process: {} with status {}'.format(child_proc.name(), child_proc.status()))
         child_proc.kill()
+
+
+logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
