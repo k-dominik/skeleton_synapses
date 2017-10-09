@@ -521,16 +521,20 @@ def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
     (vigra.VigraArray, vigra.VigraArray)
     """
     # convert roi into a tuple of slice objects which can be used by numpy for indexing
-    roi_slices = (roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0]))
+    roi_slices = roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0])
 
     with h5py.File(hdf5_path, 'r') as f:
-        synapse_cc_xy = np.array(f['slice_labels'][roi_slices]).T
-        predictions_xyc = np.array(f['pixel_predictions'][roi_slices]).transpose((1, 0, 2))
+        synapse_cc_xy = vigra.taggedView(
+            f['slice_labels'], axistags=f['slice_labels'].attrs['axistags']
+        )[roi_slices].transposeToOrder('V')
+        predictions_xyc = vigra.taggedView(
+            f['pixel_predictions'], axistags=f['pixel_predictions'].attrs['axistags']
+        )[roi_slices].transposeToOrder('V')
 
     # if squeeze:
     #     return synapse_cc_xy.squeeze(), predictions_xyc.squeeze()
     # else:
-    return vigra.taggedView(synapse_cc_xy, axistags='xy'), vigra.taggedView(predictions_xyc, axistags='xyc')
+    return synapse_cc_xy, predictions_xyc
 
 
 def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
