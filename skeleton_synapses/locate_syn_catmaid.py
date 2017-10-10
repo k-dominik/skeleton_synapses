@@ -3,18 +3,12 @@ from __future__ import division
 import logging
 import multiprocessing as mp
 from collections import namedtuple
-import argparse
-import sys
 import os
 import json
 from itertools import product
 import time
-import hashlib
-import subprocess
-import signal
 from Queue import Empty
 
-import psutil
 from datetime import datetime
 
 import geojson
@@ -28,28 +22,19 @@ import vigra
 from lazyflow.utility import Timer
 from lazyflow.request import Request
 
-from catpy import CatmaidClient
-
-from catmaid_interface import CatmaidSynapseSuggestionAPI
 from locate_synapses import (
     # constants/singletons
-    DEFAULT_ROI_RADIUS, LOGGER_FORMAT,
+    DEFAULT_ROI_RADIUS,
     # functions
-    setup_files, setup_classifier, setup_classifier_and_multicut, ensure_list, mkdir_p,
-    fetch_raw_and_predict_for_node, raw_data_for_roi, labeled_synapses_for_node, segmentation_for_node,
+    setup_classifier, setup_classifier_and_multicut, fetch_raw_and_predict_for_node, raw_data_for_roi,
+    labeled_synapses_for_node, segmentation_for_img, cached_synapses_predictions_for_roi,
     # classes
     CaretakerProcess, LeakyProcess,
-    segmentation_for_img, cached_synapses_predictions_for_roi)
+)
 from skeleton_utils import roi_around_node
 
 
-# def addapt_numpy_float64(numpy_float64):
-#     return AsIs(numpy_float64)
-# register_adapter(np.float64, addapt_numpy_float64)
-
-
 HDF5_NAME = "tilewise_image_store.hdf5"
-LOG_LEVEL = logging.DEBUG
 
 RESULTS_TIMEOUT_SECONDS = 5*60  # 5 minutes
 
@@ -65,11 +50,8 @@ THREADS = int(os.getenv('SYNAPSE_DETECTION_THREADS', 3))
 # NODES_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_NODES_PER_PROCESS', 500))
 RAM_MB_PER_PROCESS = int(os.getenv('SYNAPSE_DETECTION_RAM_MB_PER_PROCESS', 5000))
 
-DEBUG = False
 
-ALGO_HASH = None
-
-catmaid = None
+logger = logging.getLogger(__name__)
 
 
 class Timestamper(object):
@@ -81,92 +63,6 @@ class Timestamper(object):
         now = time.time()
         self.performance_logger.info('{}: {}'.format(now - self.last_event, msg))
         self.last_event = now
-
-
-def hash_algorithm(*paths):
-    """
-    Calculate a combined hash of the algorithm. Included for hashing are the commit hash of this repo, the hashes of
-    any files whose paths are given, and the git commit hash inside any directories whose paths are given.
-
-    Parameters
-    ----------
-    paths
-        Paths to files or directories outside of this git repo which affect the algorithm
-
-    Returns
-    -------
-    str
-    """
-    logger.info('Hashing algorithm...')
-    commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
-
-    md5 = hashlib.md5(commit_hash)
-
-    for path in sorted(paths):
-        if os.path.isdir(path):
-            logger.debug('Getting git commit hash of directory %s', path)
-            try:
-                output = subprocess.check_output(['git', '-C', path, 'rev-parse', 'HEAD']).strip()
-                md5.update(output)
-            except subprocess.CalledProcessError:
-                logger.exception('Error encountered while finding git hash of directory %s', path)
-        elif os.path.isfile(path):
-            logger.debug('Getting hash of file %s', path)
-            with open(path, 'rb') as f:
-                for chunk in iter(lambda: f.read(128 * md5.block_size), b''):
-                    md5.update(chunk)
-        else:
-            logger.warning('No file, symlink or directory found at %s', path)
-
-    digest = md5.hexdigest()
-
-    # todo: remove this
-    if ALGO_HASH is not None:
-        digest = ALGO_HASH
-        logger.warning('Ignoring real algorithm hash, using hardcoded value'.format(ALGO_HASH))
-    logger.debug('Algorithm hash is %s', digest)
-    return digest
-
-
-def main(credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_dir, roi_radius_px=150, force=False):
-    global catmaid
-
-    logger.info("STARTING TILEWISE")
-
-    timestamper.log('started setup')
-
-    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
-    stack_info = catmaid.get_stack_info(stack_id)
-
-    ensure_hdf5(stack_info, output_file_dir, force=force)
-
-    timestamper.log('finished setup')
-    skeleton_ids = ensure_list(skeleton_ids)
-
-    autocontext_project, multicut_project, volume_description_path, skel_output_dirs, algo_notes = setup_files(
-        credentials_path, stack_id, skeleton_ids, input_file_dir, force, output_file_dir if DEBUG else None
-    )
-
-    if force:
-        logger.info('Using random hash')
-        algo_hash = hash(np.random.random())
-    else:
-        algo_hash = hash_algorithm(autocontext_project, multicut_project)
-
-    timestamper.log('finished setup')
-
-    for skeleton_id in skeleton_ids:
-        locate_synapses_catmaid(
-            autocontext_project,
-            multicut_project,
-            volume_description_path,
-            output_file_dir,
-            skeleton_id,
-            roi_radius_px,
-            stack_info,
-            algo_hash,
-            algo_notes
-        )
 
 
 def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=LABEL_DTYPE, colour_channels=None):
@@ -300,7 +196,8 @@ def locate_synapses_catmaid(
         roi_radius_px,
         stack_info,
         algo_hash,
-        algo_notes
+        algo_notes,
+        catmaid
 ):
     # todo: test (needs refactors)
     """
@@ -322,15 +219,20 @@ def locate_synapses_catmaid(
     -------
 
     """
-    global catmaid
+    logger.debug('Parallelising over {} threads'.format(THREADS))
+    logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROCESS))
 
     hdf5_path = os.path.join(output_file_dir, HDF5_NAME)
-    skel_output_dir = os.path.join(output_file_dir, 'skeletons', str(skeleton_id)) if DEBUG else None
+    # debug
+    # skel_output_dir = os.path.join(output_file_dir, 'skeletons', str(skeleton_id))
+    skel_output_dir = None
 
     workflow_id = catmaid.get_workflow_id(
         stack_info['sid'], algo_hash, TILE_SIZE, detection_notes=algo_notes['synapse_detection'])
 
     logger.info('Populating tile queue')
+
+    timestamper = Timestamper()
 
     timestamper.log('started getting tiles')
 
@@ -377,7 +279,7 @@ def locate_synapses_catmaid(
         for detector_container in detector_containers:
             detector_container.start()
 
-        commit_tilewise_results_from_queue(tile_result_queue, hdf5_path, tile_count, TILE_SIZE, workflow_id)
+        commit_tilewise_results_from_queue(tile_result_queue, hdf5_path, tile_count, TILE_SIZE, workflow_id, catmaid)
 
         for detector_container in detector_containers:
             detector_container.join()
@@ -433,7 +335,7 @@ def locate_synapses_catmaid(
         neuron_seg_containers = [
             CaretakerProcess(
                 NeuronSegmenterProcess, synapse_queue, RAM_MB_PER_PROCESS,
-                (synapse_result_queue, input_filepath, autocontext_project_path, multicut_project, hdf5_path),
+                (synapse_result_queue, input_filepath, autocontext_project_path, multicut_project, hdf5_path, catmaid),
                 name='CaretakerProcess{}'.format(idx)
             )
             for idx in range(min(THREADS, synapse_count))
@@ -452,7 +354,7 @@ def locate_synapses_catmaid(
             neuron_seg_container.start()
             assert neuron_seg_container.is_alive()
 
-        commit_node_association_results_from_queue(synapse_result_queue, synapse_count, project_workflow_id)
+        commit_node_association_results_from_queue(synapse_result_queue, synapse_count, project_workflow_id, catmaid)
 
         for neuron_seg_container in neuron_seg_containers:
             neuron_seg_container.join()
@@ -524,7 +426,7 @@ class NeuronSegmenterProcess(LeakyProcess):
     """
     def __init__(
             self, input_queue, max_ram_MB, output_queue, description_file, autocontext_project_path, multicut_project,
-            hdf5_path, debug=False, name=None
+            hdf5_path, catmaid, debug=False, name=None
     ):
         """
 
@@ -550,6 +452,7 @@ class NeuronSegmenterProcess(LeakyProcess):
 
         self.opPixelClassification = self.multicut_shell = None
         self.setup_args = (description_file, autocontext_project_path, multicut_project)
+        self.catmaid = catmaid
 
     # for debugging
     # def run(self):
@@ -604,7 +507,7 @@ class NeuronSegmenterProcess(LeakyProcess):
                 self.output_queue.put(outputs)  # outputs will be empty
                 return
 
-            node_locations = catmaid.get_nodes_in_roi(roi_xyz, catmaid.stack_id)
+            node_locations = self.catmaid.get_nodes_in_roi(roi_xyz, self.catmaid.stack_id)
             node_locations_arr = node_locations_to_array(synapse_cc_xy, node_locations)
 
             where_nodes_exist = node_locations_arr >= 0
@@ -810,7 +713,7 @@ def remap_synapse_slices(synapse_cc_xy, id_mapping):
 
 
 def commit_tilewise_results_from_queue(
-        tile_result_queue, output_path, total_tiles, tile_size, workflow_id, catmaid=catmaid
+        tile_result_queue, output_path, total_tiles, tile_size, workflow_id, catmaid
 ):
     result_iterator = iterate_queue(tile_result_queue, total_tiles, 'tile_result_queue')
 
@@ -838,13 +741,12 @@ def write_predictions_synapses(hdf5_path, predictions_xyc, mapped_synapse_cc_xy,
     with h5py.File(hdf5_path, 'r+') as f:
         pixel_predictions_zyxc = f['pixel_predictions']
         pixel_predictions_zyxc[slicing_zyx] = predictions_xyc.transposeToOrder(pixel_predictions_zyxc.attrs['order'])
-        # .transpose((1, 0, 2))  # xyc to yxc
 
         slice_labels_zyx = f['slice_labels']
         slice_labels_zyx[slicing_zyx] = mapped_synapse_cc_xy.transposeToOrder(slice_labels_zyx.attrs['order'])
 
 
-def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id, catmaid=catmaid):
+def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id, catmaid):
     logger.debug('Committing node association results')
 
     result_list_generator = iterate_queue(node_result_queue, total_nodes, 'node_result_queue')
@@ -861,127 +763,3 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
     logger.info('Inserting new slice:treenode mappings')
 
     catmaid.add_synapse_treenode_associations(assoc_tuples, project_workflow_id)
-
-
-def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
-    # set up the log files and symlinks
-    latest_ln = os.path.join(output_file_dir, 'logs', 'latest')
-    os.remove(latest_ln)
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
-    log_dir = os.path.join(output_file_dir, 'logs', timestamp)
-    mkdir_p(log_dir)
-    os.symlink(log_dir, latest_ln)
-    log_file = os.path.join(log_dir, 'locate_synapses.txt')
-
-    # set up the root logger
-    root = logging.getLogger()
-    formatter = logging.Formatter(LOGGER_FORMAT)
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(level)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    stream_handler.setLevel(level)
-    root.addHandler(file_handler)
-    root.addHandler(stream_handler)
-    root.setLevel(level)
-
-    # set up the performance logger
-    performance_formatter = logging.Formatter('%(asctime)s: elapsed %(message)s')
-    performance_handler = logging.FileHandler(os.path.join(log_dir, 'timing.txt'))
-    performance_handler.setFormatter(performance_formatter)
-    performance_handler.setLevel(logging.INFO)
-    performance_logger = logging.getLogger('PERFORMANCE_LOGGER')
-    performance_logger.addHandler(performance_handler)
-    performance_logger.propagate = True
-
-    # write version information
-    commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
-    git_diff = subprocess.check_output(['git', 'diff']).strip()
-    version_string = 'Commit hash: {}\n\nCurrent diff:\n{}'.format(commit_hash, git_diff)
-    with open(os.path.join(log_dir, 'version.txt'), 'w') as f:
-        f.write(version_string)
-
-    # write argument information
-    with open(os.path.join(log_dir, 'arguments.txt'), 'w') as f:
-        f.write('Arguments:\n\t{}\nKeyword arguments:\n\t{}'.format(args, kwargs))
-
-
-def kill_child_processes(signum=None, frame=None):
-    current_proc = psutil.Process()
-    killed = []
-    for child_proc in current_proc.children(recursive=True):
-        logger.debug('Killing process: {} with status {}'.format(child_proc.name(), child_proc.status()))
-        child_proc.kill()
-        killed.append(child_proc.pid)
-    logger.debug('Killed {} processes'.format(len(killed)))
-    return killed
-
-
-logger = logging.getLogger(__name__)
-
-
-if __name__ == "__main__":
-    if DEBUG:
-        print("USING DEBUG ARGUMENTS")
-
-        input_dir = "../projects-2017/L1-CNS"
-        output_dir = input_dir
-        cred_path = "credentials_dev.json"
-        stack_id = 1
-        skel_ids = [18531735]  # small test skeleton only on CLB's local instance
-
-        force = 1
-
-        args_list = [
-            cred_path, stack_id, input_dir, skel_ids
-        ]
-        kwargs_dict = {'force': force}
-        setup_logging(input_dir, args_list, kwargs_dict, LOG_LEVEL)
-    else:
-        parser = argparse.ArgumentParser()
-        parser.add_argument('credentials-path',
-                            help='Path to a JSON file containing CATMAID credentials (see credentials/example.json)')
-        parser.add_argument('stack-id',
-                            help='ID or name of image stack in CATMAID')
-        parser.add_argument('input-file-dir', help="A directory containing project files.")
-        parser.add_argument('skeleton-ids', nargs='+',
-                            help="Skeleton IDs in CATMAID")
-        parser.add_argument('-o', '--output-dir', default=None,
-                            help='A directory containing output files')
-        parser.add_argument('-r', '--roi-radius-px', default=DEFAULT_ROI_RADIUS,
-                            help='The radius (in pixels) around each skeleton node to search for synapses')
-        parser.add_argument('-f', '--force', type=int, default=0,
-                            help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
-
-        args = parser.parse_args()
-        output_dir = args.output_dir or args.input_file_dir
-        args_list = [
-            args.credentials_path, args.stack_id, args.skeleton_ids, args.input_file_dir, output_dir,
-            args.roi_radius_px, args.force
-        ]
-        kwargs_dict = {}  # must be empty
-
-    setup_logging(output_dir, args_list, kwargs_dict, LOG_LEVEL)
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.NOTSET)
-
-    timestamper = Timestamper()
-
-    logger.info('STARTING CATMAID-COMPATIBLE DETECTION')
-    logger.debug('Parallelising over {} threads'.format(THREADS))
-    logger.debug('Will terminate subprocesses at {}MB of RAM'.format(RAM_MB_PER_PROCESS))
-
-    signal.signal(signal.SIGTERM, kill_child_processes)
-
-    exit_code = 1
-    try:
-        main(*args_list, **kwargs_dict)
-        exit_code = 0
-    except Exception as e:
-        logger.exception('Errored, killing all child processes and exiting')
-        kill_child_processes()
-        raise
-    finally:
-        sys.exit(exit_code)
