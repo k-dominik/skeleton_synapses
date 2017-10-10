@@ -20,7 +20,7 @@ conda install -y -c ilastik ilastik-everything
 # install other requirements
 easy_install -U pip
 ROOT_DIR=$(realpath $(dirname $0)/..)
-pip install -r ${ROOT_DIR}/requirements.txt
+pip install -r ${ROOT_DIR}/requirements/prod.txt
 
 # fix GUI ilastik bugs
 rm ${CONDA_PREFIX}/lib/libstdc++.*
