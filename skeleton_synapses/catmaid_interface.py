@@ -356,7 +356,7 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         response_data = self.post(url, data)
         api_logger.debug('Returned\n{}'.format(response_data))
 
-        return response_data
+        return {int(key): value for key, value in response_data.items()}
 
     def agglomerate_synapses(self, synapse_slice_ids):
         return self.post(
