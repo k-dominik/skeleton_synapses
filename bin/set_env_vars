@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+ROOT_DIR=$(realpath $(dirname $0))/..
+source ${ROOT_DIR}/env_vars/$1

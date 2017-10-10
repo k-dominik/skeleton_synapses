@@ -1,0 +1,4 @@
+#!/bin/bash
+
+ROOT_DIR=$(realpath $(dirname $0))/..
+python ${ROOT_DIR}/skeleton_synapses/locate_syn_catmaid.py $@
