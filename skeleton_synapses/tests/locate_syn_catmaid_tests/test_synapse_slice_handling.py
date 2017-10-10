@@ -1,23 +1,21 @@
+from __future__ import division
 import json
+import os
 
+import mock
 import pytest
 import geojson
 import numpy as np
-import vigra
 
 from skeleton_synapses.locate_syn_catmaid import (
     image_to_geojson, get_synapse_uncertainty, get_synapse_slice_size_centroid, synapse_slices_to_data, submit_synapse_slice_data,
     remap_synapse_slices,
 )
 
-from skeleton_synapses.tests.fixtures import tmp_dir
+from skeleton_synapses.tests.fixtures import get_fixture_data, img_square, img_2, pixel_pred, tmp_dir
 
 
-@pytest.fixture
-def img_square():
-    img = np.zeros((15, 15))
-    img[5:10, 5:10] = 1
-    return vigra.taggedView(img, axistags='xy')
+ID_MAPPING_2 = {1: 10, 2: 20}
 
 
 def test_image_to_geojson(img_square):
@@ -101,3 +99,77 @@ def test_get_synapse_uncertainty():
     expected_output = 1 - 0.2
     output = get_synapse_uncertainty(flat_predictions)
     assert output == expected_output
+
+
+def test_get_synapse_slice_size_centroid(img_square):
+    x_offset = y_offset = 0
+    binary_arr_xy = img_square == img_square.max()
+    size_px, x_centroid_px, y_centroid_px = get_synapse_slice_size_centroid(
+        binary_arr_xy, x_offset, y_offset
+    )
+    assert size_px == 25
+    assert x_centroid_px == img_square.shape[0]//2
+    assert y_centroid_px == img_square.shape[1]//2
+
+
+def test_get_synapse_slice_size_centroid_offset(img_square):
+    x_offset, y_offset = 3, 4
+    label = 1
+    binary_arr_xy = img_square == label
+    size_px, x_centroid_px, y_centroid_px = get_synapse_slice_size_centroid(
+        binary_arr_xy, x_offset, y_offset
+    )
+    assert size_px == 25
+    assert x_centroid_px == img_square.shape[0]//2 + x_offset
+    assert y_centroid_px == img_square.shape[1]//2 + y_offset
+
+
+def test_synapse_slices_to_data(img_square, pixel_pred):
+    x_offset = y_offset = 0
+    data = synapse_slices_to_data(pixel_pred, img_square, x_offset, y_offset)
+
+    assert len(data) == 1
+    datum = data[0]
+    assert datum['id'] == 1
+    assert datum['size_px'] == 25
+    assert datum['uncertainty'] < 1
+
+
+def test_synapse_slices_to_data_multi(img_2, pixel_pred):
+    x_offset = y_offset = 0
+    data = synapse_slices_to_data(pixel_pred, img_2, x_offset, y_offset)
+
+    assert len(data) == 2
+    new_datum = data[1]
+    assert new_datum['id'] == 2
+    assert new_datum['size_px'] == 9
+    assert new_datum['uncertainty'] != data[0]['uncertainty']
+
+
+@pytest.fixture
+def catmaid():
+    catmaid = mock.Mock()
+    catmaid.add_synapse_slices_to_tile = mock.Mock(return_value=ID_MAPPING_2)
+    return catmaid
+
+
+def test_submit_synapse_slice_data(img_2, pixel_pred, catmaid):
+    bounds_xyz = np.array([
+        [0, 0, 0],
+        [15, 15, 1]
+    ])
+    id_mapping = submit_synapse_slice_data(bounds_xyz, pixel_pred, img_2, 'tile_idx', catmaid, 'workflow_id')
+    catmaid.add_synapse_slices_to_tile.assert_called_once()
+    assert id_mapping == ID_MAPPING_2
+
+
+def test_remap_synapse_slices(img_2):
+    output = remap_synapse_slices(img_2, ID_MAPPING_2)
+
+    assert np.allclose(output == 1, img_2 == 0)
+    assert np.allclose(output == 10, img_2 == 1)
+    assert np.allclose(output == 20, img_2 == 2)
+
+
+if __name__ == '__main__':
+    pytest.main(['-v', os.path.realpath(__file__)])

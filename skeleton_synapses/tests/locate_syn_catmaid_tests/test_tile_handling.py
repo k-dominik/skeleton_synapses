@@ -1,3 +1,6 @@
+import os
+
+import pytest
 import numpy as np
 
 from skeleton_synapses.locate_syn_catmaid import (
@@ -49,3 +52,7 @@ def test_tile_index_to_bounds():
     ])
     output_bounds = tile_index_to_bounds(tile_index, tile_size)
     assert np.allclose(expected_response, output_bounds)
+
+
+if __name__ == '__main__':
+    pytest.main(['-v', os.path.realpath(__file__)])

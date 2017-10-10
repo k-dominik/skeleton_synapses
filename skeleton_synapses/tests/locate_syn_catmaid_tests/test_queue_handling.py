@@ -87,3 +87,7 @@ def test_commit_node_association_results_from_queue(catmaid):
     catmaid.add_synapse_treenode_associations.assert_called_once_with(
         expected_args, None
     )
+
+
+if __name__ == '__main__':
+    pytest.main(['-v', os.path.realpath(__file__)])

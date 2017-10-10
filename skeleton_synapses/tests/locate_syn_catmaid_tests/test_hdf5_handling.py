@@ -2,12 +2,13 @@ import os
 
 import pytest
 import h5py
+import numpy as np
 
 from skeleton_synapses.locate_syn_catmaid import (
-    create_label_volume, ensure_hdf5, HDF5_NAME
+    create_label_volume, ensure_hdf5, HDF5_NAME, write_predictions_synapses
 )
 
-from skeleton_synapses.tests.fixtures import tmp_dir
+from skeleton_synapses.tests.fixtures import tmp_dir, pixel_pred, img_2, img_square
 from skeleton_synapses.tests.constants import TILE_SIZE
 
 
@@ -21,9 +22,9 @@ def stack_info():
             'z': 0
         },
         'dimension': {
-            'x': 10*TILE_SIZE,
-            'y': 10*TILE_SIZE,
-            'z': 5
+            'x': 3*TILE_SIZE,
+            'y': 3*TILE_SIZE,
+            'z': 3
         },
         'resolution': {
             'x': 1,
@@ -98,3 +99,32 @@ def test_ensure_hdf5_force(stack_info, tmp_dir):
 
     with h5py.File(backup_path) as old_file:
         assert old_file.attrs.get('is_old', False)
+
+
+def test_write_predictions_synapses(tmp_dir, stack_info, img_2, pixel_pred):
+    bounds_xyz = np.array([
+        [10, 110, 1],
+        [25, 125, 2]
+    ])
+    mapped_img = img_2 + 1
+    hdf5_path = ensure_hdf5(stack_info, tmp_dir)
+
+    write_predictions_synapses(hdf5_path, pixel_pred, mapped_img, bounds_xyz)
+
+    with h5py.File(hdf5_path) as f:
+        syn_volume = np.array(f['slice_labels'])
+        pred_volume = np.array(f['pixel_predictions'])
+
+    # check data has been inserted
+    assert np.allclose(syn_volume.sum(), mapped_img.sum())
+    assert np.allclose(pred_volume.sum(), pixel_pred.sum())
+
+    slicing_zyx = bounds_xyz[0, 2], slice(bounds_xyz[0, 1], bounds_xyz[1, 1]), slice(bounds_xyz[0, 0], bounds_xyz[1, 0])
+
+    # check data has been transposed
+    assert np.allclose(syn_volume[slicing_zyx], mapped_img.T)
+    assert np.allclose(pred_volume[slicing_zyx], pixel_pred.transpose(1, 0, 2))
+
+
+if __name__ == '__main__':
+    pytest.main(['-v', os.path.realpath(__file__)])
