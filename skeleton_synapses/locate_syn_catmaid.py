@@ -254,7 +254,6 @@ def nodes_to_tile_indexes(node_infos, tile_size, minimum_radius=DEFAULT_ROI_RADI
 
 
 def tile_index_to_bounds(tile_index, tile_size):
-    # todo: test
     """
 
     Parameters
@@ -691,54 +690,86 @@ def image_to_geojson(array_xy, x_offset, y_offset):
     return geojson.dumps(geojson.Polygon(rings, validate=True), sort_keys=True)
 
 
-def get_synapse_slice_attributes(predictions_xyc, synapse_mask_xy, x_offset, y_offset):
-    # todo: test
-    syn_pixel_coords_xy = np.where(synapse_mask_xy)
-    size_px = len(syn_pixel_coords_xy[0])
-    y_centroid_px = np.average(syn_pixel_coords_xy[1]) + y_offset
-    x_centroid_px = np.average(syn_pixel_coords_xy[0]) + x_offset
+def get_synapse_uncertainty(flat_predictions):
+    """
 
-    # Determine average uncertainty
-    # Get probabilities for this synapse's pixels
-    flat_predictions = predictions_xyc[synapse_mask_xy]
+    Parameters
+    ----------
+    flat_predictions : np.array
+        MxN array where M is the number of pixels, and N is the number of colour channels
+
+    Returns
+    -------
+    float
+        Single uncertainty metric for synapse slice
+    """
+    assert len(flat_predictions.shape) == 2
     # Sort along channel axis
     flat_predictions.sort(axis=-1)
     # What's the difference between the highest and second-highest class?
     certainties = flat_predictions[:, -1] - flat_predictions[:, -2]
-    avg_certainty = np.mean(certainties)
-    uncertainty = 1.0 - avg_certainty
+    avg_certainty = np.mean(certainties)  # todo: use a better metric
+    return 1.0 - avg_certainty
 
-    geojson_str = image_to_geojson(synapse_mask_xy, x_offset, y_offset)
 
-    return {
-        'geom': geojson_str,
-        'size_px': int(size_px),
-        'xs_centroid': int(x_centroid_px),
-        'ys_centroid': int(y_centroid_px),
-        'uncertainty': uncertainty
-    }
+def get_synapse_slice_size_centroid(binary_arr_xy, x_offset, y_offset):
+    """
+
+    Parameters
+    ----------
+    binary_arr_xy : vigra.VigraArray
+        Boolean image of synapse slice
+    x_offset : int
+    y_offset : int
+
+    Returns
+    -------
+    tuple
+        size_px, x_centroid_px, y_centroid_px
+    """
+    pixel_coords_x, pixel_coords_y = np.where(binary_arr_xy)
+    size_px = len(pixel_coords_x)
+    x_centroid_px = np.average(pixel_coords_x) + x_offset
+    y_centroid_px = np.average(pixel_coords_y) + y_offset
+    return size_px, x_centroid_px, y_centroid_px
 
 
 def synapse_slices_to_data(predictions_xyc, synapse_cc_xy, x_offset, y_offset):
-    """Given a prediction image"""
-    # todo: test
+    """
 
+    Parameters
+    ----------
+    predictions_xyc : vigra.VigraArray
+    synapse_cc_xy : vigra.VigraArray
+    x_offset : int
+    y_offset : int
+
+    Returns
+    -------
+    list of dict
+    """
     data = []
 
     for local_label in np.unique(synapse_cc_xy)[1:].astype(int):
         binary_arr_xy = synapse_cc_xy == local_label
 
-        syn_datum = get_synapse_slice_attributes(predictions_xyc, binary_arr_xy, x_offset, y_offset)
-        syn_datum['id'] = int(local_label)
+        size_px, x_centroid_px, y_centroid_px = get_synapse_slice_size_centroid(
+            binary_arr_xy, x_offset, y_offset
+        )
 
-        data.append(syn_datum)
+        data.append({
+            'id': int(local_label),
+            'geom': image_to_geojson(binary_arr_xy, x_offset, y_offset),
+            'size_px': int(size_px),
+            'xs_centroid': int(x_centroid_px),
+            'ys_centroid': int(y_centroid_px),
+            'uncertainty': get_synapse_uncertainty(predictions_xyc[binary_arr_xy])
+        })
 
     return data
 
 
 def submit_synapse_slice_data(bounds_xyz, predictions_xyc, synapse_cc_xy, tile_idx, catmaid, workflow_id):
-    # todo: test
-
     synapse_slices = synapse_slices_to_data(
         predictions_xyc, synapse_cc_xy, bounds_xyz[0, 0], bounds_xyz[0, 1]
     )
@@ -747,22 +778,33 @@ def submit_synapse_slice_data(bounds_xyz, predictions_xyc, synapse_cc_xy, tile_i
     logger.debug('Got ID mapping from CATMAID:\n{}'.format(id_mapping))
 
     local_label_set = set(np.unique(synapse_cc_xy)[1:].astype(int))
-    returned_keys = {int(key) for key in id_mapping.keys()}
+    returned_keys = set(id_mapping)
     assert returned_keys == local_label_set, 'Returned keys are not the same as sent keys:\n\t{}\n\t{}'.format(
         returned_keys, local_label_set
     )
-
-    catmaid.agglomerate_synapses(id_mapping.values())
 
     return id_mapping
 
 
 def remap_synapse_slices(synapse_cc_xy, id_mapping):
-    # todo: test
+    """
+
+    Parameters
+    ----------
+    synapse_cc_xy : vigra.VigraArray
+        Synapse image using local connected component labels, background 0
+    id_mapping : dict
+        Mapping for all nonzero labels
+
+    Returns
+    -------
+    vigra.VigraArray
+        Synapse image using project connected component labels, background 1
+    """
     mapped_synapse_cc_xy = vigra.taggedView(np.ones(synapse_cc_xy.shape, LABEL_DTYPE), axistags='xy')
     for local_label, synapse_id in id_mapping.items():
         logger.debug('Addressing ID mapping pair: {}, {}'.format(local_label, synapse_id))
-        mapped_synapse_cc_xy[synapse_cc_xy == int(local_label)] = synapse_id
+        mapped_synapse_cc_xy[synapse_cc_xy == local_label] = synapse_id
 
     return mapped_synapse_cc_xy
 
@@ -783,28 +825,23 @@ def commit_tilewise_results_from_queue(
             bounds_xyz, predictions_xyc, synapse_cc_xy, tile_idx, catmaid, workflow_id
         )
 
+        catmaid.agglomerate_synapses(id_mapping.values())
+
         logger.debug('Got ID mapping from CATMAID:\n{}'.format(id_mapping))
 
         mapped_synapse_cc_xy = remap_synapse_slices(synapse_cc_xy, id_mapping)
-
         write_predictions_synapses(output_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz)
 
 
 def write_predictions_synapses(hdf5_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz):
+    slicing_zyx = bounds_xyz[0, 2], slice(bounds_xyz[0, 1], bounds_xyz[1, 1]), slice(bounds_xyz[0, 0], bounds_xyz[1, 0])
     with h5py.File(hdf5_path, 'r+') as f:
-        pred_dataset = f['pixel_predictions']
-        pixel_predictions_zyxc = vigra.taggedView(pred_dataset, axistags=pred_dataset.attrs['axistags'])
-        slice_dataset = f['slice_labels']
-        slice_labels_zyx = vigra.taggedView(slice_dataset, axistags=slice_dataset.attrs['axistags'])
-
-        pixel_predictions_zyxc[
-            bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0], :
-        ] = predictions_xyc.transposeToOrder(pred_dataset.attrs['order'])
+        pixel_predictions_zyxc = f['pixel_predictions']
+        pixel_predictions_zyxc[slicing_zyx] = predictions_xyc.transposeToOrder(pixel_predictions_zyxc.attrs['order'])
         # .transpose((1, 0, 2))  # xyc to yxc
 
-        slice_labels_zyx[
-            bounds_xyz[0, 2], bounds_xyz[0, 1]:bounds_xyz[1, 1], bounds_xyz[0, 0]:bounds_xyz[1, 0]
-        ] = mapped_synapse_cc_xy.transposeToOrder(slice_dataset.attrs['order'])
+        slice_labels_zyx = f['slice_labels']
+        slice_labels_zyx[slicing_zyx] = mapped_synapse_cc_xy.transposeToOrder(slice_labels_zyx.attrs['order'])
 
 
 def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id, catmaid=catmaid):
@@ -872,9 +909,13 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
 
 def kill_child_processes(signum=None, frame=None):
     current_proc = psutil.Process()
+    killed = []
     for child_proc in current_proc.children(recursive=True):
         logger.debug('Killing process: {} with status {}'.format(child_proc.name(), child_proc.status()))
         child_proc.kill()
+        killed.append(child_proc.pid)
+    logger.debug('Killed {} processes'.format(len(killed)))
+    return killed
 
 
 logger = logging.getLogger(__name__)
