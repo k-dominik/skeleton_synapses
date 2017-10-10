@@ -925,8 +925,8 @@ if __name__ == "__main__":
     if DEBUG:
         print("USING DEBUG ARGUMENTS")
 
-        input_dir = "../projects-2017/L1-CNS/projects"
-        output_dir = "../projects-2017/L1-CNS"
+        input_dir = "../projects-2017/L1-CNS"
+        output_dir = input_dir
         cred_path = "credentials_dev.json"
         stack_id = 1
         skel_ids = [18531735]  # small test skeleton only on CLB's local instance
@@ -934,32 +934,35 @@ if __name__ == "__main__":
         force = 1
 
         args_list = [
-            cred_path, stack_id, skel_ids, input_dir, output_dir
+            cred_path, stack_id, input_dir, skel_ids
         ]
         kwargs_dict = {'force': force}
         setup_logging(input_dir, args_list, kwargs_dict, LOG_LEVEL)
     else:
         parser = argparse.ArgumentParser()
-        parser.add_argument('--roi-radius-px', default=DEFAULT_ROI_RADIUS,
-                            help='The radius (in pixels) around each skeleton node to search for synapses')
-        parser.add_argument('credentials_path',
-                            help='Path to a JSON file containing CATMAID credentials (see credentials.jsonEXAMPLE)')
-        parser.add_argument('stack_id',
+        parser.add_argument('credentials-path',
+                            help='Path to a JSON file containing CATMAID credentials (see credentials/example.json)')
+        parser.add_argument('stack-id',
                             help='ID or name of image stack in CATMAID')
-        parser.add_argument('input_file_dir', help="A directory containing project files.")
-        parser.add_argument('output_file_dir', help='A directory containing output files')
-        parser.add_argument('skeleton_ids', nargs='+',
+        parser.add_argument('input-file-dir', help="A directory containing project files.")
+        parser.add_argument('skeleton-ids', nargs='+',
                             help="Skeleton IDs in CATMAID")
+        parser.add_argument('-o', '--output-dir', default=None,
+                            help='A directory containing output files')
+        parser.add_argument('-r', '--roi-radius-px', default=DEFAULT_ROI_RADIUS,
+                            help='The radius (in pixels) around each skeleton node to search for synapses')
         parser.add_argument('-f', '--force', type=int, default=0,
                             help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
 
         args = parser.parse_args()
+        output_dir = args.output_dir or args.input_file_dir
         args_list = [
-            args.credentials_path, args.stack_id, args.skeleton_ids, args.input_file_dir, args.output_file_dir,
+            args.credentials_path, args.stack_id, args.skeleton_ids, args.input_file_dir, output_dir,
             args.roi_radius_px, args.force
         ]
         kwargs_dict = {}  # must be empty
-        setup_logging(args.output_file_dir, args_list, kwargs_dict, LOG_LEVEL)
+
+    setup_logging(output_dir, args_list, kwargs_dict, LOG_LEVEL)
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.NOTSET)
