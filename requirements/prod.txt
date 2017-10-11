@@ -3,5 +3,4 @@
 git+https://github.com/catmaid/catpy.git
 tqdm
 geojson
-psutil
 logutils
