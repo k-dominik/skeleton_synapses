@@ -389,7 +389,6 @@ class DetectorProcess(LeakyProcess):
         Request.reset_thread_pool(1)  # todo: set to 0?
 
     def execute(self):
-        # todo: test? with refactors, mocks
         tile_idx = self.input_queue.get()
 
         self.inner_logger.debug("Addressing tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize()))
@@ -416,6 +415,19 @@ class DetectorProcess(LeakyProcess):
 
 NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['roi_xyz', 'synapse_slice_ids'])
 NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', ['node_id', 'synapse_slice_id', 'contact_px'])
+
+
+def get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_ids):
+    overlapping_segments = dict()
+    for synapse_slice_id in synapse_slice_ids:
+        # todo: need to cast some types?
+        segments = np.unique(segmentation_xy[synapse_cc_xy == synapse_slice_id])
+        for overlapping_segment in segments:
+            if overlapping_segment not in overlapping_segments:
+                overlapping_segments[overlapping_segment] = set()
+            overlapping_segments[overlapping_segment].add(synapse_slice_id)
+
+    return overlapping_segments
 
 
 # class NeuronSegmenterProcess(DebuggableProcess):
@@ -463,6 +475,7 @@ class NeuronSegmenterProcess(LeakyProcess):
 
     def setup(self):
         self.inner_logger.debug('Setting up opPixelClassification and multicut_shell...')
+        # todo: opPixelClassification with catpy tile-getter
         self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
             *self.setup_args
         )
@@ -490,15 +503,8 @@ class NeuronSegmenterProcess(LeakyProcess):
 
             segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, self.multicut_shell.workflow)
 
-            overlapping_segments = dict()
-            for synapse_slice_id in synapse_slice_ids:
-                # todo: need to cast some types?
-                segments = np.unique(segmentation_xy[synapse_cc_xy == synapse_slice_id])
-                self.inner_logger.debug('Synapse slice {} overlaps with segments {}'.format(synapse_slice_id, segments))
-                for overlapping_segment in segments:
-                    if overlapping_segment not in overlapping_segments:
-                        overlapping_segments[overlapping_segment] = set()
-                    overlapping_segments[overlapping_segment].add(synapse_slice_id)
+            overlapping_segments = get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_ids)
+            self.inner_logger.debug()
 
             if len(overlapping_segments) < 2:  # synapse is only in 1 segment
                 self.inner_logger.debug(
