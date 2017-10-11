@@ -8,9 +8,10 @@ import os
 import hashlib
 import subprocess
 import signal
-from datetime import datetime
+from datetime import datetime, timedelta
 import multiprocessing as mp
 import json
+from threading import Lock
 
 from tqdm import tqdm
 import psutil
@@ -113,7 +114,7 @@ class TqdmHandler(logging.Handler):
     def emit(self, record):
         try:
             msg = self.format(record)
-            tqdm.write(msg)
+            tqdm.write(msg)  # , file=sys.stderr)
             self.flush()
         except (KeyboardInterrupt, SystemExit):
             raise
@@ -140,7 +141,7 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
-    console_handler = TqdmHandler()  # logging.StreamHandler()
+    console_handler = TqdmHandler()
     console_handler.setFormatter(formatter)
     console_handler.setLevel(level)
 

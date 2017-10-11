@@ -106,9 +106,9 @@ def get_and_print_env(name, default, constructor=str):
     """
     val = os.getenv(name)
     if val is None:
-        print('{} environment variable not set, using default.'.format(name, default))
+        logger.info('{} environment variable not set, using default.'.format(name, default))
         val = default
-    print('{} value is {}'.format(name[len('SYNAPSE_DETECTION_'):], val))
+    logger.info('{} value is {}'.format(name[len('SYNAPSE_DETECTION_'):], val))
     return constructor(val)
 
 

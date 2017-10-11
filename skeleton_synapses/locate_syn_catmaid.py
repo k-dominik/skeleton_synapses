@@ -246,9 +246,9 @@ def locate_synapses_catmaid(
     tile_count = 0
     for tile_idx in tqdm(tile_index_set, desc='Populating tile queue', unit='tiles', **TQDM_KWARGS):
         if (tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx) in addressed_tiles:
-            logging.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
+            logger.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
         else:
-            logging.debug("Tile %s has not been addressed, adding to queue", repr(tile_idx))
+            logger.debug("Tile %s has not been addressed, adding to queue", repr(tile_idx))
             tile_count += 1
             tile_queue.put(tile_idx)
 
@@ -432,6 +432,7 @@ def get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_i
 
 
 def get_node_associations(synapse_cc_xy, segmentation_xy, node_locations, overlapping_segments):
+    # todo: test
     node_locations_arr = node_locations_to_array(synapse_cc_xy, node_locations)
     where_nodes_exist = node_locations_arr >= 0
 
