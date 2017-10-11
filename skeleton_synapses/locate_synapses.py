@@ -73,6 +73,7 @@ DEFAULT_ROI_RADIUS = 150
 TQDM_KWARGS = {
     'ncols': 50,
 }
+ROOT_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), '..')
 LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
 
 
@@ -240,13 +241,9 @@ def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClass
     return predictions_xyc, synapse_cc_xy, segmentation_xy
 
 
-logging_initialised = False
-
 def setup_classifier(description_file, autocontext_project_path):
-    global logging_initialised
     logger.debug('Setting up opPixelClassification')
-    autocontext_shell = open_project(autocontext_project_path, init_logging=not logging_initialised)
-    logging_initialised = True
+    autocontext_shell = open_project(autocontext_project_path, init_logging=False)
     assert isinstance(autocontext_shell, HeadlessShell)
     assert isinstance(autocontext_shell.workflow, NewAutocontextWorkflowBase)
 
@@ -264,10 +261,8 @@ def setup_classifier(description_file, autocontext_project_path):
 
 
 def setup_multicut(multicut_project):
-    global logging_initialised
     logger.debug('Setting up multicut_shell')
-    multicut_shell = open_project(multicut_project, init_logging=not logging_initialised)
-    logging_initialised = True
+    multicut_shell = open_project(multicut_project, init_logging=False)
     assert isinstance(multicut_shell, HeadlessShell)
     assert isinstance(multicut_shell.workflow, EdgeTrainingWithMulticutWorkflow)
 
@@ -680,7 +675,7 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
     return segmentation_xy
 
 
-def open_project( project_path, init_logging=True ):
+def open_project( project_path, init_logging=False ):
     """
     Open a project file and return the HeadlessShell instance.
     """

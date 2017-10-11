@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import division
 import logging
+from logging.config import dictConfig
 import argparse
 import sys
 import os
@@ -9,6 +10,7 @@ import subprocess
 import signal
 from datetime import datetime
 import multiprocessing as mp
+import json
 
 from tqdm import tqdm
 import psutil
@@ -18,7 +20,7 @@ from logutils.queue import QueueHandler, QueueListener
 from catpy import CatmaidClient
 
 from catmaid_interface import CatmaidSynapseSuggestionAPI
-from locate_synapses import setup_files, LOGGER_FORMAT, ensure_list, mkdir_p, DEFAULT_ROI_RADIUS, TQDM_KWARGS
+from locate_synapses import setup_files, LOGGER_FORMAT, ensure_list, mkdir_p, DEFAULT_ROI_RADIUS, TQDM_KWARGS, ROOT_DIR
 from locate_syn_catmaid import ensure_hdf5, locate_synapses_catmaid
 
 DEBUG = False
@@ -129,7 +131,9 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     os.symlink(log_dir, latest_ln)
     log_file = os.path.join(log_dir, 'locate_synapses.txt')
 
-    log_queue = mp.Queue()
+    # set up ilastik's default logging (without adding handlers)
+    with open(os.path.join(ROOT_DIR, 'config', 'ilastik_logging.json')) as f:
+        dictConfig(json.load(f))
 
     # set up handlers
     formatter = logging.Formatter(LOGGER_FORMAT)
@@ -140,12 +144,15 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     console_handler.setFormatter(formatter)
     console_handler.setLevel(level)
 
+    # logs should be handled by a single process
+    log_queue = mp.Queue()
+    queue_handler = QueueHandler(log_queue)
     queue_listener = QueueListener(log_queue, file_handler, console_handler)
 
     #  set up the root logger
     root = logging.getLogger()
     root.setLevel(level)
-    root.addHandler(QueueHandler(log_queue))
+    root.addHandler(queue_handler)
 
     # set up the performance logger
     performance_formatter = logging.Formatter('%(asctime)s: elapsed %(message)s')
@@ -180,9 +187,6 @@ def kill_child_processes(signum=None, frame=None):
         killed.append(child_proc.pid)
     logger.debug('Killed {} processes'.format(len(killed)))
     return killed
-
-
-logger = None
 
 
 if __name__ == "__main__":
