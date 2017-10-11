@@ -475,7 +475,7 @@ class NeuronSegmenterProcess(LeakyProcess):
 
     def setup(self):
         self.inner_logger.debug('Setting up opPixelClassification and multicut_shell...')
-        # todo: opPixelClassification with catpy tile-getter
+        # todo: replace opPixelClassification with catpy tile-getter
         self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
             *self.setup_args
         )
@@ -499,12 +499,11 @@ class NeuronSegmenterProcess(LeakyProcess):
                 raw_xy.shape, synapse_cc_xy.shape, predictions_xyc.shape
             )
             self.inner_logger.debug(log_str)
-            logger.debug(log_str)
 
             segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, self.multicut_shell.workflow)
 
             overlapping_segments = get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_ids)
-            self.inner_logger.debug()
+            self.inner_logger.debug('Local segment: synapse slice overlaps found: \n{}'.format(overlapping_segments))
 
             if len(overlapping_segments) < 2:  # synapse is only in 1 segment
                 self.inner_logger.debug(

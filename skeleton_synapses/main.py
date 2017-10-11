@@ -8,9 +8,11 @@ import hashlib
 import subprocess
 import signal
 from datetime import datetime
+import multiprocessing as mp
 
 import psutil
 import numpy as np
+from logutils.queue import QueueHandler, QueueListener
 
 from catpy import CatmaidClient
 
@@ -114,8 +116,9 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     os.symlink(log_dir, latest_ln)
     log_file = os.path.join(log_dir, 'locate_synapses.txt')
 
-    # set up the root logger
-    root = logging.getLogger()
+    log_queue = mp.Queue()
+
+    # set up handlers
     formatter = logging.Formatter(LOGGER_FORMAT)
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(formatter)
@@ -123,9 +126,13 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
     stream_handler.setLevel(level)
-    root.addHandler(file_handler)
-    root.addHandler(stream_handler)
+
+    queue_listener = QueueListener(log_queue, file_handler, stream_handler)
+
+    #  set up the root logger
+    root = logging.getLogger()
     root.setLevel(level)
+    root.addHandler(QueueHandler(log_queue))
 
     # set up the performance logger
     performance_formatter = logging.Formatter('%(asctime)s: elapsed %(message)s')
@@ -146,6 +153,9 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     # write argument information
     with open(os.path.join(log_dir, 'arguments.txt'), 'w') as f:
         f.write('Arguments:\n\t{}\nKeyword arguments:\n\t{}'.format(args, kwargs))
+
+    queue_listener.start()
+    return queue_listener
 
 
 def kill_child_processes(signum=None, frame=None):
@@ -202,7 +212,7 @@ if __name__ == "__main__":
         ]
         kwargs_dict = {}  # must be empty
 
-    setup_logging(output_dir, args_list, kwargs_dict, LOG_LEVEL)
+    logging_listener = setup_logging(output_dir, args_list, kwargs_dict, LOG_LEVEL)
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.NOTSET)
@@ -220,4 +230,5 @@ if __name__ == "__main__":
         kill_child_processes()
         raise
     finally:
+        logging_listener.stop()
         sys.exit(exit_code)

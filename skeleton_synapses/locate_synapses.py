@@ -307,28 +307,13 @@ class DebuggableProcess(mp.Process):
     def __init__(self, debug=False, name=None):
         super(DebuggableProcess, self).__init__(name=name)
         self.debug = debug
-        self._inner_logger = None
+        self.inner_logger = logging.getLogger(self.name)
 
     def start(self):
         if self.debug:
             self.run()
         else:
             super(DebuggableProcess, self).start()
-
-    @property
-    def inner_logger(self):
-        if not self.is_alive():
-            return None
-        if not self._inner_logger:
-            lgr = logging.getLogger('{}.{}'.format(__name__, self.name))
-            lgr.propagate = False
-            lgr.level = lgr.root.level
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(fmt=LOGGER_FORMAT)
-            handler.setFormatter(formatter)
-            lgr.addHandler(handler)
-            self._inner_logger = lgr
-        return self._inner_logger
 
 
 class CaretakerProcess(DebuggableProcess):
@@ -400,17 +385,11 @@ class LeakyProcess(DebuggableProcess):
         self.max_ram_MB = max_ram_MB
         self.psutil_process = None
         self.execution_counter = 0
-        self._size_logger = None
 
-    @property
-    def size_logger(self):
-        if not self._size_logger:
-            self._size_logger = logging.getLogger(self.inner_logger.name + '.size')
-        return self._size_logger
+        self.size_logger = logging.getLogger(self.name + '.size')
 
     def run(self):
-        inner_logger = self.inner_logger  # ensure that process' root logger is set up, preventing record propagation
-        inner_logger.info('%s started', type(self).__name__)
+        self.inner_logger.info('%s started', type(self).__name__)
         self.setup()
         self.psutil_process = [proc for proc in psutil.process_iter() if proc.pid == self.pid][0]
         self.size_logger.debug(self.ram_usage_str())
