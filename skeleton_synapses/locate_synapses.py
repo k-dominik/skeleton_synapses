@@ -69,6 +69,10 @@ OUTPUT_COLUMNS = [ "synapse_id", "skeleton_id", "overlaps_node_segment",
                    'xmin', 'xmax', 'ymin', 'ymax']
 
 DEFAULT_ROI_RADIUS = 150
+
+TQDM_KWARGS = {
+    'ncols': 50,
+}
 LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
 
 

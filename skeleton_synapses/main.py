@@ -10,6 +10,7 @@ import signal
 from datetime import datetime
 import multiprocessing as mp
 
+from tqdm import tqdm
 import psutil
 import numpy as np
 from logutils.queue import QueueHandler, QueueListener
@@ -17,7 +18,7 @@ from logutils.queue import QueueHandler, QueueListener
 from catpy import CatmaidClient
 
 from catmaid_interface import CatmaidSynapseSuggestionAPI
-from locate_synapses import setup_files, LOGGER_FORMAT, ensure_list, mkdir_p, DEFAULT_ROI_RADIUS
+from locate_synapses import setup_files, LOGGER_FORMAT, ensure_list, mkdir_p, DEFAULT_ROI_RADIUS, TQDM_KWARGS
 from locate_syn_catmaid import ensure_hdf5, locate_synapses_catmaid
 
 DEBUG = False
@@ -91,7 +92,7 @@ def main(credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_d
     else:
         algo_hash = hash_algorithm(autocontext_project, multicut_project)
 
-    for skeleton_id in skeleton_ids:
+    for skeleton_id in tqdm(skeleton_ids, desc='Skeleton processing', unit='skeletons', **TQDM_KWARGS):
         locate_synapses_catmaid(
             autocontext_project,
             multicut_project,
@@ -104,6 +105,18 @@ def main(credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_d
             algo_notes,
             catmaid
         )
+
+
+class TqdmHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg)
+            self.flush()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            self.handleError(record)
 
 
 def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
@@ -123,11 +136,11 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    stream_handler.setLevel(level)
+    console_handler = TqdmHandler()  # logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(level)
 
-    queue_listener = QueueListener(log_queue, file_handler, stream_handler)
+    queue_listener = QueueListener(log_queue, file_handler, console_handler)
 
     #  set up the root logger
     root = logging.getLogger()

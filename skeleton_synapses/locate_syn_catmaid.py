@@ -8,9 +8,9 @@ import json
 from itertools import product
 import time
 from Queue import Empty
-
 from datetime import datetime
 
+from tqdm import tqdm
 import geojson
 import h5py
 import numpy as np
@@ -24,7 +24,7 @@ from lazyflow.request import Request
 
 from locate_synapses import (
     # constants/singletons
-    DEFAULT_ROI_RADIUS,
+    DEFAULT_ROI_RADIUS, TQDM_KWARGS,
     # functions
     setup_classifier, setup_classifier_and_multicut, fetch_raw_and_predict_for_node, raw_data_for_roi,
     labeled_synapses_for_node, segmentation_for_img, cached_synapses_predictions_for_roi,
@@ -244,7 +244,7 @@ def locate_synapses_catmaid(
 
     tile_queue, tile_result_queue = mp.Queue(), mp.Queue()
     tile_count = 0
-    for tile_idx in tile_index_set:
+    for tile_idx in tqdm(tile_index_set, desc='Populating tile queue', unit='tiles', **TQDM_KWARGS):
         if (tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx) in addressed_tiles:
             logging.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
         else:
@@ -303,7 +303,7 @@ def locate_synapses_catmaid(
     nodes_of_interest = {node_info.id for node_info in node_infos}
     logger.debug('Found {} synapse planes near skeleton {}'.format(len(synapses_near_skeleton), skeleton_id))
     slice_id_tuples = set()
-    for synapse in synapses_near_skeleton:
+    for synapse in tqdm(synapses_near_skeleton, desc='Populating synapse plane queue', unit='synapse planes', **TQDM_KWARGS):
         if int(synapse['treenode_id']) not in nodes_of_interest:
             continue
 
@@ -418,6 +418,7 @@ NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', ['node_id', 'synapse
 
 
 def get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_ids):
+    # todo: test
     overlapping_segments = dict()
     for synapse_slice_id in synapse_slice_ids:
         # todo: need to cast some types?
@@ -428,6 +429,19 @@ def get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_i
             overlapping_segments[overlapping_segment].add(synapse_slice_id)
 
     return overlapping_segments
+
+
+def get_node_associations(synapse_cc_xy, segmentation_xy, node_locations, overlapping_segments):
+    node_locations_arr = node_locations_to_array(synapse_cc_xy, node_locations)
+    where_nodes_exist = node_locations_arr >= 0
+
+    outputs = []
+    for segment, node_id in zip(segmentation_xy[where_nodes_exist], node_locations_arr[where_nodes_exist]):
+        for synapse_slice_id in overlapping_segments.get(segment, []):
+            contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
+            outputs.append(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
+
+    return outputs
 
 
 # class NeuronSegmenterProcess(DebuggableProcess):
@@ -489,8 +503,6 @@ class NeuronSegmenterProcess(LeakyProcess):
         roi_xyz, synapse_slice_ids = self.input_queue.get()
         self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(roi_xyz, self.input_queue.qsize()))
 
-        outputs = []
-
         with Timer() as node_timer:
             raw_xy = raw_data_for_roi(roi_xyz, None, self.opPixelClassification)
             synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, self.hdf5_path)
@@ -509,22 +521,18 @@ class NeuronSegmenterProcess(LeakyProcess):
                 self.inner_logger.debug(
                     'Synapse slice IDs {} in ROI {} are only in 1 neuron'.format(synapse_slice_ids, roi_xyz)
                 )
-                self.output_queue.put(outputs)  # outputs will be empty
+                self.output_queue.put([])  # outputs will be empty
                 return
 
             node_locations = self.catmaid.get_nodes_in_roi(roi_xyz, self.catmaid.stack_id)
-            node_locations_arr = node_locations_to_array(synapse_cc_xy, node_locations)
-
-            where_nodes_exist = node_locations_arr >= 0
-            if where_nodes_exist.sum() == 0:
+            if len(node_locations) == 0:
                 self.inner_logger.debug('ROI {} has no nodes'.format(roi_xyz))
 
-            for segment, node_id in zip(segmentation_xy[where_nodes_exist], node_locations_arr[where_nodes_exist]):
-                for synapse_slice_id in overlapping_segments.get(segment, []):
-                    contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
-                    outputs.append(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
+            node_segmenter_outputs = get_node_associations(
+                synapse_cc_xy, segmentation_xy, node_locations, overlapping_segments
+            )
 
-            self.output_queue.put(outputs)
+            self.output_queue.put(node_segmenter_outputs)
 
             logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
 
@@ -720,7 +728,10 @@ def remap_synapse_slices(synapse_cc_xy, id_mapping):
 def commit_tilewise_results_from_queue(
         tile_result_queue, output_path, total_tiles, tile_size, workflow_id, catmaid
 ):
-    result_iterator = iterate_queue(tile_result_queue, total_tiles, 'tile_result_queue')
+    result_iterator = tqdm(
+        iterate_queue(tile_result_queue, total_tiles, 'tile_result_queue'),
+        desc='Synapse detection', unit='tiles', total=total_tiles, **TQDM_KWARGS
+    )
 
     logger.info('Starting to commit tile classification results')
 
@@ -754,7 +765,10 @@ def write_predictions_synapses(hdf5_path, predictions_xyc, mapped_synapse_cc_xy,
 def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id, catmaid):
     logger.debug('Committing node association results')
 
-    result_list_generator = iterate_queue(node_result_queue, total_nodes, 'node_result_queue')
+    result_list_generator = tqdm(
+        iterate_queue(node_result_queue, total_nodes, 'node_result_queue'),
+        desc='Synapse-treenode association', unit='synapse planes', total=total_nodes, **TQDM_KWARGS
+    )
 
     logger.debug('Getting node association results')
     assoc_tuples = []
