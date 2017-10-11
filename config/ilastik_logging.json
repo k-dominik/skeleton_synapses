@@ -1,0 +1,154 @@
+{
+    "version": 1,
+    "formatters": {
+        "verbose": {
+            "format": "%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s"
+        },
+        "location": {
+            "format": "%(levelname)s %(name)s: %(message)s"
+        },
+        "timestamped": {
+            "format": "%(levelname)s %(name)s: [%(asctime)s] %(message)s"
+        },
+        "simple": {
+            "format": "%(levelname)s %(message)s"
+        }
+    },
+    "filters" : {
+        "no_warn" : {
+            "()":"ilastik.ilastik_logging.loggingHelpers.NoWarnFilter"
+        }
+    },
+    "handlers": {
+        "console":{
+            "level":"DEBUG",
+            "class":"logging.StreamHandler",
+            "stream":"ext://sys.stdout",
+            "formatter": "location",
+            "filters":["no_warn"]
+        },
+        "console_timestamp":{
+            "level":"DEBUG",
+            "class":"logging.StreamHandler",
+            "stream":"ext://sys.stdout",
+            "formatter": "timestamped",
+            "filters":["no_warn"]
+        },
+        "console_warn":{
+            "level":"WARN",
+            "class":"logging.StreamHandler",
+            "stream":"ext://sys.stderr",
+            "formatter":"verbose"
+        },
+        "console_errors_only":{
+            "level":"ERROR",
+            "class":"logging.StreamHandler",
+            "stream":"ext://sys.stderr",
+            "formatter":"verbose"
+        },
+        "console_warnings_module":{
+            "level":"WARN",
+            "class":"logging.StreamHandler",
+            "stream":"ext://sys.stderr",
+            "formatter":"simple"
+        },
+        "console_trace":{
+            "level":"DEBUG",
+            "class":"logging.StreamHandler",
+            "stream":"ext://sys.stdout",
+            "formatter": "verbose"
+        },
+        "rotating_file":{
+            "level":"DEBUG",
+            "class":"logging.handlers.RotatingFileHandler",
+            "filename" : "/tmp/ilastik_log.txt",
+            "maxBytes":20e6,
+            "backupCount":5,
+            "formatter":"verbose"
+        }
+    },
+    "root": {
+        "handlers": [],
+        "level": "NOTSET"
+    },
+    "loggers": {
+        "py.warnings": {  "level":"WARN", "handlers": [], "propagate": true },
+
+        "PyQt4": {"level":"INFO"},
+
+        "requests": {"level":"WARN"},
+
+        "wsdt": { "level": "INFO" },
+
+        "__main__":                                                 { "level":"INFO" },
+        "ilastik_main":                                             { "level":"INFO" },
+        "thread_start":                                             { "level":"INFO" },
+        "lazyflow":                                                 { "level":"INFO" },
+        "lazyflow.request":                                         { "level":"INFO" },
+        "lazyflow.request.RequestLock":                             { "level":"INFO" },
+        "lazyflow.request.SimpleRequestCondition":                  { "level":"INFO" },
+        "lazyflow.graph":                                           { "level":"INFO" },
+        "lazyflow.graph.Slot":                                      { "level":"INFO" },
+        "lazyflow.operators":                                       { "level":"INFO" },
+        "lazyflow.classifiers":                                     { "level":"INFO" },
+        "lazyflow.operators.ioOperators":                           { "level":"INFO" },
+        "lazyflow.operators.opVigraWatershed":                      { "level":"INFO" },
+        "lazyflow.operators.ioOperators.opRESTfulVolumeReader":     { "level":"INFO" },
+        "lazyflow.operators.opArrayCache.OpArrayCache":             { "level":"INFO" },
+        "lazyflow.operators.cacheMemoryManager.CacheMemoryManager": { "level":"INFO" },
+        "lazyflow.operators.vigraOperators":                        { "level":"INFO" },
+        "lazyflow.operators.ioOperators.ioOperators.OpH5WriterBigDataset":   { "level":"INFO" },
+        "lazyflow.operators.classifierOperators":                   { "level":"INFO" },
+        "lazyflow.operators.opCompressedCache":                     { "level":"INFO" },
+        "lazyflow.operators.opRelabelConsecutive":                  { "level":"INFO" },
+        "lazyflow.utility.io_util.RESTfulVolume":                        { "level":"INFO" },
+        "lazyflow.utility.io_util.tiledVolume":                          { "level":"INFO" },
+        "lazyflow.operators.opFeatureMatrixCache":                  { "level":"INFO" },
+        "lazyflow.operators.opConcatenateFeatureMatrices":          { "level":"INFO" },
+        "lazyflow.utility.roiRequestBatch":                         { "level":"INFO" },
+        "lazyflow.utility.bigRequestStreamer":                      { "level":"INFO" },
+        "ilastik":                                                  { "level":"INFO" },
+        "ilastik.clusterOps":                                       { "level":"INFO" },
+        "ilastik.applets":                                          { "level":"INFO" },
+        "ilastik.applets.base.appletSerializer":                    { "level":"INFO" },
+        "ilastik.applets.dataSelection":                            { "level":"INFO" },
+        "ilastik.applets.featureSelection":                         { "level":"INFO" },
+        "ilastik.applets.pixelClassification":                      { "level":"INFO" },
+        "ilastik.applets.thresholdTwoLevels":                       { "level":"INFO" },
+        "ilastik.applets.thresholdTwoLevels.ipht":                  { "level":"INFO" },
+        "ilastik.applets.objectExtraction":                         { "level":"INFO" },
+        "ilastik.applets.blockwiseObjectClassification":            { "level":"INFO" },
+        "ilastik.applets.tracking.conservation":                    { "level":"INFO" },
+        "ilastik.shell":                                            { "level":"INFO" },
+        "ilastik.shell.projectManager":                             { "level":"INFO" },
+        "ilastik.shell.gui.ipcManager":                             { "level":"INFO" },
+        "ilastik.workflows":                                        { "level":"INFO" },
+        "ilastik.widgets":                                          { "level":"INFO" },
+        "ilastik.utility":                                          { "level":"INFO" },
+        "ilastik.utility.exportingOperator":                        { "level":"INFO" },
+        "ilastik.utility.exportFile":                               { "level":"INFO" },
+        "workflows":                                                { "level":"INFO" },
+        "volumina":                                                 { "level":"INFO" },
+        "volumina.pixelpipeline":                                   { "level":"INFO" },
+        "volumina.imageScene2D":                                    { "level":"INFO" },
+        "volumina.utility.shortcutManager":                         { "level":"INFO" },
+        "TRACE":                                                    { "level":"INFO", "handlers":[] },
+        "TRACE.lazyflow.graph.Slot":                                { "level":"INFO" },
+        "TRACE.lazyflow.graph.Operator":                            { "level":"INFO" },
+        "TRACE.lazyflow.graph.OperatorWrapper":                     { "level":"INFO" },
+        "TRACE.lazyflow.operators.ioOperators":                     { "level":"INFO" },
+        "TRACE.lazyflow.operators":                                 { "level":"INFO" },
+        "TRACE.lazyflow.operators.operators":                       { "level":"INFO" },
+        "TRACE.lazyflow.operators.generic":                         { "level":"INFO" },
+        "TRACE.lazyflow.operators.classifierOperators":             { "level":"INFO" },
+        "TRACE.lazyflow.operators.operators.OpArrayCache":          { "level":"INFO" },
+        "TRACE.lazyflow.operators.operators.ArrayCacheMemoryMgr":   { "level":"INFO" },
+        "TRACE.lazyflow.operators.valueProviders.OpValueCache":     { "level":"INFO" },
+        "TRACE.ilastik.clusterOps":                                 { "level":"INFO" },
+        "TRACE.ilastik.applets":                                    { "level":"INFO" },
+        "TRACE.ilastik.applets.blockwiseObjectClassification":      { "level":"INFO" },
+        "TRACE.ilastik.shell":                                      { "level":"INFO" },
+        "TRACE.volumina":                                           { "level":"INFO" },
+        "TRACE.volumina.imageScene2D":                              { "level":"INFO" }
+    }
+}
