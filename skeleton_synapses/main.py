@@ -190,16 +190,16 @@ if __name__ == "__main__":
         kwargs_dict = {'force': force}
     else:
         parser = argparse.ArgumentParser()
-        parser.add_argument('credentials-path',
+        parser.add_argument('credentials_path',
                             help='Path to a JSON file containing CATMAID credentials (see credentials/example.json)')
-        parser.add_argument('stack-id',
+        parser.add_argument('stack_id',
                             help='ID or name of image stack in CATMAID')
-        parser.add_argument('input-file-dir', help="A directory containing project files.")
-        parser.add_argument('skeleton-ids', nargs='+',
+        parser.add_argument('input_file_dir', help="A directory containing project files.")
+        parser.add_argument('skeleton_ids', nargs='+',
                             help="Skeleton IDs in CATMAID")
-        parser.add_argument('-o', '--output-dir', default=None,
+        parser.add_argument('-o', '--output_dir', default=None,
                             help='A directory containing output files')
-        parser.add_argument('-r', '--roi-radius-px', default=DEFAULT_ROI_RADIUS,
+        parser.add_argument('-r', '--roi_radius_px', default=DEFAULT_ROI_RADIUS,
                             help='The radius (in pixels) around each skeleton node to search for synapses')
         parser.add_argument('-f', '--force', type=int, default=0,
                             help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
