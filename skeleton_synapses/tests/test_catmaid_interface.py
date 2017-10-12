@@ -7,9 +7,9 @@ import numpy as np
 from skeleton_synapses.catmaid_interface import (
     get_consecutive, extend_slices, make_tile_url_template, get_nodes_between, get_subarbor_node_infos, in_roi
 )
-from skeleton_synapses.skeleton_utils import NodeInfo
+from skeleton_synapses.dto import NodeInfo
 
-from fixtures import get_fixture_data
+from skeleton_synapses.tests.fixtures import get_fixture_data
 
 
 def test_get_consecutive():

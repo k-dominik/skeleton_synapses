@@ -3,10 +3,8 @@ import os
 import pytest
 import numpy as np
 
-from skeleton_synapses.locate_syn_catmaid import (
-    nodes_to_tile_indexes, TileIndex, tile_index_to_bounds
-)
-from skeleton_synapses.skeleton_utils import NodeInfo
+from skeleton_synapses.helpers.roi import nodes_to_tile_indexes, tile_index_to_bounds
+from skeleton_synapses.dto import NodeInfo, TileIndex
 
 from skeleton_synapses.tests.constants import TILE_SIZE, TILE_CENTRE, MIN_RADIUS
 

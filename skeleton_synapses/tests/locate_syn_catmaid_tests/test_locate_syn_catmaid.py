@@ -4,11 +4,8 @@ import numpy as np
 import vigra
 import pytest
 
-from skeleton_synapses.locate_syn_catmaid import (
-    nodes_to_tile_indexes, tile_index_to_bounds, square_bounds,
-    node_locations_to_array, iterate_queue, commit_node_association_results_from_queue,
-    TileIndex, NeuronSegmenterOutput
-)
+from skeleton_synapses.helpers.segmentation import node_locations_to_array
+from skeleton_synapses.helpers.roi import square_bounds
 
 
 def test_square_bounds():

@@ -5,9 +5,8 @@ from Queue import Empty
 import mock
 import pytest
 
-from skeleton_synapses.locate_syn_catmaid import (
-    iterate_queue, commit_node_association_results_from_queue, NeuronSegmenterOutput
-)
+from skeleton_synapses.dto import NeuronSegmenterOutput
+from skeleton_synapses.parallel.commit import iterate_queue, commit_node_association_results_from_queue
 
 
 @pytest.fixture

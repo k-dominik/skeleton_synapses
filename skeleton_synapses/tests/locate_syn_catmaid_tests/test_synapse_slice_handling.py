@@ -7,12 +7,11 @@ import pytest
 import geojson
 import numpy as np
 
-from skeleton_synapses.locate_syn_catmaid import (
-    image_to_geojson, get_synapse_uncertainty, get_synapse_slice_size_centroid, synapse_slices_to_data, submit_synapse_slice_data,
-    remap_synapse_slices,
-)
+from skeleton_synapses.helpers.images import image_to_geojson, get_synapse_uncertainty, \
+    get_synapse_slice_size_centroid, \
+    synapse_slices_to_data, submit_synapse_slice_data, remap_synapse_slices
 
-from skeleton_synapses.tests.fixtures import get_fixture_data, img_square, img_2, pixel_pred, tmp_dir
+from skeleton_synapses.tests.fixtures import img_square, img_2, pixel_pred, tmp_dir
 
 
 ID_MAPPING_2 = {1: 10, 2: 20}
