@@ -1,3 +1,6 @@
+"""
+Deprecated
+"""
 import json
 import collections
 import threading
@@ -15,7 +18,7 @@ ProgressInfo = collections.namedtuple("ProgressInfo", ["node_overall_index", # o
 class ProgressServer(HTTPServer):
     """
     Simple http server that can be polled to get the current progress of the synapse detector tool.
-    This server is passive -- the synapse detector tool must periodically 
+    This server is passive -- the synapse detector tool must periodically
     update the progress state by calling update_progress().
     """
 
@@ -24,7 +27,7 @@ class ProgressServer(HTTPServer):
         """
         Start the progress server in a different thread, and return the server object.
         To stop the server, simply call its shutdown() method.
-        
+
         disable_server_logging: If true, disable the normal HttpServer logging of every request.
         """
         server = ProgressServer( disable_server_logging, (hostname, port), ProgressRequestHandler )
@@ -40,7 +43,7 @@ class ProgressServer(HTTPServer):
         """
         with self._lock:
             self.progress = progress
-    
+
     def shutdown(self):
         """
         Stop the server and wait for its thread to finish.
@@ -77,13 +80,13 @@ class ProgressRequestHandler(BaseHTTPRequestHandler):
     """
     Request handler for the ProgressServer.  (See above for details.)
     """
-    
+
     def do_GET(self):
         if self.path == "/detector_progress":
             self._do_get_progress()
         else:
             self.send_error( httplib.BAD_REQUEST, "Bad query syntax: {}".format( self.path ) )
-    
+
     def _do_get_progress(self):
         with self.server._lock:
             progress = self.server.progress
@@ -96,12 +99,12 @@ class ProgressRequestHandler(BaseHTTPRequestHandler):
 
     def log_request(self, *args, **kwargs):
         """
-        Override from BaseHTTPRequestHandler, so we can respect 
+        Override from BaseHTTPRequestHandler, so we can respect
           the ProgressServer's disable_logging setting.
         """
         if not self.server.disable_logging:
             BaseHTTPRequestHandler.log_request(self, *args, **kwargs )
-    
+
 
 # quick test
 if __name__ == "__main__":

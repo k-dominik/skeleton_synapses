@@ -3,8 +3,7 @@ from argparse import ArgumentParser
 import subprocess
 import logging
 
-from skeleton_synapses.locate_synapses import ensure_description_file
-
+from helpers.files import ensure_description_file
 
 VALID_PROJECTS = ('autocontext', 'multicut')
 ILASTIK_PATH = os.path.join(os.getenv('CONDA_PREFIX'), 'run_ilastik.sh')
@@ -20,6 +19,7 @@ def retrain_autocontext(project_dir):
     logging.info('Retraining autocontext')
     autocontext_path = os.path.join(project_dir, 'projects', 'full-vol-autocontext.ilp')
     subprocess.check_call([ILASTIK_PATH, '--headless', '--retrain', '--project="{}"'.format(autocontext_path)])
+
 
 if __name__ == '__main__':
     retrain_fns = {
