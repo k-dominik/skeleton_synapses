@@ -1,0 +1,14 @@
+from collections import namedtuple
+
+
+TileIndex = namedtuple('TileIndex', ['z_idx', 'y_idx', 'x_idx'])
+NodeInfo = namedtuple('NodeInfo', ['id', 'x_px', 'y_px', 'z_px', 'parent_id'])
+
+DetectorOutput = namedtuple('DetectorOutput', ['tile_idx', 'predictions_xyc', 'synapse_cc_xyc'])
+
+NeuronSegmenterInput = namedtuple('NeuronSegmenterInput', ['roi_xyz', 'synapse_slice_ids'])
+NeuronSegmenterOutput = namedtuple('NeuronSegmenterOutput', ['node_id', 'synapse_slice_id', 'contact_px'])
+
+SegmenterInput = namedtuple('SegmenterInput', ['node_overall_index', 'node_info', 'roi_radius_px'])
+SegmenterOutput = namedtuple('SegmenterOutput', ['node_overall_index', 'node_info', 'roi_radius_px',
+                                                 'predictions_xyc', 'synapse_cc_xy', 'segmentation_xy'])

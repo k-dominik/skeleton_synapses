@@ -1,14 +1,14 @@
 import json
 from collections import defaultdict
 import logging
-import networkx as nx
 
+import networkx as nx
 import numpy as np
 
 from catpy.client import CatmaidClientApplication, make_url, CoordinateTransformer
 from catpy.export import ExportWidget
 
-from skeleton_utils import NodeInfo
+from skeleton_synapses.dto import NodeInfo
 
 NEUROCEAN_CONSTANTS = {
     'skel_id': 11524047,
