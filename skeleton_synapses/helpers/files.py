@@ -1,8 +1,10 @@
 import datetime
 import errno
+import hashlib
 import json
 import os
 import shutil
+import subprocess
 from datetime import datetime
 import logging
 
@@ -10,9 +12,9 @@ import six
 import h5py
 import numpy as np
 import vigra
-from catpy import CatmaidClient
 
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
+from skeleton_synapses.constants import DEBUG, ROOT_DIR, ALGO_HASH
 
 HDF5_NAME = "tilewise_image_store.hdf5"
 LABEL_DTYPE = np.int64
@@ -59,67 +61,54 @@ def ensure_description_file(catmaid, description_path, stack_id, include_offset=
         return True
 
 
-def ensure_skel_output_dirs(output_file_dir, skel_ids, catmaid_ss, stack_id, force=False):
-    skel_output_dirs = []
-    for skeleton_id in ensure_list(skel_ids):
-        # Name the output directory with the skeleton id
-        skel_output_dir = os.path.join(output_file_dir, 'skeletons', str(skeleton_id))
-        if force:
-            try:
-                shutil.rmtree(skel_output_dir, ignore_errors=True)
-            except OSError:
-                pass
+def ensure_skel_output_dir(skel_output_dir, skel_id, catmaid_ss, stack_id, force=False):
+    # todo: test
+    if skel_output_dir is None:
+        return
+    # Name the output directory with the skeleton id
+    if force:
+        try:
+            shutil.rmtree(skel_output_dir, ignore_errors=True)
+        except OSError:
+            pass
 
-        mkdir_p(skel_output_dir)
+    mkdir_p(skel_output_dir)
 
-        skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
-        skel_data = catmaid_ss.get_transformed_treenode_and_connector_geometry(stack_id, skeleton_id)
-        with open(skel_path, 'w') as f:
-            json.dump(skel_data, f)
-
-        skel_output_dirs.append(skel_output_dir)
-
-    return skel_output_dirs
+    skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
+    skel_data = catmaid_ss.get_transformed_treenode_and_connector_geometry(stack_id, skel_id)
+    with open(skel_path, 'w') as f:
+        json.dump(skel_data, f)
 
 
-def setup_files(
-        credentials_path, stack_id, skeleton_ids, input_file_dir, force=False, output_file_dir=None
-):
-    """
+class Paths(object):
+    def __init__(self, input_file_dir, output_file_dir=None):
+        self.root_dir = ROOT_DIR
+        self.input_dir = input_file_dir
+        self.output_dir = output_file_dir or self.input_dir
 
-    Parameters
-    ----------
-    credentials_path
-    stack_id
-    skeleton_ids
-    input_file_dir
-    force
-    output_file_dir
+        self.projects_dir = os.path.join(input_file_dir, 'projects')
 
-    Returns
-    -------
-    tuple of (str, str, str, list of str, dict of {str:str})
-    """
-    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
-    projects_dir = os.path.join(input_file_dir, 'projects')
+        self.autocontext_ilp = os.path.join(self.projects_dir, 'full-vol-autocontext.ilp')
+        self.multicut_ilp = os.path.join(self.projects_dir, 'multicut', PROJECT_NAME + '-multicut.ilp')
 
-    autocontext_project = os.path.join(projects_dir, 'full-vol-autocontext.ilp')
-    multicut_project = os.path.join(projects_dir, 'multicut', PROJECT_NAME + '-multicut.ilp')
+        self.output_hdf5 = os.path.join(output_file_dir, HDF5_NAME)
+        self.description_json = os.path.join(input_file_dir, PROJECT_NAME + '-description-NO-OFFSET.json')
 
-    volume_description_path = os.path.join(
-        input_file_dir, PROJECT_NAME + '-description-NO-OFFSET.json'
-    )
-    ensure_description_file(catmaid, volume_description_path, stack_id, include_offset=False)
+    def skeleton_output_dir(self, skeleton_id):
+        return os.path.join(self.output_dir, 'skeletons', str(skeleton_id)) if DEBUG else None
 
-    skeleton_ids = ensure_list(skeleton_ids)
-    if output_file_dir:
-        skel_output_dirs = ensure_skel_output_dirs(output_file_dir, skeleton_ids, catmaid, stack_id, force)
-    else:
-        skel_output_dirs = [None for _ in skeleton_ids]
+    def initialise(self, catmaid, stack_info, skeleton_ids, force=False):
+        for dir_path in [self.root_dir, self.input_dir, self.output_dir, self.projects_dir]:
+            assert os.path.isdir(dir_path)
+        for file_path in [self.autocontext_ilp, self.multicut_ilp]:
+            assert os.path.isfile(file_path)
 
-    algo_notes = get_algo_notes(projects_dir)
-
-    return autocontext_project, multicut_project, volume_description_path, skel_output_dirs, algo_notes
+        ensure_hdf5(stack_info, self.output_hdf5, force)
+        ensure_description_file(catmaid, self.description_json, stack_info['sid'], force=False)
+        for skeleton_id in skeleton_ids:
+            ensure_skel_output_dir(
+                self.skeleton_output_dir(skeleton_id), skeleton_id, catmaid, stack_info['sid'], force
+            )
 
 
 def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
@@ -226,11 +215,14 @@ def mkdir_p(path):
     """
     try:
         os.makedirs(path)
+        created = True
     except OSError as exc:  # Python >2.5
         if exc.errno == errno.EEXIST and os.path.isdir(path):
-            pass
+            created = False
         else:
             raise
+
+    return created
 
 
 def get_algo_notes(projects_dir):
@@ -272,12 +264,13 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
     return labels
 
 
-def ensure_hdf5(stack_info, output_file_dir, force=False):
-    hdf5_path = os.path.join(output_file_dir, HDF5_NAME)
+def ensure_hdf5(stack_info, hdf5_path, force=False):
     if force or not os.path.isfile(hdf5_path):
         if os.path.isfile(hdf5_path):
-            hdf5_dir = os.path.dirname(hdf5_path)
-            backup_path = os.path.join(hdf5_dir, '{}BACKUP{}'.format(hdf5_path, datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))
+            backup_path = os.path.join(
+                os.path.dirname(hdf5_path),
+                '{}BACKUP{}'.format(hdf5_path, datetime.now().strftime('%Y-%m-%d_%H:%M:%S'))
+            )
             os.rename(hdf5_path, backup_path)
         logger.info('Creating HDF5 volumes in %s', hdf5_path)
         with h5py.File(hdf5_path) as f:
@@ -291,8 +284,6 @@ def ensure_hdf5(stack_info, output_file_dir, force=False):
 
             f.flush()
 
-    return hdf5_path
-
 
 def write_predictions_synapses(hdf5_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz):
     slicing_zyx = bounds_xyz[0, 2], slice(bounds_xyz[0, 1], bounds_xyz[1, 1]), slice(bounds_xyz[0, 0], bounds_xyz[1, 0])
@@ -302,3 +293,48 @@ def write_predictions_synapses(hdf5_path, predictions_xyc, mapped_synapse_cc_xy,
 
         slice_labels_zyx = f['slice_labels']
         slice_labels_zyx[slicing_zyx] = mapped_synapse_cc_xy.transposeToOrder(slice_labels_zyx.attrs['order'])
+
+
+def hash_algorithm(*paths):
+    """
+    Calculate a combined hash of the algorithm. Included for hashing are the commit hash of this repo, the hashes of
+    any files whose paths are given, and the git commit hash inside any directories whose paths are given.
+
+    Parameters
+    ----------
+    paths
+        Paths to files or directories outside of this git repo which affect the algorithm
+
+    Returns
+    -------
+    str
+    """
+    logger.info('Hashing algorithm...')
+    commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
+
+    md5 = hashlib.md5(commit_hash)
+
+    for path in sorted(paths):
+        if os.path.isdir(path):
+            logger.debug('Getting git commit hash of directory %s', path)
+            try:
+                output = subprocess.check_output(['git', '-C', path, 'rev-parse', 'HEAD']).strip()
+                md5.update(output)
+            except subprocess.CalledProcessError:
+                logger.exception('Error encountered while finding git hash of directory %s', path)
+        elif os.path.isfile(path):
+            logger.debug('Getting hash of file %s', path)
+            with open(path, 'rb') as f:
+                for chunk in iter(lambda: f.read(128 * md5.block_size), b''):
+                    md5.update(chunk)
+        else:
+            logger.warning('No file, symlink or directory found at %s', path)
+
+    digest = md5.hexdigest()
+
+    # todo: remove this
+    if ALGO_HASH is not None:
+        digest = ALGO_HASH
+        logger.warning('Ignoring real algorithm hash, using hardcoded value'.format(ALGO_HASH))
+    logger.debug('Algorithm hash is %s', digest)
+    return digest

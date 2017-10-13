@@ -5,9 +5,15 @@ import vigra
 from lazyflow.request import Request
 from lazyflow.utility.timer import Timer
 
-from skeleton_synapses.dto import DetectorOutput
-from skeleton_synapses.parallel.base_classes import DebuggableProcess, LeakyProcess
+from skeleton_synapses.helpers.files import cached_synapses_predictions_for_roi
+from skeleton_synapses.helpers.roi import tile_index_to_bounds
 from skeleton_synapses.helpers.segmentation import get_synapse_segment_overlaps, get_node_associations
+from skeleton_synapses.dto import DetectorOutput
+from skeleton_synapses.ilastik_utils.projects import setup_classifier, setup_classifier_and_multicut
+from skeleton_synapses.ilastik_utils.analyse import (
+    fetch_raw_and_predict_for_node, labeled_synapses_for_node, raw_data_for_roi, segmentation_for_img
+)
+from skeleton_synapses.parallel.base_classes import DebuggableProcess, LeakyProcess
 
 
 logger = logging.getLogger(__name__)
@@ -21,7 +27,7 @@ class CaretakerProcess(DebuggableProcess):
     """
 
     def __init__(
-            self, constructor, input_queue, max_ram_MB, args_tuple=(), kwargs_dict=None, debug=False, name=None
+            self, constructor, input_queue, args_tuple=(), kwargs_dict=None, debug=False, name=None
     ):
         """
 
@@ -29,7 +35,6 @@ class CaretakerProcess(DebuggableProcess):
         ----------
         constructor : LeakyProcess constructor
         input_queue : multiprocessing.Queue
-        max_ram_MB : int
         args_tuple : array_like
         kwargs_dict : dict
         debug : bool
@@ -37,7 +42,6 @@ class CaretakerProcess(DebuggableProcess):
         super(CaretakerProcess, self).__init__(debug, name=name)
         self.constructor = constructor
         self.input_queue = input_queue
-        self.max_ram_MB = max_ram_MB
         self.args_tuple = args_tuple
         self.kwargs_dict = kwargs_dict or dict()
         self.kwargs_dict['debug'] = debug
@@ -57,7 +61,7 @@ class CaretakerProcess(DebuggableProcess):
             kwargs = self.kwargs_dict.copy()
             kwargs['name'] = name
             inner_process = self.constructor(
-                self.input_queue, self.max_ram_MB, *self.args_tuple, **kwargs
+                self.input_queue, *self.args_tuple, **kwargs
             )
             inner_process.start()
             logger.debug('Started {} with {} inputs remaining'.format(inner_process.name, self.input_queue.qsize()))
@@ -67,12 +71,8 @@ class CaretakerProcess(DebuggableProcess):
 
 
 class DetectorProcess(LeakyProcess):
-    def __init__(
-            self, input_queue, max_ram_MB, output_queue, description_file, autocontext_project_path,
-            skel_output_dir,
-            tile_size, debug=False, name=None
-    ):
-        super(DetectorProcess, self).__init__(input_queue, max_ram_MB, debug, name)
+    def __init__(self, input_queue, output_queue, paths, skel_output_dir, tile_size, debug=False, name=None):
+        super(DetectorProcess, self).__init__(input_queue, debug, name)
         self.output_queue = output_queue
 
         self.skel_output_dir = skel_output_dir
@@ -80,7 +80,7 @@ class DetectorProcess(LeakyProcess):
 
         self.opPixelClassification = None
 
-        self.setup_args = (description_file, autocontext_project_path)
+        self.setup_args = paths.description_json, paths.autocontext_ilp
 
     def setup(self):
         self.opPixelClassification = setup_classifier(*self.setup_args)
@@ -118,34 +118,27 @@ class NeuronSegmenterProcess(LeakyProcess):
     Process which creates its own pixel classifier and multicut workflow, pulls jobs from one queue and returns
     outputs to another queue.
     """
-    def __init__(
-            self, input_queue, max_ram_MB, output_queue, description_file, autocontext_project_path, multicut_project,
-            hdf5_path, catmaid, debug=False, name=None
-    ):
+    def __init__(self, input_queue, output_queue, paths, catmaid, debug=False, name=None):
         """
 
         Parameters
         ----------
         input_queue : mp.Queue
         output_queue : mp.Queue
-        description_file : str
-            path
-        autocontext_project_path
-        multicut_project : str
-            path
-        hdf5_path : str
+        paths : skeleton_synapses.helpers.files.Paths
         debug : bool
             Whether to instantiate a serial version for debugging purposes
+        name : str
         """
-        super(NeuronSegmenterProcess, self).__init__(input_queue, max_ram_MB, debug, name)
+        super(NeuronSegmenterProcess, self).__init__(input_queue, debug, name)
         # super(NeuronSegmenterProcess, self).__init__(debug)
         self.input_queue = input_queue
         self.output_queue = output_queue
 
-        self.hdf5_path = hdf5_path
+        self.hdf5_path = paths.output_hdf5
 
         self.opPixelClassification = self.multicut_shell = None
-        self.setup_args = (description_file, autocontext_project_path, multicut_project)
+        self.setup_args = paths.description_json, paths.autocontext_ilp, paths.multicut_ilp
         self.catmaid = catmaid
 
     # for debugging

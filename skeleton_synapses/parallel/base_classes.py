@@ -3,6 +3,7 @@ import multiprocessing as mp
 
 import psutil
 
+from skeleton_synapses.constants import RAM_MB_PER_PROCESS
 
 class DebuggableProcess(mp.Process):
     """
@@ -31,10 +32,10 @@ class LeakyProcess(DebuggableProcess):
     execute() is run in a while loop for as long as the input queue isn't empty and the RAM limit isn't exceeded
     teardown() is run before the process is shut down, either when the input queue is empty or the RAM limit is exceeded
     """
-    def __init__(self, input_queue, max_ram_MB=0, debug=False, name=None):
+    def __init__(self, input_queue, debug=False, name=None):
         super(LeakyProcess, self).__init__(debug, name)
         self.input_queue = input_queue
-        self.max_ram_MB = max_ram_MB
+        self.max_ram_MB = RAM_MB_PER_PROCESS
         self.psutil_process = None
         self.execution_counter = 0
 

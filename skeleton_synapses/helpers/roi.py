@@ -95,6 +95,28 @@ def roi_around_node(node_info, radius):
     return roi_around_point(coord_xyz, radius)
 
 
+def roi_around_synapse(synapse, buffer_px):
+    """
+
+    Parameters
+    ----------
+    synapse : dict
+        has keys 'synapse_bounds_s' and 'synapse_z_s'
+    buffer_px : number
+
+    Returns
+    -------
+    np.array
+    """
+    external_buffer = np.array([[-buffer_px, -buffer_px, 0], [buffer_px, buffer_px, 1]])
+
+    # synapse plane bounds + buffer
+    return (external_buffer + np.array([
+        synapse['synapse_bounds_s'][:2] + [synapse['synapse_z_s']],  # xmin, ymin, zmin
+        synapse['synapse_bounds_s'][2:] + [synapse['synapse_z_s']]  # xmax, ymax, zmax
+    ])).astype(int)
+
+
 def slicing(roi):
     """
     Convert the roi to a slicing that can be used with ndarray.__getitem__()
