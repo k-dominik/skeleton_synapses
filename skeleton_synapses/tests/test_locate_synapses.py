@@ -7,9 +7,12 @@ import vigra
 
 from skeleton_synapses.helpers.images import are_same_xy
 from skeleton_synapses.helpers.roi import slicing
-from skeleton_synapses.helpers.files import ensure_list, ensure_description_file, ensure_skel_output_dirs, mkdir_p, get_algo_notes
+from skeleton_synapses.helpers.files import ensure_list, ensure_description_file, ensure_skel_output_dir, mkdir_p, get_algo_notes
 
 from skeleton_synapses.tests.fixtures import tmp_dir
+
+
+SKEL_ID = 1
 
 
 def test_ensure_list_list():
@@ -84,59 +87,43 @@ def test_ensure_description_file_overwritten(catmaid, description_file):
     assert_contains(description_file, 'new')
 
 
-def assert_skel_output_dirs(output_dirs, skel_ids, contents='new'):
-    assert len(output_dirs) == len(skel_ids)
-    for output_dir, skel_id in zip(output_dirs, skel_ids):
-        assert output_dir.endswith(str(skel_id))
-        assert_contains(os.path.join(output_dir, 'tree_geometry.json'), contents)
+def test_ensure_skel_output_dirs_new(catmaid, tmp_dir):
+    assert len(os.listdir(tmp_dir)) == 0
+    ensure_skel_output_dir(tmp_dir, SKEL_ID, catmaid, None, force=False)
+    assert_contains(os.path.join(tmp_dir, 'tree_geometry.json'), 'new')
 
 
 @pytest.fixture
-def skel_ids():
-    return 1, 2
+def skel_populated_tmp(tmp_dir):
+    path = os.path.join(tmp_dir, str(SKEL_ID))
+    os.mkdir(path)
+    assert os.path.isdir(path)
+
+    geom_path = os.path.join(path, 'tree_geometry.json')
+    with open(geom_path, 'w') as f:
+        f.write('existing')
+    assert os.path.isfile(geom_path)
+
+    other_path = os.path.join(path, 'OTHER')
+    with open(other_path, 'w') as f:
+        f.write('existing')
+    assert os.path.isfile(other_path)
+
+    return path
 
 
-def test_ensure_skel_output_dirs_new(skel_ids, catmaid, tmp_dir):
-    output_dirs = ensure_skel_output_dirs(tmp_dir, skel_ids, catmaid, None, force=False)
-    assert_skel_output_dirs(output_dirs, skel_ids)
+def test_ensure_skel_output_dir_exists(catmaid, skel_populated_tmp):
+    ensure_skel_output_dir(skel_populated_tmp, SKEL_ID, catmaid, None, force=False)
+
+    assert_contains(os.path.join(skel_populated_tmp, 'tree_geometry.json'), 'new')
+    assert 'OTHER' in os.listdir(skel_populated_tmp)
 
 
-@pytest.fixture
-def skel_populated_tmp(skel_ids, tmp_dir):
-    skel_path = os.path.join(tmp_dir, 'skeletons')
-    os.mkdir(skel_path)
-    for skel_id in skel_ids:
-        path = os.path.join(skel_path, str(skel_id))
-        os.mkdir(path)
-        assert os.path.isdir(path)
+def test_ensure_skel_output_dirs_force(catmaid, skel_populated_tmp):
+    ensure_skel_output_dir(skel_populated_tmp, SKEL_ID, catmaid, None, force=True)
 
-        geom_path = os.path.join(path, 'tree_geometry.json')
-        with open(geom_path, 'w') as f:
-            f.write('existing')
-        assert os.path.isfile(geom_path)
-
-        other_path = os.path.join(path, 'OTHER')
-        with open(other_path, 'w') as f:
-            f.write('existing')
-        assert os.path.isfile(other_path)
-
-    return tmp_dir
-
-
-def test_ensure_skel_output_dirs_exist(catmaid, skel_ids, skel_populated_tmp):
-    output_dirs = ensure_skel_output_dirs(skel_populated_tmp, skel_ids, catmaid, None, force=False)
-
-    assert_skel_output_dirs(output_dirs, skel_ids)
-    for output_dir in output_dirs:
-        assert 'OTHER' in os.listdir(output_dir)
-
-
-def test_ensure_skel_output_dirs_force(catmaid, skel_ids, skel_populated_tmp):
-    output_dirs = ensure_skel_output_dirs(skel_populated_tmp, skel_ids, catmaid, None, force=True)
-
-    assert_skel_output_dirs(output_dirs, skel_ids)
-    for output_dir in output_dirs:
-        assert 'OTHER' not in os.listdir(output_dir)
+    assert_contains(os.path.join(skel_populated_tmp, 'tree_geometry.json'), 'new')
+    assert 'OTHER' not in os.listdir(skel_populated_tmp)
 
 
 def test_get_algo_notes_exist(tmp_dir):
