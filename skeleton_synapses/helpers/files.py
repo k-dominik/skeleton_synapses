@@ -62,7 +62,6 @@ def ensure_description_file(catmaid, description_path, stack_id, include_offset=
 
 
 def ensure_skel_output_dir(skel_output_dir, skel_id, catmaid_ss, stack_id, force=False):
-    # todo: test
     if skel_output_dir is None:
         return
     # Name the output directory with the skeleton id
