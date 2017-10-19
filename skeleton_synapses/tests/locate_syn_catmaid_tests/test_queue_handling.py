@@ -6,7 +6,7 @@ import mock
 import pytest
 
 from skeleton_synapses.dto import NeuronSegmenterOutput
-from skeleton_synapses.parallel.commit import iterate_queue, commit_node_association_results_from_queue
+from skeleton_synapses.parallel.queues import iterate_queue, commit_node_association_results_from_queue
 
 
 @pytest.fixture

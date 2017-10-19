@@ -3,15 +3,13 @@ from __future__ import division
 
 import argparse
 import logging
-import multiprocessing as mp
-import signal
-import sys
-import time
 
 import numpy as np
 import psutil
-from tqdm import tqdm
+import signal
+import sys
 from catpy import CatmaidClient
+from tqdm import tqdm
 
 from helpers.files import hash_algorithm
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
@@ -20,10 +18,11 @@ from skeleton_synapses.dto import NeuronSegmenterInput
 from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
 from skeleton_synapses.helpers.roi import nodes_to_tile_indexes, roi_around_synapse
-from skeleton_synapses.parallel.commit import (
-    commit_tilewise_results_from_queue, commit_node_association_results_from_queue
+from skeleton_synapses.parallel.process import DetectorProcess, NeuronSegmenterProcess, ProcessRunner
+from skeleton_synapses.parallel.queues import (
+    commit_tilewise_results_from_queue, commit_node_association_results_from_queue,
+    populate_tile_input_queue, populate_synapse_queue
 )
-from skeleton_synapses.parallel.process import CaretakerProcess, DetectorProcess, NeuronSegmenterProcess
 
 logger = logging.getLogger(__name__)
 
@@ -54,24 +53,6 @@ def main(
         locate_synapses(catmaid, paths, stack_info, skeleton_id, roi_radius_px, algo_hash, algo_notes)
 
 
-def populate_tile_input_queue(catmaid, roi_radius_px, workflow_id, node_infos):
-    tile_index_set = nodes_to_tile_indexes(node_infos, TILE_SIZE, roi_radius_px)
-
-    addressed_tiles = catmaid.get_detected_tiles(workflow_id)
-
-    tile_queue, tile_result_queue = mp.Queue(), mp.Queue()
-    tile_count = 0
-    for tile_idx in tqdm(tile_index_set, desc='Populating tile queue', unit='tiles', **TQDM_KWARGS):
-        if (tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx) in addressed_tiles:
-            logger.debug("Tile %s has been addressed by this algorithm, skipping", repr(tile_idx))
-        else:
-            logger.debug("Tile %s has not been addressed, adding to queue", repr(tile_idx))
-            tile_count += 1
-            tile_queue.put(tile_idx)
-
-    return tile_queue, tile_count
-
-
 def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_radius_px):
     node_infos = catmaid.get_node_infos(skeleton_id, stack_info['sid'])
 
@@ -82,71 +63,14 @@ def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_ra
 
         detector_setup_args = paths, paths.skeleton_output_dir(skeleton_id), TILE_SIZE
 
-        containers, result_queue = create_and_run_processes(
-            tile_queue, DetectorProcess, detector_setup_args, min(THREADS, tile_count)
-        )
+        with ProcessRunner(tile_queue, DetectorProcess, detector_setup_args, min(THREADS, tile_count)) as runner:
+            commit_tilewise_results_from_queue(
+                runner.output_queue, paths.output_hdf5, tile_count, TILE_SIZE, workflow_id, catmaid
+            )
 
-        commit_tilewise_results_from_queue(
-            result_queue, paths.output_hdf5, tile_count, TILE_SIZE, workflow_id, catmaid
-        )
-
-        for detector_container in containers:
-            detector_container.join()
-
-        # timestamper.log('finished synapse detection')
     else:
         logger.debug('No tiles found (probably already processed)')
         tile_queue.close()
-
-
-def populate_synapse_queue(catmaid, roi_radius_px, project_workflow_id, stack_info, skeleton_id):
-    synapse_queue = mp.Queue()
-    synapse_count = 0
-
-    roi_radius_nm = roi_radius_px * stack_info['resolution']['x']  # assumes XY isotropy
-    logger.debug('Getting synapses spatially near skeleton {}'.format(skeleton_id))
-    synapses_near_skeleton = catmaid.get_synapses_near_skeleton(skeleton_id, project_workflow_id, roi_radius_nm)
-    logger.debug('Found {} synapse planes near skeleton {}'.format(len(synapses_near_skeleton), skeleton_id))
-    slice_id_tuples = set()
-    for synapse in tqdm(synapses_near_skeleton, desc='Populating synapse plane queue', unit='synapse planes',
-                        **TQDM_KWARGS):
-        slice_id_tuple = tuple(synapse['synapse_slice_ids'])
-        if slice_id_tuple in slice_id_tuples:
-            continue
-
-        slice_id_tuples.add(slice_id_tuple)
-        roi_xyz = roi_around_synapse(synapse, roi_radius_px)
-
-        logger.debug('Getting treenodes in roi {}'.format(roi_xyz))
-        item = NeuronSegmenterInput(roi_xyz, slice_id_tuple)
-        logger.debug('Adding {} to neuron segmentation queue'.format(item))
-        synapse_queue.put(item)
-        synapse_count += 1
-
-    return synapse_queue, synapse_count
-
-
-def create_and_run_processes(input_queue, constructor, setup_args, threads):
-    result_queue = mp.Queue()
-    setup_args = (result_queue, ) + setup_args
-
-    neuron_seg_containers = [
-        CaretakerProcess(
-            constructor, input_queue, setup_args, name='CaretakerProcess{}'.format(idx)
-        )
-        for idx in range(threads)
-        # for _ in range(1)
-    ]
-
-    while input_queue.qsize() < threads:
-        logger.debug('Waiting for node queue to populate...')
-        time.sleep(1)
-
-    for neuron_seg_container in neuron_seg_containers:
-        neuron_seg_container.start()
-        assert neuron_seg_container.is_alive()
-
-    return neuron_seg_containers, result_queue
 
 
 def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_radius_px, algo_hash, algo_notes):
@@ -165,16 +89,9 @@ def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_id, ro
 
         seg_setup_args = paths, catmaid
 
-        containers, result_queue = create_and_run_processes(
-            synapse_queue, NeuronSegmenterProcess, seg_setup_args, min(THREADS, synapse_count)
-        )
+        with ProcessRunner(synapse_queue, NeuronSegmenterProcess, seg_setup_args, min(THREADS, synapse_count)) as runner:
+            commit_node_association_results_from_queue(runner.output_queue, synapse_count, project_workflow_id, catmaid)
 
-        commit_node_association_results_from_queue(result_queue, synapse_count, project_workflow_id, catmaid)
-
-        for neuron_seg_container in containers:
-            neuron_seg_container.join()
-
-            # timestamper.log('finished segmenting neurons')
     else:
         logger.debug('No synapses required re-segmenting')
         synapse_queue.close()

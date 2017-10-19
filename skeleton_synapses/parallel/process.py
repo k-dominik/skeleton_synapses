@@ -1,4 +1,6 @@
 import logging
+import multiprocessing as mp
+import time
 
 import vigra
 
@@ -196,3 +198,32 @@ class NeuronSegmenterProcess(LeakyProcess):
             self.output_queue.put(node_segmenter_outputs)
 
             logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
+
+
+class ProcessRunner(object):
+    def __init__(self, input_queue, constructor, setup_args, threads):
+        self.input_queue = input_queue
+        self.constructor = constructor
+        self.setup_args = setup_args
+        self.threads = threads
+
+        self.output_queue = mp.Queue()
+        self.containers = [
+            CaretakerProcess(
+                constructor, input_queue, setup_args, name='CaretakerProcess{}'.format(idx)
+            )
+            for idx in range(threads)
+        ]
+
+    def __enter__(self):
+        while self.input_queue.qsize() < self.threads:
+            time.sleep(0.1)
+
+        for container in self.containers:
+            container.start()
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for container in self.containers:
+            container.join()

@@ -76,6 +76,21 @@ def make_tile_url_template(image_base):
 
 
 def get_nodes_between(graph, root=None, leaves=None):
+    """
+    Find all nodes both downstream of the given root and upstream of any of the given leaves.
+
+    Parameters
+    ----------
+    graph
+    root
+        If None, find the root of the tree
+    leaves
+        If None, find all leaves of the tree
+
+    Returns
+    -------
+
+    """
     assert nx.is_directed_acyclic_graph(graph)
 
     if root is None:
@@ -89,12 +104,32 @@ def get_nodes_between(graph, root=None, leaves=None):
 
     output_set = set(leaves)
     for leaf in leaves:
-        output_set.update(nx.ancestors(graph, leaf))
+        leaf_ancestors = nx.ancestors(graph, leaf)
+        if root in leaf_ancestors:
+            output_set.update(leaf_ancestors)
 
     return output_set - nx.ancestors(graph, root)
 
 
 def get_subarbor_node_infos(tnid_parentid, coords_xyz, root=None, leaves=None):
+    """
+
+
+    Parameters
+    ----------
+    tnid_parentid : list of tuple
+        List of pairs of (treenode_id, parent_id)
+    coords_xyz : list of tuple
+        List of (x, y, z) tuples
+    root
+        Most basal node to return
+    leaves
+        Most distal nodes to return
+
+    Returns
+    -------
+    list of NodeInfo
+    """
     node_infos = []
     if root is None and leaves is None:
         for (node_id, parent_id), (x, y, z) in zip(tnid_parentid, coords_xyz):
@@ -242,8 +277,11 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
             return CoordinateTransformer.from_catmaid(self._catmaid, stack_id)
 
     def get_transformed_treenode_and_connector_geometry(self, stack_id_or_title, *skeleton_ids):
-        transformer = self.get_coord_transformer(stack_id_or_title)
         data = self.export_widget.get_treenode_and_connector_geometry(*skeleton_ids)
+        if stack_id_or_title is None:
+            return data
+
+        transformer = self.get_coord_transformer(stack_id_or_title)
 
         for skid, skel_data in data['skeletons'].items():
             for treenode_id, treenode_data in skel_data['treenodes'].items():
