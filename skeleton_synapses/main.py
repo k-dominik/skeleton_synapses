@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import division
 
+import os
 import argparse
 import logging
 
@@ -13,12 +14,10 @@ from tqdm import tqdm
 
 from helpers.files import hash_algorithm
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
-from skeleton_synapses.constants import DEFAULT_ROI_RADIUS, TQDM_KWARGS, DEBUG, LOG_LEVEL, THREADS
-from skeleton_synapses.dto import NeuronSegmenterInput
+from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, TQDM_KWARGS, DEBUG, LOG_LEVEL, THREADS
 from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
-from skeleton_synapses.helpers.roi import nodes_to_tile_indexes, roi_around_synapse
-from skeleton_synapses.parallel.process import DetectorProcess, NeuronSegmenterProcess, ProcessRunner
+from skeleton_synapses.parallel.process import SynapseDetectionProcess, SkeletonAssociationProcess, ProcessRunner
 from skeleton_synapses.parallel.queues import (
     commit_tilewise_results_from_queue, commit_node_association_results_from_queue,
     populate_tile_input_queue, populate_synapse_queue
@@ -27,18 +26,14 @@ from skeleton_synapses.parallel.queues import (
 logger = logging.getLogger(__name__)
 
 
-def main(
-        credentials_path, stack_id, skeleton_ids, input_file_dir, output_file_dir,
-        roi_radius_px=DEFAULT_ROI_RADIUS, force=False
-):
+def main(paths, stack_id, skeleton_ids, roi_radius_px=DEFAULT_ROI_RADIUS_PX, force=False):
     logger.info("STARTING TILEWISE")
 
-    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(credentials_path), stack_id)
+    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(paths.credentials_json), stack_id)
     stack_info = catmaid.get_stack_info(stack_id)
 
     skeleton_ids = ensure_list(skeleton_ids)
 
-    paths = Paths(input_file_dir, output_file_dir)
     paths.initialise(catmaid, stack_info, skeleton_ids, force)
 
     algo_notes = get_algo_notes(paths.projects_dir)
@@ -61,9 +56,9 @@ def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_ra
     if tile_count:
         logger.info('Classifying pixels in {} tiles'.format(tile_count))
 
-        detector_setup_args = paths, paths.skeleton_output_dir(skeleton_id), TILE_SIZE
+        detector_setup_args = paths, TILE_SIZE
 
-        with ProcessRunner(tile_queue, DetectorProcess, detector_setup_args, min(THREADS, tile_count)) as runner:
+        with ProcessRunner(tile_queue, SynapseDetectionProcess, detector_setup_args, min(THREADS, tile_count)) as runner:
             commit_tilewise_results_from_queue(
                 runner.output_queue, paths.output_hdf5, tile_count, TILE_SIZE, workflow_id, catmaid
             )
@@ -89,7 +84,7 @@ def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_id, ro
 
         seg_setup_args = paths, catmaid
 
-        with ProcessRunner(synapse_queue, NeuronSegmenterProcess, seg_setup_args, min(THREADS, synapse_count)) as runner:
+        with ProcessRunner(synapse_queue, SkeletonAssociationProcess, seg_setup_args, min(THREADS, synapse_count)) as runner:
             commit_node_association_results_from_queue(runner.output_queue, synapse_count, project_workflow_id, catmaid)
 
     else:
@@ -160,9 +155,9 @@ if __name__ == "__main__":
 
         force = 1
 
-        args_list = [
-            cred_path, stack_id, input_dir, skel_ids
-        ]
+        paths = Paths(cred_path, input_dir)
+
+        args_list = [paths, stack_id, skel_ids]
         kwargs_dict = {'force': force}
     else:
         parser = argparse.ArgumentParser()
@@ -175,20 +170,25 @@ if __name__ == "__main__":
                             help="Skeleton IDs in CATMAID")
         parser.add_argument('-o', '--output_dir', default=None,
                             help='A directory containing output files')
-        parser.add_argument('-r', '--roi_radius_px', default=DEFAULT_ROI_RADIUS,
+        parser.add_argument('-r', '--roi_radius_px', default=DEFAULT_ROI_RADIUS_PX,
                             help='The radius (in pixels) around each skeleton node to search for synapses')
         parser.add_argument('-f', '--force', type=int, default=0,
                             help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
+        parser.add_argument('-d', '--debug_images', type=int, default=0,
+                            help='Whether to store debug images'
+                            )
 
         args = parser.parse_args()
+
         output_dir = args.output_dir or args.input_file_dir
-        args_list = [
-            args.credentials_path, args.stack_id, args.skeleton_ids, args.input_file_dir, output_dir,
-            args.roi_radius_px, args.force
-        ]
+        os.environ['SS_DEBUG_IMAGES'] = int(DEBUG) or os.environ.get('SS_DEBUG_IMAGES', False) or args.debug_images
+
+        paths = Paths(args.credentials_path, args.input_dir, args.output_dir)
+
+        args_list = [paths, args.stack_id, args.skeleton_ids, args.roi_radius_px, args.force]
         kwargs_dict = {}  # must be empty
 
-    log_listener = setup_logging(output_dir, args_list, kwargs_dict, LOG_LEVEL)
+    log_listener = setup_logging(paths.output_dir, args_list, kwargs_dict, LOG_LEVEL)
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.NOTSET)

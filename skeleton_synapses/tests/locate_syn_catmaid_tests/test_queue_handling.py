@@ -1,3 +1,4 @@
+import os
 import multiprocessing as mp
 import time
 from Queue import Empty
@@ -5,7 +6,7 @@ from Queue import Empty
 import mock
 import pytest
 
-from skeleton_synapses.dto import NeuronSegmenterOutput
+from skeleton_synapses.dto import SkeletonAssociationOutput
 from skeleton_synapses.parallel.queues import iterate_queue, commit_node_association_results_from_queue
 
 
@@ -75,7 +76,7 @@ def test_iterate_queue_overpopulated():
 def test_commit_node_association_results_from_queue(catmaid):
     item_count = 10
     items = [
-        NeuronSegmenterOutput('tnid{}'.format(i), 'ssid'.format(i), 'contact{}'.format(i)) for i in range(item_count)
+        SkeletonAssociationOutput('tnid{}'.format(i), 'ssid'.format(i), 'contact{}'.format(i)) for i in range(item_count)
     ]
     expected_args = [('ssid'.format(i), 'tnid{}'.format(i), 'contact{}'.format(i)) for i in range(item_count)]
 

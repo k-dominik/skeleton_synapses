@@ -14,7 +14,7 @@ import numpy as np
 import vigra
 
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
-from skeleton_synapses.constants import DEBUG, ROOT_DIR, ALGO_HASH
+from skeleton_synapses.constants import ROOT_DIR, ALGO_HASH
 
 HDF5_NAME = "tilewise_image_store.hdf5"
 LABEL_DTYPE = np.int64
@@ -39,7 +39,7 @@ def ensure_list(value):
         return [value]
 
 
-def ensure_description_file(catmaid, description_path, stack_id, include_offset=False, force=False):
+def ensure_description_file(catmaid, description_path, stack_id, include_offset=False, force=False, throw_on_missing=False):
     """
 
     Parameters
@@ -54,6 +54,9 @@ def ensure_description_file(catmaid, description_path, stack_id, include_offset=
     bool
         Whether a new volume description was created
     """
+    if throw_on_missing and not os.path.isfile(description_path):
+        raise AssertionError('Description file missing from ' + description_path)
+
     if force or not os.path.isfile(description_path):
         volume_description_dict = catmaid.get_stack_description(stack_id, include_offset=include_offset)
         with open(description_path, 'w') as f:
@@ -61,17 +64,24 @@ def ensure_description_file(catmaid, description_path, stack_id, include_offset=
         return True
 
 
-def ensure_skel_output_dir(skel_output_dir, skel_id, catmaid_ss, stack_id, force=False):
-    if skel_output_dir is None:
-        return
-    # Name the output directory with the skeleton id
+def ensure_dir(path, force=False, throw_on_missing=False):
+    if throw_on_missing and not os.path.isdir(path):
+        raise AssertionError('Path {} is missing'.format(path))
+
     if force:
         try:
-            shutil.rmtree(skel_output_dir, ignore_errors=True)
+            shutil.rmtree(path, ignore_errors=True)
         except OSError:
             pass
 
-    mkdir_p(skel_output_dir)
+    mkdir_p(path)
+
+
+def ensure_skel_output_dir(skel_output_dir, skel_id, catmaid_ss, stack_id, force=False, throw_on_missing=False):
+    if skel_output_dir is None:
+        return
+    # Name the output directory with the skeleton id
+    ensure_dir(skel_output_dir, force, throw_on_missing)
 
     skel_path = os.path.join(skel_output_dir, 'tree_geometry.json')
     skel_data = catmaid_ss.get_transformed_treenode_and_connector_geometry(stack_id, skel_id)
@@ -80,10 +90,13 @@ def ensure_skel_output_dir(skel_output_dir, skel_id, catmaid_ss, stack_id, force
 
 
 class Paths(object):
-    def __init__(self, input_file_dir, output_file_dir=None):
+    def __init__(self, credentials_path, input_file_dir, output_file_dir=None, debug_images=False):
         self.root_dir = ROOT_DIR
+
+        self.credentials_json = credentials_path
         self.input_dir = input_file_dir
         self.output_dir = output_file_dir or self.input_dir
+        self._debug_images = debug_images
 
         self.projects_dir = os.path.join(input_file_dir, 'projects')
 
@@ -93,25 +106,75 @@ class Paths(object):
         self.output_hdf5 = os.path.join(output_file_dir, HDF5_NAME)
         self.description_json = os.path.join(input_file_dir, PROJECT_NAME + '-description-NO-OFFSET.json')
 
-    def skeleton_output_dir(self, skeleton_id):
-        return os.path.join(self.output_dir, 'skeletons', str(skeleton_id)) if DEBUG else None
+        self.debug_dir = os.path.join(self.output_dir, 'debug') if self._debug_images else None
 
-    def initialise(self, catmaid, stack_info, skeleton_ids, force=False):
+        self.debug_skel_dir = os.path.join(self.debug_dir, 'skeletons') if self._debug_images else None
+        self.debug_synapse_dir = os.path.join(self.debug_dir, 'synapses') if self._debug_images else None
+        self.debug_tile_dir = os.path.join(self.debug_dir, 'tiles') if self._debug_images else None
+
+        self.initialised = False
+
+    def skeleton_output_dir(self, skeleton_id):
+        return os.path.join(self.debug_skel_dir, str(skeleton_id)) if self._debug_images else None
+
+    def initialise(self, catmaid, stack_info, skeleton_ids, force=False, throw_on_missing=False):
+        if self.initialised:
+            logger.warning('Paths already initialised, ignoring second initialisation call')
+            return
+
         for dir_path in [self.root_dir, self.input_dir, self.output_dir, self.projects_dir]:
             assert os.path.isdir(dir_path)
         for file_path in [self.autocontext_ilp, self.multicut_ilp]:
             assert os.path.isfile(file_path)
 
-        ensure_hdf5(stack_info, self.output_hdf5, force)
-        ensure_description_file(catmaid, self.description_json, stack_info['sid'], force=False)
-        for skeleton_id in skeleton_ids:
-            ensure_skel_output_dir(
-                self.skeleton_output_dir(skeleton_id), skeleton_id, catmaid, stack_info['sid'], force
-            )
+        ensure_hdf5(stack_info, self.output_hdf5, force, throw_on_missing)
+        ensure_description_file(catmaid, self.description_json, stack_info['sid'],
+                                force=False, throw_on_missing=throw_on_missing)
+
+        if self._debug_images:
+            ensure_dir(self.debug_synapse_dir, force, throw_on_missing)
+            ensure_dir(self.debug_tile_dir, force, throw_on_missing)
+            ensure_dir(self.debug_skel_dir, force, throw_on_missing)
+            for skeleton_id in skeleton_ids:
+                ensure_skel_output_dir(
+                    self.skeleton_output_dir(skeleton_id), skeleton_id, catmaid, stack_info['sid'],
+                    force, throw_on_missing
+                )
+
+        self.initialised = True
+
+    def __str__(self):
+        return 'Paths[{}]'.format(json.dumps(self.__dict__, sort_keys=True, indent=2))
+
+
+def get_2d_axistags(dataset, default=None, eliminate='z'):
+    """
+
+    Parameters
+    ----------
+    dataset : h5py.Dataset
+    default : str
+        Axistags to return if they are not stored in the dataset
+    eliminate : str
+        Axes to eliminate from the dataset in order to make it planar
+
+    Returns
+    -------
+    str
+    """
+    axistags = dataset.attrs.get('axistags')
+    if axistags is None:
+        if default:
+            return default
+        else:
+            raise ValueError('No axistags found in dataset {}, and no defaults given'.format(dataset.name))
+
+    return ''.join(char for char in axistags if char not in eliminate)
 
 
 def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
     """
+    Will take axistags from hdf5 if they exist, otherwise assume subset of 'zyxct'
 
     Parameters
     ----------
@@ -122,17 +185,19 @@ def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
     Returns
     -------
     (vigra.VigraArray, vigra.VigraArray)
+        synapse_cc_xy, predictions_xyc
     """
     # convert roi into a tuple of slice objects which can be used by numpy for indexing
     roi_slices = roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0])
 
     with h5py.File(hdf5_path, 'r') as f:
         synapse_cc_xy = vigra.taggedView(
-            f['slice_labels'], axistags=f['slice_labels'].attrs['axistags']
-        )[roi_slices].transposeToOrder('V')
+            f['slice_labels'][roi_slices], axistags=get_2d_axistags(f['slice_labels'], 'yx')
+        ).transposeToOrder('V')
+
         predictions_xyc = vigra.taggedView(
-            f['pixel_predictions'], axistags=f['pixel_predictions'].attrs['axistags']
-        )[roi_slices].transposeToOrder('V')
+            f['pixel_predictions'][roi_slices], axistags=get_2d_axistags(f['pixel_predictions'], 'yxc')
+        ).transposeToOrder('V')
 
     # if squeeze:
     #     return synapse_cc_xy.squeeze(), predictions_xyc.squeeze()
@@ -214,14 +279,12 @@ def mkdir_p(path):
     """
     try:
         os.makedirs(path)
-        created = True
+        return True
     except OSError as exc:  # Python >2.5
         if exc.errno == errno.EEXIST and os.path.isdir(path):
-            created = False
+            return False
         else:
             raise
-
-    return created
 
 
 def get_algo_notes(projects_dir):
@@ -263,7 +326,10 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
     return labels
 
 
-def ensure_hdf5(stack_info, hdf5_path, force=False):
+def ensure_hdf5(stack_info, hdf5_path, force=False, throw_on_missing=False):
+    if throw_on_missing and not os.path.isfile(hdf5_path):
+        raise AssertionError('HDF5 file missing from ' + hdf5_path)
+
     if force or not os.path.isfile(hdf5_path):
         if os.path.isfile(hdf5_path):
             backup_path = os.path.join(
@@ -337,3 +403,20 @@ def hash_algorithm(*paths):
         logger.warning('Ignoring real algorithm hash, using hardcoded value'.format(ALGO_HASH))
     logger.debug('Algorithm hash is %s', digest)
     return digest
+
+
+def dump_images(path, roi_xyz=None, **kwargs):
+    """
+    Writes set of vigra arrays to an HDF5 file.
+
+    Parameters
+    ----------
+    path : str
+    roi_xyz : np.array
+    kwargs : dict of {str: vigra.VigraArray}
+    """
+    with h5py.File(path) as f:
+        for name, arr in kwargs.items():
+            arr.writeHDF5(f, name)
+        if roi_xyz:
+            f.create_dataset('roi_xyz', data=roi_xyz)

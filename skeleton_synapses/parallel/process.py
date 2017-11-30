@@ -1,19 +1,20 @@
+import os
 import logging
 import multiprocessing as mp
 import time
 
-import vigra
-
 from lazyflow.request import Request
 from lazyflow.utility.timer import Timer
 
-from skeleton_synapses.helpers.files import cached_synapses_predictions_for_roi
+from skeleton_synapses.helpers.files import cached_synapses_predictions_for_roi, dump_images
 from skeleton_synapses.helpers.roi import tile_index_to_bounds
-from skeleton_synapses.helpers.segmentation import get_synapse_segment_overlaps, get_node_associations
-from skeleton_synapses.dto import DetectorOutput
+from skeleton_synapses.helpers.segmentation import (
+    get_synapse_segment_overlaps, get_node_associations, node_locations_to_array
+)
+from skeleton_synapses.dto import SynapseDetectionOutput
 from skeleton_synapses.ilastik_utils.projects import setup_classifier, setup_classifier_and_multicut
 from skeleton_synapses.ilastik_utils.analyse import (
-    fetch_raw_and_predict_for_node, labeled_synapses_for_node, raw_data_for_roi, segmentation_for_img
+    fetch_and_predict, label_synapses, raw_data_for_roi, segmentation_for_img
 )
 from skeleton_synapses.parallel.base_classes import DebuggableProcess, LeakyProcess
 
@@ -72,16 +73,16 @@ class CaretakerProcess(DebuggableProcess):
             del inner_process
 
 
-class DetectorProcess(LeakyProcess):
-    def __init__(self, input_queue, output_queue, paths, skel_output_dir, tile_size, debug=False, name=None):
-        super(DetectorProcess, self).__init__(input_queue, debug, name)
+class SynapseDetectionProcess(LeakyProcess):
+    def __init__(self, input_queue, output_queue, paths, tile_size, debug=False, name=None):
+        super(SynapseDetectionProcess, self).__init__(input_queue, debug, name)
         self.output_queue = output_queue
 
-        self.skel_output_dir = skel_output_dir
         self.tile_size = tile_size
 
         self.opPixelClassification = None
 
+        self.paths = paths
         self.setup_args = paths.description_json, paths.autocontext_ilp
 
     def setup(self):
@@ -98,24 +99,27 @@ class DetectorProcess(LeakyProcess):
             roi_xyz = tile_index_to_bounds(tile_idx, self.tile_size)
 
             # GET AND CLASSIFY PIXELS
-            predictions_xyc = fetch_raw_and_predict_for_node(
-                None, roi_xyz, self.skel_output_dir, self.opPixelClassification
-            )
+            raw_xy, predictions_xyc = fetch_and_predict(roi_xyz, self.opPixelClassification)
+
             # DETECT SYNAPSES
-            synapse_cc_xy = labeled_synapses_for_node(None, roi_xyz, self.skel_output_dir, predictions_xyc)
+            synapse_cc_xy = label_synapses(predictions_xyc)
             logging.getLogger(self.inner_logger.name + '.timing').info("NODE TIMER: {}".format(timer.seconds()))
 
         self.inner_logger.debug(
             "Detected synapses in tile {}; {} tiles remaining".format(tile_idx, self.input_queue.qsize())
         )
 
-        self.output_queue.put(DetectorOutput(
-            tile_idx, vigra.taggedView(predictions_xyc, axistags='xyc'), vigra.taggedView(synapse_cc_xy,
-                                                                                          axistags='xy')))
+        self.output_queue.put(SynapseDetectionOutput(tile_idx, predictions_xyc, synapse_cc_xy))
+
+        if int(os.getenv('SS_DEBUG_IMAGES', 0)):
+            path = os.path.join(
+                    self.paths.debug_tile_dir, 'x{}-y{}-z{}.hdf5'.format(tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx)
+            )
+            dump_images(path, roi_xyz, raw=raw_xy, synapse_cc=synapse_cc_xy, predictions=predictions_xyc)
 
 
 # class NeuronSegmenterProcess(DebuggableProcess):
-class NeuronSegmenterProcess(LeakyProcess):
+class SkeletonAssociationProcess(LeakyProcess):
     """
     Process which creates its own pixel classifier and multicut workflow, pulls jobs from one queue and returns
     outputs to another queue.
@@ -132,11 +136,12 @@ class NeuronSegmenterProcess(LeakyProcess):
             Whether to instantiate a serial version for debugging purposes
         name : str
         """
-        super(NeuronSegmenterProcess, self).__init__(input_queue, debug, name)
+        super(SkeletonAssociationProcess, self).__init__(input_queue, debug, name)
         # super(NeuronSegmenterProcess, self).__init__(debug)
         self.input_queue = input_queue
         self.output_queue = output_queue
 
+        self.paths = paths
         self.hdf5_path = paths.output_hdf5
 
         self.opPixelClassification = self.multicut_shell = None
@@ -163,11 +168,11 @@ class NeuronSegmenterProcess(LeakyProcess):
     def execute(self):
         # todo: test (needs refactors)
         logger.debug('Waiting for item')
-        roi_xyz, synapse_slice_ids = self.input_queue.get()
+        roi_xyz, synapse_slice_ids, synapse_object_id = self.input_queue.get()
         self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(roi_xyz, self.input_queue.qsize()))
 
         with Timer() as node_timer:
-            raw_xy = raw_data_for_roi(roi_xyz, None, self.opPixelClassification)
+            raw_xy = raw_data_for_roi(roi_xyz, self.opPixelClassification)
             synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, self.hdf5_path)
 
             log_str = 'Image shapes: \n\tRaw {}\n\tSynapse_cc {}\n\tPredictions {}'.format(
@@ -198,6 +203,16 @@ class NeuronSegmenterProcess(LeakyProcess):
             self.output_queue.put(node_segmenter_outputs)
 
             logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
+
+            if int(os.getenv('SS_DEBUG_IMAGES', 0)):
+                node_locations_arr = node_locations_to_array(segmentation_xy.shape, node_locations)
+                path = os.path.join(
+                    self.paths.debug_synapse_dir, '{}_{}.hdf5'.format(synapse_object_id, roi_xyz[0, 2])
+                )
+                dump_images(
+                    path, roi_xyz, raw=raw_xy, synapse_cc=synapse_cc_xy, predictions=predictions_xyc,
+                    segmentation=segmentation_xy, node_locations=node_locations_arr
+                )
 
 
 class ProcessRunner(object):

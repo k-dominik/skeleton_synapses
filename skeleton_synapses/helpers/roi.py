@@ -4,13 +4,13 @@ from itertools import product, starmap
 import numpy as np
 
 from skeleton_synapses.dto import TileIndex
-from skeleton_synapses.constants import DEFAULT_ROI_RADIUS
+from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX
 
 
 logger = logging.getLogger(__name__)
 
 
-def nodes_to_tile_indexes(node_infos, tile_size, minimum_radius=DEFAULT_ROI_RADIUS):
+def nodes_to_tile_indexes(node_infos, tile_size, minimum_radius=DEFAULT_ROI_RADIUS_PX):
     """
 
     Parameters

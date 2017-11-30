@@ -8,7 +8,6 @@ from ilastik.applets.edgeTrainingWithMulticut.opEdgeTrainingWithMulticut import 
 from ilastik.applets.thresholdTwoLevels import OpThresholdTwoLevels
 from lazyflow.graph import Graph
 
-from skeleton_synapses.helpers.files import write_output_image
 from skeleton_synapses.helpers.images import are_same_xy
 from skeleton_synapses.helpers.roi import roi_around_node
 
@@ -19,8 +18,7 @@ SYNAPSE_CHANNEL = 2
 logger = logging.getLogger(__name__)
 
 
-def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClassification, multicut_workflow,
-                         relabeler=None):
+def fetch_predict_detect_segment(roi_xyz, opPixelClassification, multicut_workflow):
     """
     Run raw_data_for_node, predictions_for_node, and segmentation_for_node and return their results
 
@@ -28,7 +26,6 @@ def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClass
     ----------
     node_info
     roi_radius_px
-    skel_output_dir
     opPixelClassification
     multicut_workflow
         multicut_shell.workflow
@@ -38,105 +35,52 @@ def perform_segmentation(node_info, roi_radius_px, skel_output_dir, opPixelClass
     tuple
         predictions_xyc, synapse_cc_xy, segmentation_xy
     """
-    roi_xyz = roi_around_node(node_info, roi_radius_px)
 
     # GET AND CLASSIFY PIXELS
-    raw_xy = raw_data_for_node(node_info, roi_xyz, skel_output_dir, opPixelClassification)
-    predictions_xyc = predictions_for_node(node_info, roi_xyz, skel_output_dir, opPixelClassification)
+    raw_xy = raw_data_for_roi(roi_xyz, opPixelClassification)
+    predictions_xyc = _predictions_for_roi(roi_xyz, opPixelClassification)
     # DETECT SYNAPSES
-    synapse_cc_xy = labeled_synapses_for_node(node_info, roi_xyz, skel_output_dir, predictions_xyc, relabeler)
+    synapse_cc_xy = label_synapses(predictions_xyc)
     # SEGMENT
-    segmentation_xy = segmentation_for_node(
-        node_info, roi_xyz, skel_output_dir, multicut_workflow, raw_xy, predictions_xyc
-    )
+    segmentation_xy = segmentation_for_img(multicut_workflow, raw_xy, predictions_xyc)
 
-    return predictions_xyc, synapse_cc_xy, segmentation_xy
+    return raw_xy, predictions_xyc, synapse_cc_xy, segmentation_xy
 
 
-def fetch_raw_and_predict_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
+def fetch_and_predict(roi_xyz, opPixelClassification):
     """
+    Fetch raw data and perform pixel classification on it.
 
     Parameters
     ----------
-    node_info : NodeInfo
-        Optional, for logging purposes
-    roi_xyz
-    output_dir
+    roi_xyz : np.array
     opPixelClassification
 
     Returns
     -------
-    array-like
-        Pixel predictions, xyc
+    (vigra.VigraArray, vigra.VigraArray)
+        raw_xy, predictions_xyc
     """
-    raw_data_for_node(None, roi_xyz, output_dir, opPixelClassification)
-    return predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification)
+    raw_xy = raw_data_for_roi(roi_xyz, opPixelClassification)
+    predictions_xyc = _predictions_for_roi(roi_xyz, opPixelClassification)
+    return raw_xy, predictions_xyc
 
 
-def raw_data_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
-    """
-    DEPRECATED. This should only be called through fetch_raw_and_predict_for_node. Left for compatibility purposes.
-
-    Parameters
-    ----------
-    node_info : None
-        Not required
-    roi_xyz
-    output_dir
-    opPixelClassification
-
-    Returns
-    -------
-
-    """
-    return raw_data_for_roi(roi_xyz, output_dir, opPixelClassification)
-
-
-def raw_data_for_roi(roi_xyz, output_dir, opPixelClassification):
-    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
+def raw_data_for_roi(roi_xyz, opPixelClassification):
     raw_xyzc = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1]).wait()
     raw_xyzc = vigra.taggedView(raw_xyzc, 'xyzc')
-    if output_dir:
-        write_output_image(output_dir, raw_xyzc[:, :, 0, :], "raw", roi_name, 'slices')
     raw_xy = raw_xyzc[:, :, 0, 0]
     return raw_xy
 
 
-def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
-    """
-    DEPRECATED. This should only be called through fetch_raw_and_predict_for_node.
-
-    Run classification on the given node with the given operator.
-
-    Parameters
-    ----------
-    node_info : NodeInfo
-        Optional, for logging purposes
-    roi_xyz : array-like
-    output_dir : str
-        Directory in which data should be dumped
-    opPixelClassification
-
-    Returns
-    -------
-    array-like
-        Pixel predictions, xyc
-    """
-    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
-    if node_info:
-        skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
-        logger.debug("skeleton point: {}".format( skeleton_coord ))
-    else:
-        logger.debug('roi name: {}'.format(roi_name))
-
-    # Predict
+def _predictions_for_roi(roi_xyz, opPixelClassification):
+    """Warning: should only be called when opPixelClassification has been populated with raw data"""
     num_classes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.shape[-1]
-    roi_xyzc = np.append(roi_xyz, [[0],[num_classes]], axis=1)
+    roi_xyzc = np.append(roi_xyz, [[0], [num_classes]], axis=1)
     predictions_xyzc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_xyzc).wait()
-    predictions_xyzc = vigra.taggedView( predictions_xyzc, "xyzc" )
-    predictions_xyc = predictions_xyzc[:,:,0,:]
-    if output_dir:
-        write_output_image(output_dir, predictions_xyc, "predictions", roi_name, mode='slices')
+    predictions_xyzc = vigra.taggedView(predictions_xyzc, "xyzc")
+    predictions_xyc = predictions_xyzc[:, :, 0, :]
+
     return predictions_xyc
 
 
@@ -144,31 +88,18 @@ def predictions_for_node(node_info, roi_xyz, output_dir, opPixelClassification):
 opThreshold = OpThresholdTwoLevels(graph=Graph())
 
 
-def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, relabeler=None):
+def label_synapses(predictions_xyc):
     """
 
     Parameters
     ----------
-    node_info : NodeInfo
-        Optional, for logging purposes
-    roi_xyz : array-like
-    output_dir : str
-        Directory in which data should be dumped
     predictions_xyc
-    relabeler : SynapseSliceRelabeler
 
     Returns
     -------
-    array-like
+    vigra.VigraArray
         Numpy array of synapse labels, xy
     """
-    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
-    if node_info:
-        skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
-        logger.debug("skeleton point: {}".format( skeleton_coord ))
-    else:
-        logger.debug('roi name: {}'.format(roi_name))
-
     # Threshold synapses
     opThreshold.Channel.setValue(SYNAPSE_CHANNEL)
     opThreshold.LowThreshold.setValue(0.5)
@@ -180,41 +111,7 @@ def labeled_synapses_for_node(node_info, roi_xyz, output_dir, predictions_xyc, r
     synapse_cc_xy = opThreshold.Output[:].wait()[...,0]
     synapse_cc_xy = vigra.taggedView(synapse_cc_xy, 'xy')
 
-    # Relabel for consistency with previous slice
-    if relabeler:
-        synapse_cc_xy = relabeler.normalize_synapse_ids(synapse_cc_xy, roi_xyz)
-
-    if output_dir:
-        write_output_image(output_dir, synapse_cc_xy[..., None], "synapse_cc", roi_name, mode="slices")
     return synapse_cc_xy
-
-
-def segmentation_for_node(node_info, roi_xyz, output_dir, multicut_workflow, raw_xy, predictions_xyc):
-    """
-
-    Parameters
-    ----------
-    node_info : NodeInfo
-        Optional, for logging purposes
-    roi_xyz
-    output_dir
-    multicut_workflow
-    raw_xy : vigra.VigraArray
-    predictions_xyc : vigra.VigraArray
-
-    Returns
-    -------
-
-    """
-    roi_name = "x{}-y{}-z{}".format(*roi_xyz[0])
-    skeleton_coord = (node_info.x_px, node_info.y_px, node_info.z_px)
-    logger.debug("skeleton point: {}".format( skeleton_coord ))
-
-    segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow)
-
-    if output_dir:
-        write_output_image(output_dir, segmentation_xy[:, :, None], "segmentation", roi_name, 'slices')
-    return segmentation_xy
 
 
 def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):

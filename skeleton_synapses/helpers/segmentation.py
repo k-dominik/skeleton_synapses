@@ -2,10 +2,26 @@ from skimage.morphology import skeletonize
 import numpy as np
 import vigra
 
-from skeleton_synapses.dto import NeuronSegmenterOutput
+from skeleton_synapses.dto import SkeletonAssociationOutput
 
 
 def get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_ids):
+    """
+    Find the neuron segment: synapse slice ID intersections
+
+    Parameters
+    ----------
+    synapse_cc_xy : vigra.VigraArray
+        Synapse slice image
+    segmentation_xy : vigra.VigraArray
+        Neuron segmentation
+    synapse_slice_ids : list
+
+    Returns
+    -------
+    dict
+        {neuron segment : set of synapse slice IDs}
+    """
     # todo: test
     overlapping_segments = dict()
     for synapse_slice_id in synapse_slice_ids:
@@ -20,41 +36,52 @@ def get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_i
 
 
 def get_node_associations(synapse_cc_xy, segmentation_xy, node_locations, overlapping_segments):
+    """
+
+    Parameters
+    ----------
+    synapse_cc_xy : vigra.VigraArray
+    segmentation_xy : vigra.VigraArray
+    node_locations : dict
+        dict whose values are a dicts containing a 'coords' dict (relative within this image) and a 'treenode_id' value
+    overlapping_segments : dict
+        Neuron segment to synapse slice ID
+
+    Returns
+    -------
+    list of SkeletonAssociationOutput
+    """
     # todo: test
-    node_locations_arr = node_locations_to_array(synapse_cc_xy, node_locations)
+    node_locations_arr = node_locations_to_array(synapse_cc_xy.shape, node_locations)
     where_nodes_exist = node_locations_arr >= 0
 
     outputs = []
     for segment, node_id in zip(segmentation_xy[where_nodes_exist], node_locations_arr[where_nodes_exist]):
         for synapse_slice_id in overlapping_segments.get(segment, []):
             contact_px = skeletonize((synapse_cc_xy == synapse_slice_id) * (segmentation_xy == segment)).sum()
-            outputs.append(NeuronSegmenterOutput(node_id, synapse_slice_id, contact_px))
+            outputs.append(SkeletonAssociationOutput(node_id, synapse_slice_id, contact_px))
 
     return outputs
 
 
-def node_locations_to_array(template_array_xy, node_locations):
+def node_locations_to_array(arr_shape, node_locations):
     """
     Given a vigra image in xy and a dict containing xy coordinates, return a vigra image of the same shape, where nodes
     are represented by their integer ID, and every other pixel is -1.
 
     Parameters
     ----------
-    template_array_xy : vigra.VigraArray
+    arr_shape : tuple
+
     node_locations : dict
-        dict whose values are a dicts containing a 'coords' dict and a 'treenode_id' value
+        dict whose values are a dicts containing a 'coords' dict (relative within this image) and a 'treenode_id' value
 
     Returns
     -------
     vigra.VigraArray
     """
-    if not isinstance(template_array_xy, vigra.VigraArray):
-        template_array_xy = vigra.taggedView(template_array_xy, axistags='xy')
-    else:
-        assert template_array_xy.axistags.keys() == ['x', 'y']
+    arr_xy = vigra.taggedView(np.ones(arr_shape) * -1, axistags='xy')
 
-    arr_xy = template_array_xy.copy()
-    arr_xy.fill(-1)
     for node_location in node_locations.values():
         coords = node_location['coords']
         arr_xy[coords['x'], coords['y']] = int(node_location['treenode_id'])

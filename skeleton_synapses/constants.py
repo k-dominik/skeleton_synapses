@@ -1,14 +1,16 @@
 import logging
 import os
 
-DEBUG = False
+DEBUG = bool(int(os.getenv('SS_DEBUG', 0)))
 ALGO_HASH = None  # set to fix algorithm hash
 LOG_LEVEL = logging.DEBUG
 
 DEFAULT_THREADS = 3
 DEFAULT_RAM_MB_PER_PROCESS = 1200
 
-DEFAULT_ROI_RADIUS = 150
+DEFAULT_ROI_RADIUS_PX = 150
+
+DEFAULT_SYNAPSE_DISTANCE_NM = 600
 
 TQDM_KWARGS = {
     'ncols': 50,

@@ -35,8 +35,7 @@ def test_node_locations_to_array():
         }
     }
 
-    template_array = vigra.taggedView(np.random.random(shape), axistags='xy')
-    output = node_locations_to_array(template_array, node_locations)
+    output = node_locations_to_array(shape, node_locations)
 
     assert output[x, y] == int(tnid)
     output[x, y] = -1

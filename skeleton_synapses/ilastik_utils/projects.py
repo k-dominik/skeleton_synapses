@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 
 def setup_classifier(description_file, autocontext_project_path):
     logger.debug('Setting up opPixelClassification')
-    autocontext_shell = open_project(autocontext_project_path, init_logging=False)
+    autocontext_shell = _open_project(autocontext_project_path, init_logging=False)
     assert isinstance(autocontext_shell, HeadlessShell)
     assert isinstance(autocontext_shell.workflow, NewAutocontextWorkflowBase)
 
-    append_lane(autocontext_shell.workflow, description_file, 'xyt')
+    _append_lane(autocontext_shell.workflow, description_file, 'xyt')
 
     # We only use the final stage predictions
     opPixelClassification = autocontext_shell.workflow.pcApplets[-1].topLevelOperator
@@ -37,7 +37,7 @@ def setup_classifier(description_file, autocontext_project_path):
 
 def setup_multicut(multicut_project):
     logger.debug('Setting up multicut_shell')
-    multicut_shell = open_project(multicut_project, init_logging=False)
+    multicut_shell = _open_project(multicut_project, init_logging=False)
     assert isinstance(multicut_shell, HeadlessShell)
     assert isinstance(multicut_shell.workflow, EdgeTrainingWithMulticutWorkflow)
 
@@ -68,7 +68,7 @@ def setup_classifier_and_multicut(description_file, autocontext_project_path, mu
     return opPixelClassification, multicut_shell
 
 
-def open_project( project_path, init_logging=False ):
+def _open_project(project_path, init_logging=False):
     """
     Open a project file and return the HeadlessShell instance.
     """
@@ -82,7 +82,7 @@ def open_project( project_path, init_logging=False ):
     return shell
 
 
-def append_lane(workflow, input_filepath, axisorder=None):
+def _append_lane(workflow, input_filepath, axisorder=None):
     """
     Add a lane to the project file for the given input file.
 
