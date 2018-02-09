@@ -14,7 +14,7 @@ import numpy as np
 import vigra
 
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
-from skeleton_synapses.constants import ROOT_DIR, ALGO_HASH
+from skeleton_synapses.constants import PROJECT_ROOT, ALGO_HASH
 
 HDF5_NAME = "tilewise_image_store.hdf5"
 LABEL_DTYPE = np.int64
@@ -91,7 +91,7 @@ def ensure_skel_output_dir(skel_output_dir, skel_id, catmaid_ss, stack_id, force
 
 class Paths(object):
     def __init__(self, credentials_path, input_file_dir, output_file_dir=None, debug_images=False):
-        self.root_dir = ROOT_DIR
+        self.root_dir = PROJECT_ROOT
 
         self.credentials_json = credentials_path
         self.input_dir = input_file_dir
@@ -172,7 +172,7 @@ def get_2d_axistags(dataset, default=None, eliminate='z'):
     return ''.join(char for char in axistags if char not in eliminate)
 
 
-def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
+def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, synapse_cc=True, predictions=True):
     """
     Will take axistags from hdf5 if they exist, otherwise assume subset of 'zyxct'
 
@@ -193,15 +193,12 @@ def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, squeeze=True):
     with h5py.File(hdf5_path, 'r') as f:
         synapse_cc_xy = vigra.taggedView(
             f['slice_labels'][roi_slices], axistags=get_2d_axistags(f['slice_labels'], 'yx')
-        ).transposeToOrder('V')
+        ).transposeToOrder('V') if synapse_cc else None
 
         predictions_xyc = vigra.taggedView(
             f['pixel_predictions'][roi_slices], axistags=get_2d_axistags(f['pixel_predictions'], 'yxc')
-        ).transposeToOrder('V')
+        ).transposeToOrder('V') if predictions else None
 
-    # if squeeze:
-    #     return synapse_cc_xy.squeeze(), predictions_xyc.squeeze()
-    # else:
     return synapse_cc_xy, predictions_xyc
 
 
@@ -418,5 +415,5 @@ def dump_images(path, roi_xyz=None, **kwargs):
     with h5py.File(path) as f:
         for name, arr in kwargs.items():
             arr.writeHDF5(f, name)
-        if roi_xyz:
+        if roi_xyz is not None:
             f.create_dataset('roi_xyz', data=roi_xyz)

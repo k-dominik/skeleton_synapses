@@ -80,7 +80,7 @@ def node_locations_to_array(arr_shape, node_locations):
     -------
     vigra.VigraArray
     """
-    arr_xy = vigra.taggedView(np.ones(arr_shape) * -1, axistags='xy')
+    arr_xy = vigra.VigraArray(arr_shape, dtype=np.int64, value=-1, axistags=vigra.AxisTags('xy'))
 
     for node_location in node_locations.values():
         coords = node_location['coords']

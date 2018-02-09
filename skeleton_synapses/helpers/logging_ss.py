@@ -11,7 +11,7 @@ import warnings
 from logutils.queue import QueueHandler, QueueListener
 from tqdm import tqdm
 
-from skeleton_synapses.constants import ROOT_DIR
+from skeleton_synapses.constants import PROJECT_ROOT
 from skeleton_synapses.helpers.files import mkdir_p
 
 LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
@@ -44,7 +44,7 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     log_file = os.path.join(log_dir, 'locate_synapses.txt')
 
     # set up ilastik's default logging (without adding handlers)
-    with open(os.path.join(ROOT_DIR, 'config', 'ilastik_logging.json')) as f:
+    with open(os.path.join(PROJECT_ROOT, 'config', 'ilastik_logging.json')) as f:
         dictConfig(json.load(f))
 
     # set up handlers

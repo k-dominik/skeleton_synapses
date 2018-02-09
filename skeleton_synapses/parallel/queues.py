@@ -1,6 +1,10 @@
 import logging
 import multiprocessing as mp
-from Queue import Empty
+
+try:
+    from queue import Empty
+except ImportError:
+    from Queue import Empty
 
 from tqdm import tqdm
 
