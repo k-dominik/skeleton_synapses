@@ -8,6 +8,7 @@ WORK IN PROGRESS
 A utility for automatically detecting synapses, compatible with [CATMAID](https://catmaid.readthedocs.io/en/stable/)
 and [synapsesuggestor](https://github.com/clbarnes/CATMAID-synapsesuggestor).
 
+Due to the combination of dependencies, `skeleton_synapses` works under py2.7 only.
 
 ## INSTALLATION:
 
@@ -17,8 +18,6 @@ Use `pip install -r requirements/prod.txt` for production installations,
 add `-r requirements/test.txt` to run unit tests, and
 add `-r requirements/travis.txt` for continuous integration and coverage
 with [travis](https://travis-ci.org/) and [coveralls](https://coveralls.io/).
-
-`./bin/create_env` may help, and includes some post-fixes I found necessary locally.
 
 
 ## USAGE:
