@@ -3,9 +3,16 @@ import json
 import tempfile
 import shutil
 
+try:
+    import mock
+except ImportError:
+    from unittest import mock
+
 import pytest
 import numpy as np
 import vigra
+
+from skeleton_synapses.tests.constants import PROJECT_ID, BASE_URL
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixture_data')
 
@@ -54,3 +61,21 @@ def img_2(img_square):
     im = img_square.copy()
     im[11:14, 11:14] = 2
     return im
+
+
+@pytest.fixture
+def compact_detail():
+    return get_fixture_data('compact_detail.json')
+
+
+@pytest.fixture
+def synapses_near_skeleton():
+    return get_fixture_data('synapses_near_skeleton.json')
+
+
+@pytest.fixture
+def catmaid_mock():
+    catmaid = mock.Mock()
+    catmaid.project_id = PROJECT_ID
+    catmaid.base_url = BASE_URL
+    return catmaid

@@ -2,6 +2,8 @@ import json
 from collections import defaultdict
 import logging
 
+from six import string_types
+
 import networkx as nx
 import numpy as np
 
@@ -73,6 +75,17 @@ def make_tile_url_template(image_base):
     May not be correct for all bases
     """
     return make_url(image_base, "{z_index}/0/{y_index}_{x_index}.jpg")
+
+
+def to_iterable(arg):
+    if isinstance(arg, string_types):
+        return [arg]
+    try:
+        return list(arg)
+    except TypeError as e:
+        if "is not iterable" in str(e):
+            return [arg]
+        raise e
 
 
 def get_nodes_between(graph, root=None, leaves=None):
@@ -327,15 +340,15 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
             ('ext/synapsesuggestor/treenode-association', self.project_id, 'workflow'), params
         )['project_workflow_id']
 
-    def get_node_infos(self, skeleton_id, stack_id_or_title=None, root=None, leaves=None):
+    def get_node_infos(self, skeleton_ids, stack_id_or_title=None, root=None, leaves=None):
         """
         Get locations of treenodes as xyz coordinates. If a stack id or title is given, transform the coordinates into
         stack coords.
 
         Parameters
         ----------
-        skeleton_id
-        stack_id_or_title
+        skeleton_ids : int or str or iterable
+        stack_id_or_title : int or str
 
         Returns
         -------
@@ -344,10 +357,16 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
         """
         transformer = self.get_coord_transformer(stack_id_or_title)
         coord_type = int if stack_id_or_title is not None else float
-        treenodes = self.get((self.project_id, 'skeletons', skeleton_id, 'compact-detail'))[0]
-        treenodes_arr = np.array(treenodes)
-        coords = transformer.project_to_stack_array(treenodes_arr[:, 3:6].astype(float))
-        return get_subarbor_node_infos(treenodes_arr[:, :2], coords.astype(coord_type), root, leaves)
+        skeleton_ids = set(to_iterable(skeleton_ids))
+
+        node_infos = []
+        for skeleton_id in skeleton_ids:
+            treenodes = self.get((self.project_id, 'skeletons', skeleton_id, 'compact-detail'))[0]
+            treenodes_arr = np.array(treenodes)
+            coords = transformer.project_to_stack_array(treenodes_arr[:, 3:6].astype(float))
+            node_infos.extend(get_subarbor_node_infos(treenodes_arr[:, :2], coords.astype(coord_type), root, leaves))
+
+        return node_infos
 
     def get_detected_tiles(self, workflow_id):
         """
@@ -444,14 +463,19 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
     def treenodes_by_tag(self, *tags):
         return self.get(('ext/synapsesuggestor/training-data', self.project_id, 'treenodes/label'), {'tags': tags})
 
-    def get_synapses_near_skeleton(self, skeleton_id, project_workflow_id=None, distance=600):
-        params = {'skid': skeleton_id, 'distance': distance}
-        if project_workflow_id is not None:
-            params['project_workflow_id'] = project_workflow_id
+    def get_synapses_near_skeletons(self, skeleton_ids, project_workflow_id=None, distance=600):
+        skids = to_iterable(skeleton_ids)
 
-        response = self.get(('ext/synapsesuggestor/treenode-association', self.project_id, 'get-distance'), params)
+        output = []
+        for skid in skids:
+            params = {'skid': skid, 'distance': distance}
+            if project_workflow_id is not None:
+                params['project_workflow_id'] = project_workflow_id
 
-        return [dict(zip(response['columns'], row)) for row in response['data']]
+            response = self.get(('ext/synapsesuggestor/treenode-association', self.project_id, 'get-distance'), params)
+            output.extend(dict(zip(response['columns'], row)) for row in response['data'])
+
+        return output
 
     def get_nodes_in_roi(self, roi_xyz, stack_id_or_title=None):
         """

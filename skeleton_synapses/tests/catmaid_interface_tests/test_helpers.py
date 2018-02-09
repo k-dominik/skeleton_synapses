@@ -5,7 +5,8 @@ import networkx as nx
 import numpy as np
 
 from skeleton_synapses.catmaid_interface import (
-    get_consecutive, extend_slices, make_tile_url_template, get_nodes_between, get_subarbor_node_infos, in_roi
+    get_consecutive, extend_slices, make_tile_url_template, get_nodes_between, get_subarbor_node_infos, in_roi,
+    to_iterable
 )
 from skeleton_synapses.dto import NodeInfo
 
@@ -39,6 +40,15 @@ def test_make_tile_url_template():
     expected_output = "www.google.com/{z_index}/0/{y_index}_{x_index}.jpg"
 
     assert make_tile_url_template(test_input) == expected_output
+
+
+@pytest.mark.parametrize('arg,expected', [
+    (12, [12]),
+    ('potato', ['potato']),
+    ([1, 2, 3], [1, 2, 3])
+])
+def test_to_iterable(arg, expected):
+    assert to_iterable(arg) == expected
 
 
 @pytest.fixture()
