@@ -17,6 +17,7 @@ from skeleton_synapses.ilastik_utils.analyse import (
     fetch_and_predict, label_synapses, raw_data_for_roi, segmentation_for_img
 )
 from skeleton_synapses.parallel.base_classes import DebuggableProcess, LeakyProcess
+from skeleton_synapses.parallel.progress_server import QueueMonitorThread, DummyThread
 
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,7 @@ class SkeletonAssociationProcess(LeakyProcess):
 
 
 class ProcessRunner(object):
-    def __init__(self, input_queue, constructor, setup_args, threads):
+    def __init__(self, input_queue, constructor, setup_args, threads, monitor_kwargs=None):
         self.input_queue = input_queue
         self.constructor = constructor
         self.setup_args = setup_args
@@ -230,10 +231,19 @@ class ProcessRunner(object):
             for idx in range(threads)
         ]
 
+        if monitor_kwargs:
+            if not isinstance(monitor_kwargs, dict):
+                monitor_kwargs = dict()
+
+            self.monitor = QueueMonitorThread(input_queue, **monitor_kwargs)
+        else:
+            self.monitor = DummyThread()
+
     def __enter__(self):
         while self.input_queue.qsize() < self.threads:
             time.sleep(0.1)
 
+        self.monitor.start()
         for container in self.containers:
             container.start()
 
@@ -242,3 +252,4 @@ class ProcessRunner(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         for container in self.containers:
             container.join()
+        self.monitor.stop()

@@ -57,7 +57,10 @@ def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_r
 
         detector_setup_args = paths, TILE_SIZE
 
-        with ProcessRunner(tile_queue, SynapseDetectionProcess, detector_setup_args, min(THREADS, tile_count)) as runner:
+        with ProcessRunner(
+                tile_queue, SynapseDetectionProcess, detector_setup_args, min(THREADS, tile_count),
+                {'name': "Synapse Detection", "items_total": tile_count}
+        ) as runner:
             commit_tilewise_results_from_queue(
                 runner.output_queue, paths.output_hdf5, tile_count, TILE_SIZE, workflow_id, catmaid
             )
@@ -76,14 +79,15 @@ def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, r
         catmaid, roi_radius_px, project_workflow_id, stack_info, skeleton_ids
     )
 
-    # timestamper.log('finished getting synapse planes'.format(synapse_count))
-
     if synapse_count:
         logger.info('Segmenting {} synapse windows'.format(synapse_count))
 
         seg_setup_args = paths, catmaid
 
-        with ProcessRunner(synapse_queue, SkeletonAssociationProcess, seg_setup_args, min(THREADS, synapse_count)) as runner:
+        with ProcessRunner(
+                synapse_queue, SkeletonAssociationProcess, seg_setup_args, min(THREADS, synapse_count),
+                {'name': "Skeleton Association", "items_total": synapse_count}
+        ) as runner:
             commit_node_association_results_from_queue(runner.output_queue, synapse_count, project_workflow_id, catmaid)
 
     else:
