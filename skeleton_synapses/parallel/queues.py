@@ -36,14 +36,14 @@ def populate_tile_input_queue(catmaid, roi_radius_px, workflow_id, node_infos):
     return tile_queue, tile_count
 
 
-def populate_synapse_queue(catmaid, roi_radius_px, project_workflow_id, stack_info, skeleton_id):
+def populate_synapse_queue(catmaid, roi_radius_px, project_workflow_id, stack_info, skeleton_ids):
     synapse_queue = mp.Queue()
     synapse_count = 0
 
     roi_radius_nm = roi_radius_px * stack_info['resolution']['x']  # assumes XY isotropy
-    logger.debug('Getting synapses spatially near skeleton {}'.format(skeleton_id))
-    synapses_near_skeleton = catmaid.get_synapses_near_skeleton(skeleton_id, project_workflow_id, roi_radius_nm)
-    logger.debug('Found {} synapse planes near skeleton {}'.format(len(synapses_near_skeleton), skeleton_id))
+    logger.debug('Getting synapses spatially near skeleton {}'.format(skeleton_ids))
+    synapses_near_skeleton = catmaid.get_synapses_near_skeletons(skeleton_ids, project_workflow_id, roi_radius_nm)
+    logger.debug('Found {} synapse planes near skeleton {}'.format(len(synapses_near_skeleton), skeleton_ids))
     slice_id_tuples = set()
     for synapse in tqdm(synapses_near_skeleton, desc='Populating synapse plane queue', unit='synapse planes',
                         **TQDM_KWARGS):

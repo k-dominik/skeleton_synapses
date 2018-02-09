@@ -44,12 +44,11 @@ def main(paths, stack_id, skeleton_ids, roi_radius_px=DEFAULT_ROI_RADIUS_PX, for
     else:
         algo_hash = hash_algorithm(paths.autocontext_ilp, paths.multicut_ilp)
 
-    for skeleton_id in tqdm(skeleton_ids, desc='Skeleton processing', unit='skeletons', **TQDM_KWARGS):
-        locate_synapses(catmaid, paths, stack_info, skeleton_id, roi_radius_px, algo_hash, algo_notes)
+    locate_synapses(catmaid, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes)
 
 
-def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_radius_px):
-    node_infos = catmaid.get_node_infos(skeleton_id, stack_info['sid'])
+def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px):
+    node_infos = catmaid.get_node_infos(skeleton_ids, stack_info['sid'])
 
     tile_queue, tile_count = populate_tile_input_queue(catmaid, roi_radius_px, workflow_id, node_infos)
 
@@ -68,13 +67,13 @@ def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_ra
         tile_queue.close()
 
 
-def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_radius_px, algo_hash, algo_notes):
+def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes):
     project_workflow_id = catmaid.get_project_workflow_id(
         workflow_id, algo_hash, association_notes=algo_notes['skeleton_association']
     )
 
     synapse_queue, synapse_count = populate_synapse_queue(
-        catmaid, roi_radius_px, project_workflow_id, stack_info, skeleton_id
+        catmaid, roi_radius_px, project_workflow_id, stack_info, skeleton_ids
     )
 
     # timestamper.log('finished getting synapse planes'.format(synapse_count))
@@ -92,7 +91,7 @@ def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_id, ro
         synapse_queue.close()
 
 
-def locate_synapses(catmaid, paths, stack_info, skeleton_id, roi_radius_px, algo_hash, algo_notes):
+def locate_synapses(catmaid, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes):
     """
 
     Parameters
@@ -123,11 +122,11 @@ def locate_synapses(catmaid, paths, stack_info, skeleton_id, roi_radius_px, algo
 
     timestamper.log('started detecting synapses')
 
-    detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_radius_px)
+    detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px)
 
     timestamper.log('finished detecting synapses; started associating skeletons')
 
-    associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_id, roi_radius_px, algo_hash, algo_notes)
+    associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes)
 
     logger.info("DONE with skeleton.")
 
