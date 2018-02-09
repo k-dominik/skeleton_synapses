@@ -1,9 +1,17 @@
 import os
 import multiprocessing as mp
 import time
-from Queue import Empty
 
-import mock
+try:
+    from queue import Empty
+except ImportError:
+    from Queue import Empty
+
+try:
+    from unittest import mock
+except ImportError:
+    import mock
+
 import pytest
 
 from skeleton_synapses.dto import SkeletonAssociationOutput

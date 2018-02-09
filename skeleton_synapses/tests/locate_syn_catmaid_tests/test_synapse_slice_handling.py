@@ -2,7 +2,11 @@ from __future__ import division
 import json
 import os
 
-import mock
+try:
+    from unittest import mock
+except ImportError:
+    import mock
+
 import pytest
 import geojson
 import numpy as np

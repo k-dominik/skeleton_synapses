@@ -2,7 +2,12 @@ import os
 
 import numpy as np
 import pytest
-import mock
+
+try:
+    from unittest import mock
+except ImportError:
+    import mock
+
 import vigra
 
 from skeleton_synapses.helpers.images import are_same_xy
