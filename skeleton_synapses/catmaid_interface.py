@@ -305,27 +305,6 @@ class CatmaidSynapseSuggestionAPI(CatmaidClientApplication):
 
         return data
 
-    # def get_fastest_stack_mirror(self, stack_info):
-    #     speeds = dict()
-    #     canary_loc = stack_info['canary_location']
-    #     for idx, stack_mirror in enumerate(stack_info['mirrors']):
-    #         canary_url = make_tile_url_template(stack_mirror['image_base']).format(
-    #             x_index=math.floor(canary_loc['x']/stack_mirror['tile_width']),
-    #             y_index=math.floor(canary_loc['y']/stack_mirror['tile_width']),
-    #             z_index=canary_loc['z']
-    #         )
-    #         try:
-    #             start_time = time.time()
-    #             response = requests.get(canary_url, auth=self.auth_token)
-    #             roundtrip = time.time() - start_time
-    #             assert response.status_code == 200
-    #             speeds[idx] = roundtrip
-    #         except Exception:
-    #             speeds[idx] = float('inf')
-    #
-    #     fastest_idx = min(speeds.items(), key=lambda x: x[1])[0]
-    #     return stack_info['mirrors'][fastest_idx]
-
     def get_workflow_id(self, stack_id, detection_hash, tile_size=512, detection_notes=None):
         params = {'stack_id': stack_id, 'detection_hash': detection_hash, 'tile_size': tile_size}
         if detection_notes:
