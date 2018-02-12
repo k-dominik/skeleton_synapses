@@ -9,24 +9,11 @@ import time
 import warnings
 
 from logutils.queue import QueueHandler, QueueListener
-from tqdm import tqdm
 
 from skeleton_synapses.constants import PROJECT_ROOT
 from skeleton_synapses.helpers.files import mkdir_p
 
 LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
-
-
-class TqdmHandler(logging.Handler):
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            tqdm.write(msg)  # , file=sys.stderr)
-            self.flush()
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except:
-            self.handleError(record)
 
 
 def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
@@ -52,7 +39,7 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
-    console_handler = TqdmHandler()
+    console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     console_handler.setLevel(level)
 

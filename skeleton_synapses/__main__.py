@@ -10,11 +10,10 @@ import psutil
 import signal
 import sys
 from catpy import CatmaidClient
-from tqdm import tqdm
 
 from helpers.files import hash_algorithm
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
-from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, TQDM_KWARGS, DEBUG, LOG_LEVEL, THREADS
+from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL, THREADS
 from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
 from skeleton_synapses.parallel.process import SynapseDetectionProcess, SkeletonAssociationProcess, ProcessRunner
