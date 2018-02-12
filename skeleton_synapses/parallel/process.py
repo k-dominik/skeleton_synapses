@@ -66,7 +66,7 @@ class CaretakerProcess(DebuggableProcess):
             kwargs = self.kwargs_dict.copy()
             kwargs['name'] = name
             inner_process = self.constructor(
-                self.input_queue, self.output_queue *self.args_tuple, **kwargs
+                self.input_queue, self.output_queue, *self.args_tuple, **kwargs
             )
             inner_process.start()
             logger.debug('Started {} with {} inputs remaining'.format(inner_process.name, self.input_queue.qsize()))
