@@ -31,7 +31,7 @@ class CaretakerProcess(DebuggableProcess):
     """
 
     def __init__(
-            self, constructor, input_queue, args_tuple=(), kwargs_dict=None, debug=False, name=None
+            self, constructor, input_queue, output_queue, args_tuple=(), kwargs_dict=None, debug=False, name=None
     ):
         """
 
@@ -46,6 +46,7 @@ class CaretakerProcess(DebuggableProcess):
         super(CaretakerProcess, self).__init__(debug, name=name)
         self.constructor = constructor
         self.input_queue = input_queue
+        self.output_queue = output_queue
         self.args_tuple = args_tuple
         self.kwargs_dict = kwargs_dict or dict()
         self.kwargs_dict['debug'] = debug
@@ -65,7 +66,7 @@ class CaretakerProcess(DebuggableProcess):
             kwargs = self.kwargs_dict.copy()
             kwargs['name'] = name
             inner_process = self.constructor(
-                self.input_queue, *self.args_tuple, **kwargs
+                self.input_queue, self.output_queue *self.args_tuple, **kwargs
             )
             inner_process.start()
             logger.debug('Started {} with {} inputs remaining'.format(inner_process.name, self.input_queue.qsize()))
@@ -226,7 +227,7 @@ class ProcessRunner(object):
         self.output_queue = mp.Queue()
         self.containers = [
             CaretakerProcess(
-                constructor, input_queue, setup_args, name='CaretakerProcess{}'.format(idx)
+                constructor, input_queue, self.output_queue, setup_args, name='CaretakerProcess{}'.format(idx)
             )
             for idx in range(threads)
         ]
