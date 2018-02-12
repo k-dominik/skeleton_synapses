@@ -88,10 +88,12 @@ class SynapseDetectionProcess(LeakyProcess):
         self.setup_args = paths.description_json, paths.autocontext_ilp
 
     def setup(self):
+        super(SynapseDetectionProcess, self).setup()
         self.opPixelClassification = setup_classifier(*self.setup_args)
         Request.reset_thread_pool(1)  # todo: set to 0?
 
     def execute(self):
+        super(SynapseDetectionProcess, self).execute()
         tile_idx = self.input_queue.get()
 
         self.inner_logger.debug(
@@ -158,6 +160,7 @@ class SkeletonAssociationProcess(LeakyProcess):
     #         self.execute()
 
     def setup(self):
+        super(SkeletonAssociationProcess, self).setup()
         self.inner_logger.debug('Setting up opPixelClassification and multicut_shell...')
         # todo: replace opPixelClassification with catpy tile-getter
         self.opPixelClassification, self.multicut_shell = setup_classifier_and_multicut(
@@ -168,6 +171,7 @@ class SkeletonAssociationProcess(LeakyProcess):
         Request.reset_thread_pool(1)
 
     def execute(self):
+        super(SkeletonAssociationProcess, self).execute()
         # todo: test (needs refactors)
         logger.debug('Waiting for item')
         roi_xyz, synapse_slice_ids, synapse_object_id = self.input_queue.get()

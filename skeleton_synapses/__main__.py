@@ -60,6 +60,7 @@ def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_r
                 tile_queue, SynapseDetectionProcess, detector_setup_args, min(THREADS, tile_count),
                 {'name': "Synapse Detection", "items_total": tile_count}
         ) as runner:
+            logger.debug('ProcessRunner instantiated successfully')
             commit_tilewise_results_from_queue(
                 runner.output_queue, paths.output_hdf5, tile_count, TILE_SIZE, workflow_id, catmaid
             )

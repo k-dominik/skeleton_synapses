@@ -5,6 +5,7 @@ import psutil
 
 from skeleton_synapses.constants import RAM_MB_PER_PROCESS
 
+
 class DebuggableProcess(mp.Process):
     """
     Classes inheriting from this instead of multiprocessing.Process can use a `debug` parameter to run in serial
@@ -54,13 +55,13 @@ class LeakyProcess(DebuggableProcess):
         self.teardown()
 
     def setup(self):
-        pass
+        self.inner_logger.debug('Setup starting')
 
     def execute(self):
-        pass
+        self.inner_logger.debug('Executing')
 
     def teardown(self):
-        pass
+        self.inner_logger.debug('Teardown starting')
 
     @property
     def ram_usage_MB(self):
