@@ -1,4 +1,5 @@
 #!/bin/bash
 
 ROOT_DIR=$(realpath $(dirname $0))/..
-python -m ${ROOT_DIR}/skeleton_synapses $@
+cd ${ROOT_DIR}
+python -m skeleton_synapses $@
