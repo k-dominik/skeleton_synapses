@@ -63,6 +63,10 @@ def populate_synapse_queue(catmaid, roi_radius_px, project_workflow_id, stack_in
     return synapse_queue, synapse_count
 
 
+class QueueOverpopulatedException(Exception):
+    pass
+
+
 def iterate_queue(queue, final_size, queue_name=None, timeout=RESULTS_TIMEOUT_SECONDS):
     if queue_name is None:
         queue_name = repr(queue)
@@ -75,7 +79,13 @@ def iterate_queue(queue, final_size, queue_name=None, timeout=RESULTS_TIMEOUT_SE
             raise
         logger.debug('Got item {} from queue {}: {} (expect {} more)'.format(idx, queue_name, item, final_size-idx-1))
         yield item
-    assert queue.empty(), 'More enqueued items in {} than expected'.format(queue_name)
+
+    if not queue.empty():
+        raise QueueOverpopulatedException(
+            'More enqueued items in {} than expected (expected {}, at least {} more)'.format(
+                queue_name, final_size, queue.qsize()
+            )
+        )
 
 
 def commit_tilewise_results_from_queue(
