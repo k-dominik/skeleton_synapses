@@ -4,6 +4,8 @@ import numpy as np
 import vigra
 import pytest
 
+from tests.context import skeleton_synapses
+
 from skeleton_synapses.helpers.segmentation import node_locations_to_array
 from skeleton_synapses.helpers.roi import square_bounds
 

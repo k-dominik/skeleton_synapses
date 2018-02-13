@@ -4,10 +4,14 @@ import pytest
 import h5py
 import numpy as np
 
-from skeleton_synapses.helpers.files import HDF5_NAME, create_label_volume, ensure_hdf5, write_predictions_synapses
+from tests.context import skeleton_synapses
 
-from skeleton_synapses.tests.fixtures import tmp_dir, pixel_pred, img_2, img_square
-from skeleton_synapses.tests.constants import TILE_SIZE
+from skeleton_synapses.helpers.files import (
+    HDF5_NAME, create_label_volume, ensure_hdf5, write_predictions_synapses
+)
+
+from tests.fixtures import tmp_dir, pixel_pred, img_2, img_square
+from tests.constants import TILE_SIZE
 
 
 @pytest.fixture

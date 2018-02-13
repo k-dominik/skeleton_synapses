@@ -3,10 +3,12 @@ import os
 import pytest
 import numpy as np
 
+from tests.context import skeleton_synapses
+
 from skeleton_synapses.helpers.roi import nodes_to_tile_indexes, tile_index_to_bounds
 from skeleton_synapses.dto import NodeInfo, TileIndex
 
-from skeleton_synapses.tests.constants import TILE_SIZE, TILE_CENTRE, MIN_RADIUS
+from tests.constants import TILE_SIZE, TILE_CENTRE, MIN_RADIUS
 
 
 def test_nodes_to_tile_indexes_simple():

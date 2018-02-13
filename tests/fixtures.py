@@ -12,7 +12,7 @@ import pytest
 import numpy as np
 import vigra
 
-from skeleton_synapses.tests.constants import PROJECT_ID, BASE_URL
+from tests.constants import PROJECT_ID, BASE_URL
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixture_data')
 

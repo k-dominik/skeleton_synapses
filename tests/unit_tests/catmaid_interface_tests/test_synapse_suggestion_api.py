@@ -1,8 +1,10 @@
 import pytest
 
+from tests.context import skeleton_synapses
+
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
 
-from skeleton_synapses.tests.fixtures import catmaid_mock, compact_detail, synapses_near_skeleton
+from tests.fixtures import catmaid_mock, compact_detail, synapses_near_skeleton
 
 
 STACK_ID = 1

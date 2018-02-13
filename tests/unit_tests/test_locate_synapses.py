@@ -14,7 +14,7 @@ from skeleton_synapses.helpers.images import are_same_xy
 from skeleton_synapses.helpers.roi import slicing
 from skeleton_synapses.helpers.files import ensure_list, ensure_description_file, ensure_skel_output_dir, mkdir_p, get_algo_notes
 
-from skeleton_synapses.tests.fixtures import tmp_dir
+from tests.fixtures import tmp_dir
 
 
 SKEL_ID = 1

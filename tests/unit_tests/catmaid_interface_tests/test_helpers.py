@@ -4,13 +4,15 @@ import pytest
 import networkx as nx
 import numpy as np
 
+from tests.context import skeleton_synapses
+
 from skeleton_synapses.catmaid_interface import (
     get_consecutive, extend_slices, make_tile_url_template, get_nodes_between, get_subarbor_node_infos, in_roi,
     to_iterable
 )
 from skeleton_synapses.dto import NodeInfo
 
-from skeleton_synapses.tests.fixtures import get_fixture_data
+from tests.fixtures import get_fixture_data
 
 
 def test_get_consecutive():

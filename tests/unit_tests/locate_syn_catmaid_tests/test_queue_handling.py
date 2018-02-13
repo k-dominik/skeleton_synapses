@@ -14,8 +14,10 @@ except ImportError:
 
 import pytest
 
+from tests.context import skeleton_synapses
+
 from skeleton_synapses.dto import SkeletonAssociationOutput
-from skeleton_synapses.parallel.queues import iterate_queue, commit_node_association_results_from_queue
+from skeleton_synapses.parallel.queues import iterate_queue, commit_node_association_results_from_queue, QueueOverpopulatedException
 
 
 @pytest.fixture
@@ -75,7 +77,7 @@ def test_iterate_queue_overpopulated():
     final_size = 5
     queue = populate_queue(item_count)
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(QueueOverpopulatedException):
         for idx, result in enumerate(iterate_queue(queue, final_size, timeout=0.5)):
             assert result
             assert idx < final_size
