@@ -8,13 +8,14 @@ WORK IN PROGRESS
 A utility for automatically detecting synapses, compatible with [CATMAID](https://catmaid.readthedocs.io/en/stable/)
 and [synapsesuggestor](https://github.com/clbarnes/CATMAID-synapsesuggestor).
 
-Due to the combination of dependencies, `skeleton_synapses` works under py2.7 only.
-
 ## INSTALLATION:
 
-Use `conda` to [install `ilastik`](https://github.com/ilastik/ilastik-build-conda/blob/master/README.md),
+N.B. conda must be version <= 4.3 to work with pyenv
+
+- Use `conda` to [install `ilastik`](https://github.com/ilastik/ilastik-build-conda/blob/master/README.md),
  and then `pip` to install the requirements in `./requirements/`.
-Use `pip install -r requirements/prod.txt` for production installations,
+- `cp /usr/lib/x86_64-linux-gnu/libstdc++.so.6 $CONDA_PREFIX/lib/`
+- Use `pip install -r requirements/prod.txt` for production installations,
 add `-r requirements/test.txt` to run unit tests, and
 add `-r requirements/travis.txt` for continuous integration and coverage
 with [travis](https://travis-ci.org/) and [coveralls](https://coveralls.io/).
