@@ -1,3 +1,4 @@
+-r test.txt
 pytest-pep8
 pytest-cov
 coverage

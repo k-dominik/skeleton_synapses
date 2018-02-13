@@ -1,27 +1,21 @@
 language: python
 python:
-  - "2.7"
-#  - "3.5"  # not supported by ilastik
-install:
-  - if [[ "$TRAVIS_PYTHON_VERSION" == "2.7" ]]; then
-      wget https://repo.continuum.io/miniconda/Miniconda2-latest-Linux-x86_64.sh -O miniconda.sh;
-    else
-      wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
-    fi
+  - "3.6"
+before_install:
+  - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
   - bash miniconda.sh -b -p $HOME/miniconda
   - export PATH="$HOME/miniconda/bin:$PATH"
   - hash -r
   - conda config --set always_yes yes --set changeps1 no
   - conda update -q conda
   - conda info -a
-  - conda create -n ilastik-devel python=$TRAVIS_PYTHON_VERSION
+install:
+  - conda create -n ilastik-devel ilastik-dependencies-no-solvers -c ilastik-forge -c conda-forge
   - source activate ilastik-devel
-  - conda install -c ilastik ilastik-everything-no-solvers
   # apply opReorderAxes.patch?
   - pip install -U pip
-  - pip install -r requirements/prod.txt
-  - pip install -r requirements/test.txt -r requirements/travis.txt
+  - pip install -r requirements/travis.txt
 script:
-  - pytest
-after_success:
+  - make test
+after_script:
   - coveralls
