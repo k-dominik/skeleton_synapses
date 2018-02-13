@@ -117,27 +117,45 @@ class Paths(object):
     def skeleton_output_dir(self, skeleton_id):
         return os.path.join(self.debug_skel_dir, str(skeleton_id)) if self._debug_images else None
 
-    def initialise(self, catmaid, stack_info, skeleton_ids, force=False, throw_on_missing=False):
+    def initialise(self, catmaid, stack_info, skeleton_ids=None, force=False, throw_on_missing=False):
+        """
+
+        Parameters
+        ----------
+        catmaid : CatmaidSynapseSuggestionAPI or None
+            If None, instantiate using given credentials file
+        stack_info : dict or int or str
+            If dict, assume is the response from catmaid. If int or str, fetch that response
+        skeleton_ids
+        force
+        throw_on_missing
+
+        """
         if self.initialised:
             logger.warning('Paths already initialised, ignoring second initialisation call')
             return
 
-        for dir_path in [self.root_dir, self.input_dir, self.output_dir, self.projects_dir]:
-            assert os.path.isdir(dir_path)
-        for file_path in [self.autocontext_ilp, self.multicut_ilp]:
-            assert os.path.isfile(file_path)
+        if catmaid is None:
+            catmaid = CatmaidSynapseSuggestionAPI.from_json(self.credentials_json)
 
-        ensure_hdf5(stack_info, self.output_hdf5, force, throw_on_missing)
-        ensure_description_file(catmaid, self.description_json, stack_info['sid'],
+        stack_info_dict = stack_info if isinstance(stack_info, dict) else catmaid.get_stack_info(stack_info)
+
+        for dir_path in [self.root_dir, self.input_dir, self.output_dir, self.projects_dir]:
+            assert os.path.isdir(dir_path), '{} does not exist as directory'.format(dir_path)
+        for file_path in [self.autocontext_ilp, self.multicut_ilp]:
+            assert os.path.isfile(file_path), '{} does not exist as file'.format(file_path)
+
+        ensure_hdf5(stack_info_dict, self.output_hdf5, force, throw_on_missing)
+        ensure_description_file(catmaid, self.description_json, stack_info_dict['sid'],
                                 force=False, throw_on_missing=throw_on_missing)
 
-        if self._debug_images:
+        if self._debug_images and skeleton_ids:
             ensure_dir(self.debug_synapse_dir, force, throw_on_missing)
             ensure_dir(self.debug_tile_dir, force, throw_on_missing)
             ensure_dir(self.debug_skel_dir, force, throw_on_missing)
             for skeleton_id in skeleton_ids:
                 ensure_skel_output_dir(
-                    self.skeleton_output_dir(skeleton_id), skeleton_id, catmaid, stack_info['sid'],
+                    self.skeleton_output_dir(skeleton_id), skeleton_id, catmaid, stack_info_dict['sid'],
                     force, throw_on_missing
                 )
 
