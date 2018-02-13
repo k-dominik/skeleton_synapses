@@ -6,6 +6,3 @@ clean:
 
 test:
 	pytest
-
-test-int: test
-	pytest tests/integration_tests
