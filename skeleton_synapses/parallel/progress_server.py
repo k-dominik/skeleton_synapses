@@ -3,10 +3,19 @@ from __future__ import division
 import json
 import collections
 import threading
-import httplib
+
+try:
+    # py3
+    from http import HTTPStatus
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+except ImportError:
+    # py2
+    import httplib as HTTPStatus
+    from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
+
 from datetime import datetime, timedelta
 import time
-from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
+
 
 from skeleton_synapses.constants import MONITOR_HOST, MONITOR_PORT, MONITOR_INTERVAL
 
@@ -183,13 +192,13 @@ class ProgressRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/progress":
             self._do_get_progress()
         else:
-            self.send_error(httplib.BAD_REQUEST, "Bad query syntax: {}".format(self.path))
+            self.send_error(HTTPStatus.BAD_REQUEST, "Bad query syntax: {}".format(self.path))
 
     def _do_get_progress(self):
         with self.server._lock:
             progress = self.server.progress
         json_text = json.dumps(progress._asdict(), sort_keys=True, indent=2)
-        self.send_response(httplib.OK)
+        self.send_response(HTTPStatus.OK)
         self.send_header("Content-type", "text/json")
         self.send_header("Content-length", str(len(json_text)))
         self.end_headers()
