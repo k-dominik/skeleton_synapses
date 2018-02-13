@@ -7,3 +7,7 @@ TILE_CENTRE = int(TILE_SIZE / 2)
 PROJECT_ID = 1
 STACK_ID = 2
 BASE_URL = 'https://not-catmaid.org'
+
+
+def noop(*args, **kwargs):
+    pass
