@@ -1,5 +1,4 @@
 import logging
-from pympler.asizeof import asizeof
 import psutil
 import numpy as np
 
