@@ -66,7 +66,7 @@ bash bin/skeleton_synapses \
 
 ## TESTING:
 
-Run unit tests with
+### Unit tests
 
 ```bash
 pytest
@@ -74,6 +74,14 @@ pytest
 
 A running CATMAID instance is not required; nor is a functioning installation of ilastik. Tests only cover the python
  code surrounding those two interfaces.
+
+### Integration tests
+
+```bash
+pytest tests/integration_tests --input_dir path/to/input/ --credentials_path path/to/credentials.json
+```
+
+This requires ilastik, valid project files, and a running instance of CATMAID.
 
 
 ## CATMAID CREDENTIALS:
