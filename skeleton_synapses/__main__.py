@@ -11,10 +11,9 @@ import signal
 import sys
 from catpy import CatmaidClient
 
-from helpers.files import hash_algorithm
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
 from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL, THREADS
-from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE
+from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE, hash_algorithm
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
 from skeleton_synapses.parallel.process import SynapseDetectionProcess, SkeletonAssociationProcess, ProcessRunner
 from skeleton_synapses.parallel.queues import (
@@ -183,10 +182,10 @@ if __name__ == "__main__":
 
         args = parser.parse_args()
 
-        output_dir = args.output_dir or args.input_file_dir
-        os.environ['SS_DEBUG_IMAGES'] = int(DEBUG) or os.environ.get('SS_DEBUG_IMAGES', False) or args.debug_images
+        output_dir = args.output_dir or args.input_dir
+        os.environ['SS_DEBUG_IMAGES'] = str(int(DEBUG) or os.environ.get('SS_DEBUG_IMAGES', 0) or args.debug_images)
 
-        paths = Paths(args.credentials_path, args.input_dir, args.output_dir)
+        paths = Paths(args.credentials_path, args.input_dir, output_dir)
 
         args_list = [paths, args.stack_id, args.skeleton_ids, args.roi_radius_px, args.force]
         kwargs_dict = {}  # must be empty

@@ -23,7 +23,10 @@ def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
 
     # set up the log files and symlinks
     latest_ln = os.path.join(output_file_dir, 'logs', 'latest')
-    os.remove(latest_ln)
+    try:
+        os.remove(latest_ln)
+    except FileNotFoundError:
+        pass
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log_dir = os.path.join(output_file_dir, 'logs', timestamp)
     mkdir_p(log_dir)
