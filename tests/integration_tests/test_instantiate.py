@@ -14,6 +14,7 @@ from tests.integration_tests.fixtures import (
 )
 
 
+@pytest.mark.skip
 def test_instantiate_opPixelClassification(opPixelClassification):
     assert opPixelClassification
 
@@ -58,7 +59,7 @@ def test_classifier_multiple(synapse_detection_process, tile_index_generator):
     for idx, tile_idx in enumerate(tile_index_generator(10)):
         print(tile_idx)
         output = synapse_detection_process.detect_synapses(tile_idx)
-        print(np.unique(output.synapse_cc_xyc))
+        assert len(np.unique(output.predictions_xyc)) > 1
         if mem_tracker is None:
             mem_tracker = MemoryTracker()
         ram_increase = mem_tracker.ram_increase_MB()
