@@ -75,12 +75,12 @@ def _open_project(project_path, init_logging=False):
     parsed_args = ilastik_main.parser.parse_args([])
     parsed_args.headless = True
     parsed_args.project = project_path
-    parsed_args.readonly = True
-    # parsed_args.readonly = False
+    # parsed_args.readonly = True
+    parsed_args.readonly = False
     parsed_args.debug = True  # possibly delete this?
 
-    shell = ilastik_main.main(parsed_args, init_logging=init_logging)
-    # shell = ilastik_main.main(parsed_args, workflow_cmdline_args=['--retrain'], init_logging=init_logging)
+    # shell = ilastik_main.main(parsed_args, init_logging=init_logging)
+    shell = ilastik_main.main(parsed_args, workflow_cmdline_args=['--retrain'], init_logging=init_logging)
     return shell
 
 

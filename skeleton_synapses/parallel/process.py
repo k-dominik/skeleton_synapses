@@ -128,6 +128,17 @@ class SynapseDetectionProcess(LeakyProcess):
         return SynapseDetectionOutput(tile_idx, predictions_xyc, synapse_cc_xy)
 
 
+class SynapseDetectionProcessNew(SynapseDetectionProcess):
+    def __init__(self, input_queue, output_queue, paths, tile_size, opPixelClassification, debug=False, name=None):
+        super(SynapseDetectionProcessNew, self).__init__(
+            input_queue, output_queue, paths, tile_size, debug=debug, name=name
+        )
+        self.opPixelClassification = opPixelClassification
+
+    def setup(self):
+        pass
+
+
 # class NeuronSegmenterProcess(DebuggableProcess):
 class SkeletonAssociationProcess(LeakyProcess):
     """
