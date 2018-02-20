@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
+
 exec ${CONDA_PREFIX}/run_ilastik.sh "$@"
