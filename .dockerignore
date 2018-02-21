@@ -1,0 +1,8 @@
+.*
+config/credentials/
+config/env_vars/
+
+bin/*
+!bin/ilastik
+!bin/skeleton_synapses
+
