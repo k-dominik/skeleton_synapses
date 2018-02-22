@@ -6,16 +6,10 @@ import time
 from lazyflow.request import Request
 from lazyflow.utility.timer import Timer
 
-from skeleton_synapses.helpers.files import cached_synapses_predictions_for_roi, dump_images
+from skeleton_synapses.ilastik_utils.analyse import detect_synapses, associate_skeletons
+from skeleton_synapses.helpers.files import dump_images
 from skeleton_synapses.helpers.roi import tile_index_to_bounds
-from skeleton_synapses.helpers.segmentation import (
-    get_synapse_segment_overlaps, get_node_associations, node_locations_to_array
-)
-from skeleton_synapses.dto import SynapseDetectionOutput
 from skeleton_synapses.ilastik_utils.projects import setup_classifier, setup_classifier_and_multicut
-from skeleton_synapses.ilastik_utils.analyse import (
-    fetch_and_predict, label_synapses, raw_data_for_roi, segmentation_for_img
-)
 from skeleton_synapses.parallel.base_classes import DebuggableProcess, LeakyProcess
 from skeleton_synapses.parallel.progress_server import QueueMonitorThread, DummyThread
 
@@ -108,24 +102,20 @@ class SynapseDetectionProcess(LeakyProcess):
         self.output_queue.put(output)
 
     def detect_synapses(self, tile_idx, debug=False):
+        self.inner_logger.debug("detect_synapses called")
         with Timer() as timer:
-            roi_xyz = tile_index_to_bounds(tile_idx, self.tile_size)
+            output = detect_synapses(self.tile_size, self.opPixelClassification, tile_idx)
 
-            # GET AND CLASSIFY PIXELS
-            raw_xy, predictions_xyc = fetch_and_predict(roi_xyz, self.opPixelClassification)
-            print(predictions_xyc)
-
-            # DETECT SYNAPSES
-            synapse_cc_xy = label_synapses(predictions_xyc)
-            logging.getLogger(self.inner_logger.name + '.timing').info("NODE TIMER: {}".format(timer.seconds()))
+        logging.getLogger(self.inner_logger.name + '.timing').info("NODE TIMER: {}".format(timer.seconds()))
 
         if debug:
+            roi_xyz = tile_index_to_bounds(tile_idx, self.tile_size)
             path = os.path.join(
                 self.paths.debug_tile_dir, 'x{}-y{}-z{}.hdf5'.format(tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx)
             )
-            dump_images(path, roi_xyz, raw=raw_xy, synapse_cc=synapse_cc_xy, predictions=predictions_xyc)
+            dump_images(path, roi_xyz, synapse_cc=output.synapse_cc_xy, predictions=output.predictions_xyc)
 
-        return SynapseDetectionOutput(tile_idx, predictions_xyc, synapse_cc_xy)
+        return output
 
 
 class SynapseDetectionProcessNew(SynapseDetectionProcess):
@@ -136,6 +126,7 @@ class SynapseDetectionProcessNew(SynapseDetectionProcess):
         self.opPixelClassification = opPixelClassification
 
     def setup(self):
+        # Request.reset_thread_pool(1)
         pass
 
 
@@ -191,58 +182,36 @@ class SkeletonAssociationProcess(LeakyProcess):
         super(SkeletonAssociationProcess, self).execute()
         # todo: test (needs refactors)
         logger.debug('Waiting for item')
-        roi_xyz, synapse_slice_ids, synapse_object_id = self.input_queue.get()
-        self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(roi_xyz, self.input_queue.qsize()))
+        skeleton_association_input = self.input_queue.get()
+        self.inner_logger.debug("Addressing ROI {}; {} ROIs remaining".format(skeleton_association_input.roi_xyz, self.input_queue.qsize()))
 
         node_segmenter_outputs = self.associate_skeletons(
-            roi_xyz, synapse_slice_ids, synapse_object_id, debug=bool(int(os.getenv('SS_DEBUG_IMAGES', 0)))
+            skeleton_association_input, debug=bool(int(os.getenv('SS_DEBUG_IMAGES', 0)))
         )
 
         self.output_queue.put(node_segmenter_outputs)
 
-    def associate_skeletons(self, roi_xyz, synapse_slice_ids, synapse_object_id=None, debug=False):
+    def associate_skeletons(self, skeleton_association_input, debug=False):
         with Timer() as node_timer:
-            raw_xy = raw_data_for_roi(roi_xyz, self.opPixelClassification)
-            synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, self.hdf5_path)
-
-            log_str = 'Image shapes: \n\tRaw {}\n\tSynapse_cc {}\n\tPredictions {}'.format(
-                raw_xy.shape, synapse_cc_xy.shape, predictions_xyc.shape
-            )
-            self.inner_logger.debug(log_str)
-
-            segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, self.multicut_shell.workflow)
-
-            overlapping_segments = get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_ids)
-            self.inner_logger.debug('Local segment: synapse slice overlaps found: \n{}'.format(overlapping_segments))
-
-            if len(overlapping_segments) < 2:  # synapse is only in 1 segment
-                self.inner_logger.debug(
-                    'Synapse slice IDs {} in ROI {} are only in 1 neuron'.format(synapse_slice_ids, roi_xyz)
-                )
-                self.output_queue.put([])  # outputs will be empty
-                return
-
-            node_locations = self.catmaid.get_nodes_in_roi(roi_xyz, self.catmaid.stack_id)
-            if len(node_locations) == 0:
-                self.inner_logger.debug('ROI {} has no nodes'.format(roi_xyz))
-
-            node_segmenter_outputs = get_node_associations(
-                synapse_cc_xy, segmentation_xy, node_locations, overlapping_segments
+            node_segmenter_outputs = associate_skeletons(
+                self.hdf5_path, self.opPixelClassification, self.multicut_shell, self.catmaid,
+                skeleton_association_input
             )
 
         logging.getLogger(self.inner_logger.name + '.timing').info("TILE TIMER: {}".format(node_timer.seconds()))
 
-        if debug:
-            node_locations_arr = node_locations_to_array(segmentation_xy.shape, node_locations)
-            path = os.path.join(
-                self.paths.debug_synapse_dir, '{}_{}.hdf5'.format(synapse_object_id, roi_xyz[0, 2])
-            )
-            dump_images(
-                path, roi_xyz, raw=raw_xy, synapse_cc=synapse_cc_xy, predictions=predictions_xyc,
-                segmentation=segmentation_xy, node_locations=node_locations_arr
-            )
+        # if debug:
+        #     node_locations_arr = node_locations_to_array(segmentation_xy.shape, node_locations)
+        #     path = os.path.join(
+        #         self.paths.debug_synapse_dir, '{}_{}.hdf5'.format(synapse_object_id, roi_xyz[0, 2])
+        #     )
+        #     dump_images(
+        #         path, roi_xyz, raw=raw_xy, synapse_cc=synapse_cc_xy, predictions=predictions_xyc,
+        #         segmentation=segmentation_xy, node_locations=node_locations_arr
+        #     )
 
         return node_segmenter_outputs
+
 
 class ProcessRunner(object):
     def __init__(self, input_queue, constructor, setup_args, threads, monitor_kwargs=None):
@@ -267,13 +236,18 @@ class ProcessRunner(object):
         else:
             self.monitor = DummyThread()
 
+        logger.debug('ProcessRunner constructor finished')
+
     def __enter__(self):
         while self.input_queue.qsize() < self.threads:
             time.sleep(0.1)
 
+        logger.debug('ProcessRunner: Starting threads')
         self.monitor.start()
         for container in self.containers:
             container.start()
+
+        logger.debug('ProcessRunner: threads started, returning self')
 
         return self
 

@@ -91,6 +91,8 @@ def iterate_queue(queue, final_size, queue_name=None, timeout=RESULTS_TIMEOUT_SE
 def commit_tilewise_results_from_queue(
         tile_result_queue, output_path, total_tiles, tile_size, workflow_id, catmaid
 ):
+    # raise ValueError('Reached commit_tilewise')
+    logger.debug('Entering commit_tilewise_results_from_queue')
     result_iterator = tqdm(
         iterate_queue(tile_result_queue, total_tiles, 'tile_result_queue'),
         desc='Synapse detection', unit='tiles', total=total_tiles, **TQDM_KWARGS
