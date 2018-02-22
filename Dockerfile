@@ -28,13 +28,13 @@ RUN wget --quiet https://repo.continuum.io/miniconda/Miniconda3-4.4.10-Linux-x86
 ENV PATH=/opt/conda/bin:$PATH
 
 # setup ilastik
-RUN conda create --yes --name ss ilastik-dependencies-no-solvers --channel ilastik-forge --channel conda-forge && \
+RUN conda create --yes --name ilastik-dev ilastik-dependencies-no-solvers --channel ilastik-forge --channel conda-forge && \
     rm -rf /opt/conda/pkgs/*
 # todo: cplex/gurobi?
 
 # conda env related environment variables
-ENV CONDA_DEFAULT_ENV=ss \
-    CONDA_PREFIX=/opt/conda/envs/ss
+ENV CONDA_DEFAULT_ENV=ilastik-dev \
+    CONDA_PREFIX=/opt/conda/envs/ilastik-dev
 # todo: find other environment variables set by `activate`
 
 # Set the working directory
