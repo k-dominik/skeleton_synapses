@@ -1,5 +1,5 @@
 -r test.txt
-pytest-pep8
-pytest-cov
-coverage
-coveralls
+pytest-pep8==1.0.6
+pytest-cov==2.5.1
+coverage==4.5.1
+coveralls==1.2.0
