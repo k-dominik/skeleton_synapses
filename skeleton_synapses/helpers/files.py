@@ -89,6 +89,25 @@ def ensure_skel_output_dir(skel_output_dir, skel_id, catmaid_ss, stack_id, force
         json.dump(skel_data, f)
 
 
+def get_credentials(credentials_path=None):
+    if credentials_path:
+        with open(credentials_path) as f:
+            return json.load(f)
+
+    d = {
+        'base_url': os.environ['CATMAID_BASE_URL'],
+        'token': os.environ['CATMAID_TOKEN'],
+        'project_id': int(os.environ['CATMAID_PROJECT_ID'])
+    }
+
+    for src, tgt in [('CATMAID_AUTH_NAME', 'auth_name'), ('CATMAID_AUTH_PASS', 'auth_pass')]:
+        env_val = os.environ.get(src)
+        if env_val is not None:
+            d[tgt] = env_val
+
+    return d
+
+
 class Paths(object):
     def __init__(self, credentials_path, input_file_dir, output_file_dir=None, debug_images=False):
         self.root_dir = PROJECT_ROOT
@@ -136,7 +155,7 @@ class Paths(object):
             return
 
         if catmaid is None:
-            catmaid = CatmaidSynapseSuggestionAPI.from_json(self.credentials_json)
+            catmaid = CatmaidSynapseSuggestionAPI.from_json(get_credentials(self.credentials_json))
 
         stack_info_dict = stack_info if isinstance(stack_info, dict) else catmaid.get_stack_info(stack_info)
 

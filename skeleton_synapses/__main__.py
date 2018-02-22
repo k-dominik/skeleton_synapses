@@ -11,10 +11,9 @@ import signal
 import sys
 from catpy import CatmaidClient
 
-from helpers.files import hash_algorithm
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
 from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL, THREADS
-from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE
+from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE, hash_algorithm, get_credentials
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
 from skeleton_synapses.parallel.process import SynapseDetectionProcess, SkeletonAssociationProcess, ProcessRunner
 from skeleton_synapses.parallel.queues import (
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 def main(paths, stack_id, skeleton_ids, roi_radius_px=DEFAULT_ROI_RADIUS_PX, force=False):
     logger.info("STARTING TILEWISE")
 
-    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(paths.credentials_json), stack_id)
+    catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(get_credentials(paths.credentials_json)), stack_id)
     stack_info = catmaid.get_stack_info(stack_id)
 
     skeleton_ids = ensure_list(skeleton_ids)
@@ -164,27 +163,27 @@ if __name__ == "__main__":
         kwargs_dict = {'force': force}
     else:
         parser = argparse.ArgumentParser()
-        parser.add_argument('credentials_path',
+        parser.add_argument('-c', '--credentials_path',
                             help='Path to a JSON file containing CATMAID credentials (see credentials/example.json)')
-        parser.add_argument('stack_id',
-                            help='ID or name of image stack in CATMAID')
-        parser.add_argument('input_dir', help="A directory containing project files.")
-        parser.add_argument('skeleton_ids', nargs='+',
+        parser.add_argument('-t', '--stack_id', default=os.environ['CATMAID_STACK_ID'],
+                            help='ID or name of image sTack in CATMAID')
+        parser.add_argument('-i', '--input_dir', help="A directory containing project files.")
+        parser.add_argument('-s', '--skeleton_ids', nargs='+', type=int,
                             help="Skeleton IDs in CATMAID")
-        parser.add_argument('-o', '--output_dir', default=None,
+        parser.add_argument('-o', '--output_dir',
                             help='A directory containing output files')
         parser.add_argument('-r', '--roi_radius_px', default=DEFAULT_ROI_RADIUS_PX,
                             help='The radius (in pixels) around each skeleton node to search for synapses')
         parser.add_argument('-f', '--force', type=int, default=0,
                             help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
-        parser.add_argument('-d', '--debug_images', type=int, default=0,
+        parser.add_argument('-d', '--debug_images', type=int, default=os.environ.get('SS_DEBUG_IMAGES', 0),
                             help='Whether to store debug images'
                             )
 
         args = parser.parse_args()
 
         output_dir = args.output_dir or args.input_file_dir
-        os.environ['SS_DEBUG_IMAGES'] = int(DEBUG) or os.environ.get('SS_DEBUG_IMAGES', False) or args.debug_images
+        os.environ['SS_DEBUG_IMAGES'] = int(DEBUG) or args.debug_images
 
         paths = Paths(args.credentials_path, args.input_dir, args.output_dir)
 
