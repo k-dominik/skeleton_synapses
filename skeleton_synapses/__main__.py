@@ -13,7 +13,8 @@ from catpy import CatmaidClient
 
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
 from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL, THREADS
-from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE, hash_algorithm, get_credentials
+from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE, hash_algorithm, \
+    get_credentials
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
 from skeleton_synapses.parallel.process import SynapseDetectionProcess, SkeletonAssociationProcess, ProcessRunner
 from skeleton_synapses.parallel.queues import (
@@ -163,26 +164,53 @@ if __name__ == "__main__":
         kwargs_dict = {'force': force}
     else:
         parser = argparse.ArgumentParser()
-        parser.add_argument('-c', '--credentials_path',
-                            help='Path to a JSON file containing CATMAID credentials (see credentials/example.json)')
-        parser.add_argument('-t', '--stack_id', default=os.environ['CATMAID_STACK_ID'],
-                            help='ID or name of image sTack in CATMAID')
-        parser.add_argument('-i', '--input_dir', help="A directory containing project files.")
-        parser.add_argument('-s', '--skeleton_ids', nargs='+', type=int,
-                            help="Skeleton IDs in CATMAID")
-        parser.add_argument('-o', '--output_dir',
-                            help='A directory containing output files')
-        parser.add_argument('-r', '--roi_radius_px', default=DEFAULT_ROI_RADIUS_PX,
-                            help='The radius (in pixels) around each skeleton node to search for synapses')
-        parser.add_argument('-f', '--force', type=int, default=0,
-                            help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0")
-        parser.add_argument('-d', '--debug_images', type=int, default=os.environ.get('SS_DEBUG_IMAGES', 0),
-                            help='Whether to store debug images'
-                            )
+        parser.add_argument(
+            'skeleton_ids', nargs='+', type=int, help="Skeleton IDs in CATMAID"
+        )
+        parser.add_argument(
+            '-c', '--credentials_path',
+            help='Path to a JSON file containing CATMAID credentials (see credentials/example.json). '
+                 'Credentials can be set with environment variables '
+        )
+        parser.add_argument(
+            '-t', '--stack_id', default=os.environ.get('SS_STACK_ID'),
+            help='ID or name of image sTack in CATMAID. '
+                 'Can be set with environment variable SS_STACK_ID'
+        )
+        parser.add_argument(
+            '-i', '--input_dir', default=os.environ.get('SS_INPUT_DIR'),
+            help="A directory containing the stack description json and project files directory. "
+                 "Can be set with the environment variable SS_INPUT_DIR"
+        )
+        parser.add_argument(
+            '-o', '--output_dir', default=os.environ.get('SS_OUTPUT_DIR'),
+            help='A directory containing output files. '
+                 'Can be set with the environment variable SS_OUTPUT_DIR'
+        )
+        parser.add_argument(
+            '-r', '--roi_radius_px', default=DEFAULT_ROI_RADIUS_PX,
+            help='The radius (in pixels) around each skeleton node to search for synapses. '
+                  'Can be set with environment variable SS_ROI_RADIUS_PX'
+        )
+        parser.add_argument(
+            '-f', '--force', type=int, default=int(os.environ.get('SS_FORCE', 0)),
+            help="Whether to delete all prior results for a given skeleton: pass 1 for true or 0. "
+                  "Can be set with environment variable SS_FORCE"
+        )
+        parser.add_argument(
+            '-d', '--debug_images', type=int, default=int(os.environ.get('SS_DEBUG_IMAGES', 0)),
+            help='Whether to store debug images. '
+                 'Can be set with environment variable SS_DEBUG_IMAGES'
+        )
 
         args = parser.parse_args()
 
-        output_dir = args.output_dir or args.input_file_dir
+        output_dir = args.output_dir or args.input_dir
+
+        if not all([args.skeleton_ids, args.input_dir, output_dir, args.stack_id]):
+            parser.print_help()
+            sys.exit(1)
+
         os.environ['SS_DEBUG_IMAGES'] = int(DEBUG) or args.debug_images
 
         paths = Paths(args.credentials_path, args.input_dir, args.output_dir)
