@@ -5,21 +5,27 @@ import os
 import argparse
 import logging
 
+from functools import partial
+import multiprocessing as mp
 import numpy as np
 import psutil
 import signal
 import sys
+
+from tqdm import tqdm
 from catpy import CatmaidClient
 
+from ilastik_utils.analyse import detect_synapses
+from skeleton_synapses.helpers.roi import nodes_to_tile_indexes
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
-from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL, THREADS
+from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL, THREADS, TQDM_KWARGS
 from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE, hash_algorithm
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
 from skeleton_synapses.ilastik_utils.projects import setup_classifier
 from skeleton_synapses.parallel.process import SynapseDetectionProcessNew, SkeletonAssociationProcess, ProcessRunner
 from skeleton_synapses.parallel.queues import (
     commit_tilewise_results_from_queue, commit_node_association_results_from_queue,
-    populate_tile_input_queue, populate_synapse_queue
+    populate_tile_input_queue, populate_synapse_queue, commit_tilewise_result
 )
 
 logger = logging.getLogger(__name__)
@@ -46,32 +52,42 @@ def main(paths, stack_id, skeleton_ids, roi_radius_px=DEFAULT_ROI_RADIUS_PX, for
     locate_synapses(catmaid, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes)
 
 
-def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px):
+def run_detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px):
     node_infos = catmaid.get_node_infos(skeleton_ids, stack_info['sid'])
 
-    tile_queue, tile_count = populate_tile_input_queue(catmaid, roi_radius_px, workflow_id, node_infos)
+    tile_set = nodes_to_tile_indexes(node_infos, TILE_SIZE, roi_radius_px)
+    # tile_queue, tile_count = populate_tile_input_queue(catmaid, roi_radius_px, workflow_id, node_infos)
 
-    if tile_count:
-        logger.info('Classifying pixels in {} tiles'.format(tile_count))
+    if tile_set:
+        logger.info('Classifying pixels in {} tiles'.format(len(tile_set)))
 
         opPixelClassification = setup_classifier(paths.description_json, paths.autocontext_ilp)
-        detector_setup_args = (paths, TILE_SIZE, opPixelClassification)
 
-        with ProcessRunner(
-                tile_queue, SynapseDetectionProcessNew, detector_setup_args, min(THREADS, tile_count),
-                # {'name': "Synapse Detection", "items_total": tile_count}
-        ) as runner:
-            logger.debug('ProcessRunner instantiated successfully')
-            commit_tilewise_results_from_queue(
-                runner.output_queue, paths.output_hdf5, tile_count, TILE_SIZE, workflow_id, catmaid
-            )
+        detect_fn = partial(detect_synapses, TILE_SIZE, opPixelClassification)
+        with mp.Pool(THREADS, maxtasksperchild=1) as pool:
+            for synapse_detection_output in tqdm(
+                    pool.imap_unordered(detect_fn, tile_set, chunksize=5),
+                    desc='synapse detection', total=len(tile_set), unit='tiles', **TQDM_KWARGS
+            ):
+                commit_tilewise_result(TILE_SIZE, workflow_id, paths.output_hdf5, catmaid, synapse_detection_output)
+
+        # detector_setup_args = (paths, TILE_SIZE, opPixelClassification)
+        #
+        # with ProcessRunner(
+        #         tile_queue, SynapseDetectionProcessNew, detector_setup_args, min(THREADS, tile_count),
+        #         # {'name': "Synapse Detection", "items_total": tile_count}
+        # ) as runner:
+        #     logger.debug('ProcessRunner instantiated successfully')
+        #     commit_tilewise_results_from_queue(
+        #         runner.output_queue, paths.output_hdf5, tile_count, TILE_SIZE, workflow_id, catmaid
+        #     )
 
     else:
         logger.debug('No tiles found (probably already processed)')
-        tile_queue.close()
+        # tile_queue.close()
 
 
-def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes):
+def run_associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes):
     project_workflow_id = catmaid.get_project_workflow_id(
         workflow_id, algo_hash, association_notes=algo_notes['skeleton_association']
     )
@@ -127,11 +143,11 @@ def locate_synapses(catmaid, paths, stack_info, skeleton_ids, roi_radius_px, alg
 
     timestamper.log('started detecting synapses')
 
-    detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px)
+    run_detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px)
 
     timestamper.log('finished detecting synapses; started associating skeletons')
 
-    associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes)
+    run_associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes)
 
     logger.info("DONE with skeleton.")
 

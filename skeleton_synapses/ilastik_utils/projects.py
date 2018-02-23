@@ -1,6 +1,7 @@
 import os
 import tempfile
 import logging
+from warnings import warn
 
 import vigra
 
@@ -18,9 +19,9 @@ from skeleton_synapses.constants import ILP_RETRAIN, ILP_READONLY
 logger = logging.getLogger(__name__)
 
 
-def setup_classifier(description_file, autocontext_project_path):
+def setup_classifier(description_file, autocontext_project_path, retrain=ILP_RETRAIN, readonly=ILP_READONLY):
     logger.debug('Setting up opPixelClassification')
-    autocontext_shell = _open_project(autocontext_project_path, init_logging=False)
+    autocontext_shell = _open_project(autocontext_project_path, retrain, readonly, init_logging=False)
     assert isinstance(autocontext_shell, HeadlessShell)
     assert isinstance(autocontext_shell.workflow, NewAutocontextWorkflowBase)
 
@@ -37,16 +38,18 @@ def setup_classifier(description_file, autocontext_project_path):
     return opPixelClassification
 
 
-def setup_multicut(multicut_project):
+def setup_multicut(multicut_project, retrain=ILP_RETRAIN, readonly=ILP_READONLY):
     logger.debug('Setting up multicut_shell')
-    multicut_shell = _open_project(multicut_project, init_logging=False)
+    multicut_shell = _open_project(multicut_project, retrain, readonly, init_logging=False)
     assert isinstance(multicut_shell, HeadlessShell)
     assert isinstance(multicut_shell.workflow, EdgeTrainingWithMulticutWorkflow)
 
     return multicut_shell
 
 
-def setup_classifier_and_multicut(description_file, autocontext_project_path, multicut_project):
+def setup_classifier_and_multicut(
+        description_file, autocontext_project_path, multicut_project, retrain=ILP_RETRAIN, readonly=ILP_READONLY
+):
     """
     Boilerplate for getting the requisite ilastik interface objects and sanity-checking them
 
@@ -64,13 +67,13 @@ def setup_classifier_and_multicut(description_file, autocontext_project_path, mu
         opPixelClassification, multicut_shell
     """
     logger.debug('Setting up opPixelClassification and multicut_shell')
-    opPixelClassification = setup_classifier(description_file, autocontext_project_path)
-    multicut_shell = setup_multicut(multicut_project)
+    opPixelClassification = setup_classifier(description_file, autocontext_project_path, retrain, readonly)
+    multicut_shell = setup_multicut(multicut_project, retrain, readonly)
 
     return opPixelClassification, multicut_shell
 
 
-def _open_project(project_path, init_logging=False):
+def _open_project(project_path, retrain=ILP_RETRAIN, readonly=ILP_READONLY, init_logging=False):
     """
     Open a project file and return the HeadlessShell instance.
     """
@@ -78,10 +81,13 @@ def _open_project(project_path, init_logging=False):
     parsed_args.headless = True
     parsed_args.project = project_path
     # parsed_args.readonly = True
-    parsed_args.readonly = ILP_READONLY
+    if retrain and not readonly:
+        warn('ILP must be writable if it is to retrain. Disabling read-only mode')
+        readonly = True
+    parsed_args.readonly = readonly
     parsed_args.debug = True  # possibly delete this?
 
-    if ILP_RETRAIN:
+    if retrain:
         shell = ilastik_main.main(parsed_args, workflow_cmdline_args=['--retrain'], init_logging=init_logging)
     else:
         shell = ilastik_main.main(parsed_args, init_logging=init_logging)

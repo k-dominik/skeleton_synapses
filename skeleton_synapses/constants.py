@@ -14,7 +14,7 @@ DEFAULT_ROI_RADIUS_PX = 150
 DEFAULT_SYNAPSE_DISTANCE_NM = 600
 
 TQDM_KWARGS = {
-    'ncols': 50,
+    'ncols': 80,
 }
 
 RESULTS_TIMEOUT_SECONDS = 5*60  # result fetchers time out after 5 minutes
@@ -30,8 +30,5 @@ MONITOR_HOST = 'localhost'
 MONITOR_PORT = int(os.getenv('MONITOR_PORT', 8088))
 MONITOR_INTERVAL = 10
 
-ILP_RETRAIN = False
+ILP_RETRAIN = True
 ILP_READONLY = True
-if ILP_RETRAIN and ILP_READONLY:
-    warn('ILP must be writable of it is to retrain. Disabling read-only mode')
-    ILP_READONLY = False
