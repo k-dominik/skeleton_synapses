@@ -153,6 +153,7 @@ def commit_tilewise_result(tile_size, workflow_id, output_path, catmaid, synapse
     None
     """
     tile_idx, predictions_xyc, synapse_cc_xy = synapse_detection_output
+    logger.debug('Committing results from tile {}'.format('z{}-y{}-x{}'.format(*tile_idx)))
     bounds_xyz = tile_index_to_bounds(tile_idx, tile_size)
 
     id_mapping = submit_synapse_slice_data(
@@ -192,8 +193,7 @@ def commit_tilewise_results_from_queue(
     logger.info('Starting to commit tile classification results')
 
     for tile_count, synapse_detection_output in enumerate(result_iterator):
-        tilename = 'z{}-y{}-x{}'.format(*synapse_detection_output.tile_idx)
-        logger.debug('Committing results from tile {}, {} of {}'.format(tilename, tile_count, total_tiles))
+        logger.debug('Got results from tile {} of {}'.format(tile_count, total_tiles))
 
         commit_tilewise_result(tile_size, workflow_id, output_path, catmaid, synapse_detection_output)
 
