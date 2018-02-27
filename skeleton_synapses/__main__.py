@@ -15,7 +15,7 @@ import sys
 from tqdm import tqdm
 from catpy import CatmaidClient
 
-from ilastik_utils.analyse import detect_synapses
+from skeleton_synapses.ilastik_utils.analyse import detect_synapses
 from skeleton_synapses.helpers.roi import nodes_to_tile_indexes
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
 from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL, THREADS, TQDM_KWARGS
@@ -63,12 +63,18 @@ def run_detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, r
 
         opPixelClassification = setup_classifier(paths.description_json, paths.autocontext_ilp)
 
-        detect_fn = partial(detect_synapses, TILE_SIZE, opPixelClassification)
+        logger.info('opPixelClassification opened')
+
+        def detect_fn(tile_idx):
+            return detect_synapses(TILE_SIZE, opPixelClassification, tile_idx)
+
         with mp.Pool(THREADS, maxtasksperchild=1) as pool:
+            logger.debug('Process pool instantiated, working...')
             for synapse_detection_output in tqdm(
                     pool.imap_unordered(detect_fn, tile_set, chunksize=5),
                     desc='synapse detection', total=len(tile_set), unit='tiles', **TQDM_KWARGS
             ):
+                logger.debug('Got a tile result, committing...')
                 commit_tilewise_result(TILE_SIZE, workflow_id, paths.output_hdf5, catmaid, synapse_detection_output)
 
         # detector_setup_args = (paths, TILE_SIZE, opPixelClassification)
