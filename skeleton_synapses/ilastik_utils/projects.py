@@ -81,9 +81,9 @@ def _open_project(project_path, retrain=ILP_RETRAIN, readonly=ILP_READONLY, init
     parsed_args.headless = True
     parsed_args.project = project_path
     # parsed_args.readonly = True
-    if retrain and not readonly:
+    if retrain and readonly:
         warn('ILP must be writable if it is to retrain. Disabling read-only mode')
-        readonly = True
+        readonly = False
     parsed_args.readonly = readonly
     parsed_args.debug = True  # possibly delete this?
 
