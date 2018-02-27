@@ -2,4 +2,4 @@
 
 ROOT_DIR=$(realpath $(dirname $0))/..
 cd ${ROOT_DIR}
-python -m skeleton_synapses $@
+exec python -m skeleton_synapses $@
