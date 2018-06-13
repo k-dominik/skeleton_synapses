@@ -27,10 +27,10 @@ def test_get_node_infos(syn_sug_api, skids, calls, compact_detail):
     ----------
     syn_sug_api : CatmaidSynapseSuggestionAPI
     """
-    syn_sug_api._catmaid.get.return_value = compact_detail
+    syn_sug_api._catmaid.fetch.return_value = compact_detail
 
     response = syn_sug_api.get_node_infos(skids)
-    assert syn_sug_api._catmaid.get.call_count == calls
+    assert syn_sug_api._catmaid.fetch.call_count == calls
     assert len(response) == len(compact_detail[0]) * calls
 
 
@@ -49,9 +49,9 @@ def test_get_synapses_near_skeletons(syn_sug_api, skids, calls, synapses_near_sk
     calls
     synapses_near_skeleton
     """
-    syn_sug_api._catmaid.get.return_value = synapses_near_skeleton
+    syn_sug_api._catmaid.fetch.return_value = synapses_near_skeleton
 
     response = syn_sug_api.get_synapses_near_skeletons(skids)
 
-    assert syn_sug_api._catmaid.get.call_count == calls
+    assert syn_sug_api._catmaid.fetch.call_count == calls
     assert len(response) == len(synapses_near_skeleton['data']) * calls
