@@ -25,7 +25,7 @@ from skeleton_synapses.parallel.queues import (
 logger = logging.getLogger(__name__)
 
 
-def main(paths, stack_id, skeleton_ids, roi_radius_px=DEFAULT_ROI_RADIUS_PX, force=False):
+def main(paths, stack_id, skeleton_ids, roi_radius_px=DEFAULT_ROI_RADIUS_PX, force=False, **kwargs):
     logger.info("STARTING TILEWISE")
 
     catmaid = CatmaidSynapseSuggestionAPI(CatmaidClient.from_json(paths.credentials_json), stack_id)
@@ -43,7 +43,23 @@ def main(paths, stack_id, skeleton_ids, roi_radius_px=DEFAULT_ROI_RADIUS_PX, for
     else:
         algo_hash = hash_algorithm(paths.autocontext_ilp, paths.multicut_ilp)
 
-    locate_synapses(catmaid, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes)
+    workflow_id = catmaid.get_workflow_id(
+        stack_info['sid'], algo_hash, TILE_SIZE, detection_notes=algo_notes['synapse_detection']
+    )
+
+    logger.info('Populating tile queue')
+
+    timestamper = Timestamper()
+
+    if not kwargs.get("skip_detection"):
+        timestamper.log('started detecting synapses')
+        detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px)
+
+    if not kwargs.get("skip_association"):
+        timestamper.log('finished detecting synapses; started associating skeletons')
+        associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes)
+
+    logger.info("DONE with skeletons.")
 
 
 def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px):
@@ -63,7 +79,7 @@ def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_r
         ) as runner:
             logger.debug('ProcessRunner instantiated successfully')
             commit_tilewise_results_from_queue(
-                runner.output_queue, paths.output_hdf5, tile_count, TILE_SIZE, workflow_id, catmaid
+                runner.output_queue, paths.output_image_store, tile_count, TILE_SIZE, workflow_id, catmaid
             )
 
     else:
@@ -94,46 +110,6 @@ def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, r
     else:
         logger.debug('No synapses required re-segmenting')
         synapse_queue.close()
-
-
-def locate_synapses(catmaid, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes):
-    """
-
-    Parameters
-    ----------
-    autocontext_project_path : str
-        .ilp file path
-    multicut_project : str
-        .ilp file path
-    input_filepath : str
-        Stack description JSON file
-    output_file_dir : str
-    skeleton : Skeleton
-    roi_radius_px : int
-        Default 150
-
-    Returns
-    -------
-
-    """
-    # todo: test (needs refactors)
-    workflow_id = catmaid.get_workflow_id(
-        stack_info['sid'], algo_hash, TILE_SIZE, detection_notes=algo_notes['synapse_detection']
-    )
-
-    logger.info('Populating tile queue')
-
-    timestamper = Timestamper()
-
-    timestamper.log('started detecting synapses')
-
-    detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px)
-
-    timestamper.log('finished detecting synapses; started associating skeletons')
-
-    associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_radius_px, algo_hash, algo_notes)
-
-    logger.info("DONE with skeleton.")
 
 
 def kill_child_processes(signum=None, frame=None):
@@ -181,6 +157,9 @@ if __name__ == "__main__":
         parser.add_argument('-d', '--debug_images', type=int, default=0,
                             help='Whether to store debug images'
                             )
+        parser.add_argument('--skip_detection', action="store_true", help="Whether to skip synapse detection")
+        parser.add_argument('--skip_association', action="store_true",
+                            help="Whether to skip skeleton-synapse association")
 
         args = parser.parse_args()
 
@@ -190,7 +169,10 @@ if __name__ == "__main__":
         paths = Paths(args.credentials_path, args.input_dir, output_dir)
 
         args_list = [paths, args.stack_id, args.skeleton_ids, args.roi_radius_px, args.force]
-        kwargs_dict = {}  # must be empty
+        kwargs_dict = {
+            "skip_detection": bool(args.skip_detection),
+            "skip_association": bool(args.skip_association)
+        }  # must be empty
 
     log_listener = setup_logging(paths.output_dir, args_list, kwargs_dict, LOG_LEVEL)
 
