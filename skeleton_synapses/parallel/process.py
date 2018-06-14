@@ -154,7 +154,7 @@ class SkeletonAssociationProcess(LeakyProcess):
         self.output_queue = output_queue
 
         self.paths = paths
-        self.hdf5_path = paths.output_hdf5
+        self.hdf5_path = paths.output_image_store
 
         self.opPixelClassification = self.multicut_shell = None
         self.setup_args = paths.description_json, paths.autocontext_ilp, paths.multicut_ilp

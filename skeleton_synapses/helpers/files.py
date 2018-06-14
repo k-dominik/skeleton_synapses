@@ -7,7 +7,6 @@ import shutil
 import subprocess as sp
 from datetime import datetime
 import logging
-from abc import ABCMeta, abstractmethod
 
 import six
 import h5py
@@ -17,7 +16,7 @@ import vigra
 from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
 from skeleton_synapses.constants import PROJECT_ROOT, ALGO_HASH
 
-HDF5_NAME = "tilewise_image_store.hdf5"
+IMAGE_STORE_NAME = "tilewise_image_store.hdf5"
 LABEL_DTYPE = np.int64
 PIXEL_PREDICTION_DTYPE = np.float32
 TILE_SIZE = 512
@@ -104,8 +103,8 @@ class Paths(object):
         self.autocontext_ilp = os.path.join(self.projects_dir, 'full-vol-autocontext.ilp')
         self.multicut_ilp = os.path.join(self.projects_dir, 'multicut', PROJECT_NAME + '-multicut.ilp')
 
-        self.output_hdf5 = os.path.join(output_file_dir, HDF5_NAME)
-        self.description_json = os.path.join(input_file_dir, PROJECT_NAME + '-description-NO-OFFSET.json')
+        self.output_image_store = os.path.join(output_file_dir, IMAGE_STORE_NAME)
+        self.description_json = os.path.join(self.projects_dir, PROJECT_NAME + '-description-NO-OFFSET.json')
 
         self.debug_dir = os.path.join(self.output_dir, 'debug') if self._debug_images else None
 
@@ -146,7 +145,7 @@ class Paths(object):
         for file_path in [self.autocontext_ilp, self.multicut_ilp]:
             assert os.path.isfile(file_path), '{} does not exist as file'.format(file_path)
 
-        ensure_hdf5(stack_info_dict, self.output_hdf5, force, throw_on_missing)
+        ensure_image_store(stack_info_dict, self.output_image_store, force, throw_on_missing)
         ensure_description_file(catmaid, self.description_json, stack_info_dict['sid'],
                                 force=False, throw_on_missing=throw_on_missing)
 
@@ -191,14 +190,14 @@ def get_2d_axistags(dataset, default=None, eliminate='z'):
     return ''.join(char for char in axistags if char not in eliminate)
 
 
-def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, synapse_cc=True, predictions=True):
+def cached_synapses_predictions_for_roi(roi_xyz, image_store_path, synapse_cc=True, predictions=True):
     """
-    Will take axistags from hdf5 if they exist, otherwise assume subset of 'zyxct'
+    Will take axistags from image store if they exist, otherwise assume subset of 'zyxct'
 
     Parameters
     ----------
     roi_xyz
-    hdf5_path
+    image_store_path
     squeeze
 
     Returns
@@ -209,7 +208,7 @@ def cached_synapses_predictions_for_roi(roi_xyz, hdf5_path, synapse_cc=True, pre
     # convert roi into a tuple of slice objects which can be used by numpy for indexing
     roi_slices = roi_xyz[0, 2], slice(roi_xyz[0, 1], roi_xyz[1, 1]), slice(roi_xyz[0, 0], roi_xyz[1, 0])
 
-    with h5py.File(hdf5_path, 'r') as f:
+    with h5py.File(image_store_path, 'r') as f:
         synapse_cc_xy = vigra.taggedView(
             f['slice_labels'][roi_slices], axistags=get_2d_axistags(f['slice_labels'], 'yx')
         ).transposeToOrder('V') if synapse_cc else None
@@ -314,7 +313,7 @@ def get_algo_notes(projects_dir):
     return algo_notes
 
 
-def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=LABEL_DTYPE, colour_channels=None):
+def create_label_volume(stack_info, open_image_store, name, tile_size=TILE_SIZE, dtype=LABEL_DTYPE, colour_channels=None):
     spatial_axes = 'zyx'
     dimension = tuple(stack_info['dimension'][dim] for dim in spatial_axes)
     chunksize = (1, tile_size, tile_size)
@@ -325,7 +324,7 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
         dimension += (colour_channels, )
         chunksize += (colour_channels, )
 
-    labels = hdf5_file.create_dataset(
+    labels = open_image_store.create_dataset(
         name,
         dimension,  # zyx(c)
         chunks=chunksize,  # zyx(c)
@@ -342,19 +341,19 @@ def create_label_volume(stack_info, hdf5_file, name, tile_size=TILE_SIZE, dtype=
     return labels
 
 
-def ensure_hdf5(stack_info, hdf5_path, force=False, throw_on_missing=False):
-    if throw_on_missing and not os.path.isfile(hdf5_path):
-        raise AssertionError('HDF5 file missing from ' + hdf5_path)
+def ensure_image_store(stack_info, image_store_path, force=False, throw_on_missing=False):
+    if throw_on_missing and not os.path.exists(image_store_path):
+        raise AssertionError('Image store missing missing from ' + image_store_path)
 
-    if force or not os.path.isfile(hdf5_path):
-        if os.path.isfile(hdf5_path):
+    if force or not os.path.exists(image_store_path):
+        if os.path.isfile(image_store_path):
             backup_path = os.path.join(
-                os.path.dirname(hdf5_path),
-                '{}BACKUP{}'.format(hdf5_path, datetime.now().strftime('%Y-%m-%d_%H:%M:%S'))
+                os.path.dirname(image_store_path),
+                '{}BACKUP{}'.format(image_store_path, datetime.now().strftime('%Y-%m-%d_%H:%M:%S'))
             )
-            os.rename(hdf5_path, backup_path)
-        logger.info('Creating HDF5 volumes in %s', hdf5_path)
-        with h5py.File(hdf5_path) as f:
+            os.rename(image_store_path, backup_path)
+        logger.info('Creating image store volumes in %s', image_store_path)
+        with h5py.File(image_store_path) as f:
             # f.attrs['workflow_id'] = workflow_id  # todo
             f.attrs['source_stack_id'] = stack_info['sid']
 
@@ -366,9 +365,9 @@ def ensure_hdf5(stack_info, hdf5_path, force=False, throw_on_missing=False):
             f.flush()
 
 
-def write_predictions_synapses(hdf5_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz):
+def write_predictions_synapses(image_store_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz):
     slicing_zyx = bounds_xyz[0, 2], slice(bounds_xyz[0, 1], bounds_xyz[1, 1]), slice(bounds_xyz[0, 0], bounds_xyz[1, 0])
-    with h5py.File(hdf5_path, 'r+') as f:
+    with h5py.File(image_store_path, 'r+') as f:
         pixel_predictions_zyxc = f['pixel_predictions']
         pixel_predictions_zyxc[slicing_zyx] = predictions_xyc.transposeToOrder(pixel_predictions_zyxc.attrs['order'])
 
