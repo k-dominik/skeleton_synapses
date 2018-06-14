@@ -40,6 +40,8 @@ class LeakyProcess(DebuggableProcess):
         self.psutil_process = None
         self.execution_counter = 0
 
+        self.daemon = True
+
         self.size_logger = logging.getLogger(self.name + '.size')
 
     def run(self):

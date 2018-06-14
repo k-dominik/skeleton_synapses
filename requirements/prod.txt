@@ -1,6 +1,6 @@
 # these are just the packages additional
 # to what is installed by `conda install -c ilastik ilastik-everything`
-git+https://github.com/catmaid/catpy.git
+catpy
 tqdm
 geojson
 logutils

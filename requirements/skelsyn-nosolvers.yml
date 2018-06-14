@@ -1,0 +1,156 @@
+name: skelsyn-nosolvers
+channels:
+- cpape
+- ilastik-forge
+- conda-forge
+- defaults
+dependencies:
+- asn1crypto=0.24.0=py36_0
+- boost=1.63.0=np112py36_6
+- boost-cpp=1.63.0=2
+- bzip2=1.0.6=1
+- ca-certificates=2018.4.16=0
+- certifi=2018.4.16=py36_0
+- cffi=1.11.5=py36_0
+- chardet=3.0.4=py36_0
+- cloudpickle=0.5.3=py_0
+- cryptography=2.2.1=py36_0
+- cycler=0.10.0=py36_0
+- dask-core=0.17.5=py_0
+- dbus=1.11.0=0
+- decorator=4.3.0=py_0
+- expat=2.1.0=3
+- fftw=3.3.7=0
+- fontconfig=2.12.6=0
+- freetype=2.8.1=0
+- future=0.16.0=py36_0
+- gettext=0.19.8.1=0
+- glib=2.55.0=0
+- greenlet=0.4.13=py36_0
+- gst-plugins-base=1.8.0=0
+- gstreamer=1.8.0=1
+- h5py=2.7.1=py36_3
+- hdf5=1.10.1=2
+- icu=58.2=0
+- idna=2.7=py36_0
+- imageio=2.3.0=py36_0
+- itk=4.13.0=py36_0
+- jinja2=2.10=py36_0
+- jpeg=9b=2
+- jsonschema=2.6.0=py36_1
+- kiwisolver=1.0.1=py36_1
+- libffi=3.2.1=3
+- libiconv=1.15=0
+- libpng=1.6.34=0
+- libtiff=4.0.9=0
+- libxcb=1.13=0
+- libxml2=2.9.8=0
+- markupsafe=1.0=py36_0
+- matplotlib=2.2.2=py36_1
+- ncurses=5.9=10
+- networkx=1.11=py36_0
+- nose=1.3.7=py36_2
+- olefile=0.45.1=py36_0
+- openssl=1.0.2o=0
+- pandas=0.23.1=py36_0
+- patchelf=0.9=2
+- pcre=8.41=1
+- pillow=5.1.0=py36_0
+- pip=9.0.3=py36_0
+- psutil=5.4.6=py36_0
+- pycparser=2.18=py36_0
+- pyopengl=3.1.1a1=py36_0
+- pyopenssl=18.0.0=py36_0
+- pyparsing=2.2.0=py36_0
+- pyqt=5.6.0=py36_5
+- pyqtgraph=0.10.0=py_3
+- pysocks=1.6.8=py36_1
+- python=3.6.5=1
+- python-dateutil=2.7.3=py_0
+- pytz=2018.4=py_0
+- pywavelets=0.5.2=py36_1
+- qt=5.6.2=7
+- readline=7.0=0
+- requests=2.19.0=py36_0
+- scikit-image=0.14.0=py36hfc679d8_1
+- setuptools=39.2.0=py36_0
+- sip=4.18=py36_1
+- six=1.11.0=py36_1
+- sqlite=3.20.1=2
+- tk=8.6.7=0
+- toolz=0.9.0=py_0
+- tornado=5.0.2=py36_0
+- urllib3=1.22=py36_0
+- wheel=0.31.0=py36_0
+- xorg-libxau=1.0.8=3
+- xorg-libxdmcp=1.1.2=3
+- xz=5.2.3=0
+- zlib=1.2.11=h470a237_3
+- z5py=0.2.post6=py36_0_gf79a460
+- c-blosc=1.10.2=0
+- intel-openmp=2018.0.3=0
+- libgcc=7.2.0=h69d50b8_2
+- libgcc-ng=7.2.0=hdf63c60_3
+- libgfortran=3.0.0=1
+- libgfortran-ng=7.2.0=hdf63c60_3
+- libstdcxx-ng=7.2.0=hdf63c60_3
+- mkl=2018.0.3=1
+- numpy=1.12.1=py36he24570b_1
+- scikit-learn=0.19.1=py36h7aa7ec6_0
+- scipy=1.1.0=py36hfc37229_0
+- dpct=1.2.post18=py36_2_gc6745f0
+- fastfilters=0.2.6.post13=py36_1_gce61889
+- hytra=1.1.4.post21=py36_0_g52df98b
+- iiboost=0.2.post19=36_2_g458e8f4
+- ilastik-dependencies-no-solvers=1.3=4
+- ilastik-feature-selection=0.123.post13=py36_0_g413714a
+- ilastik-launch=0.1=7
+- ilastik-meta=1.3.1b2=0_g1355659
+- ilastikrag=0.1.3.post8=py36_0_g894ba23
+- ilastiktools=0.2.post20=np112py36_2_gae9e090
+- lemon=1.2.4=5
+- libitk=4.13.0=2
+- mamutexport=0.2.1.post5=py36_0_g5023d4d
+- nifty=0.18.1.post21=py36_2_g13cedaf
+- numpy-allocation-tracking=0.2.post4=py36np112_0_g6300784
+- pytiff=0.7.2=np112py36_1_g60a58ae
+- qimage2ndarray=1.6=py36_2
+- tifffile=0.4.post2=np112py36_2_g7c3bb9e
+- vigra=1.11.1.post8=np112py36_8_gfb42744
+- wsdt=0.2.post16=py36_0_g76f938f
+- yapsy=1.10.423=py36h196ff5c_0
+- pip:
+  - arrow==0.12.1
+  - astroid==1.6.5
+  - atomicwrites==1.1.5
+  - attrs==18.1.0
+  - binaryornot==0.4.4
+  - catpy==0.2.0
+  - click==6.7
+  - dask==0.17.5
+  - geojson==2.4.0
+  - isort==4.3.4
+  - itk-core==4.13.0
+  - itk-filtering==4.13.0
+  - itk-io==4.13.0
+  - itk-numerics==4.13.0
+  - itk-registration==4.13.0
+  - itk-segmentation==4.13.0
+  - jinja2-time==0.2.0
+  - lazy-object-proxy==1.3.1
+  - logutils==0.3.5
+  - mamuttrackingexport==0.1.0
+  - mccabe==0.6.1
+  - more-itertools==4.2.0
+  - pluggy==0.6.0
+  - poyo==0.4.1
+  - py==1.5.3
+  - pylint==1.9.2
+  - pytest==3.6.1
+  - requests-futures==0.9.7
+  - rope==0.10.7
+  - tqdm==4.23.4
+  - whichcraft==0.4.1
+  - wrapt==1.10.11
+prefix: /home/barnesc/.pyenv/versions/miniconda3-4.3.30/envs/skelsyn-nosolvers
+

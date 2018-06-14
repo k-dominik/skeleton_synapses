@@ -19,11 +19,25 @@ logger = logging.getLogger(__name__)
 
 
 def populate_tile_input_queue(catmaid, roi_radius_px, workflow_id, node_infos):
+    """
+    Convert node infos into a set of tiles to act on, and populate a queue with that set.
+
+    Parameters
+    ----------
+    catmaid : CatmaidSynapseSuggestionAPI
+    roi_radius_px : int
+    workflow_id : int
+    node_infos : list of NodeInfo
+
+    Returns
+    -------
+    tuple of (mp.Queue, int)
+    """
     tile_index_set = nodes_to_tile_indexes(node_infos, TILE_SIZE, roi_radius_px)
 
     addressed_tiles = catmaid.get_detected_tiles(workflow_id)
 
-    tile_queue, tile_result_queue = mp.Queue(), mp.Queue()
+    tile_queue = mp.Queue()
     tile_count = 0
     for tile_idx in tqdm(tile_index_set, desc='Populating tile queue', unit='tiles', **TQDM_KWARGS):
         if (tile_idx.x_idx, tile_idx.y_idx, tile_idx.z_idx) in addressed_tiles:
@@ -37,6 +51,21 @@ def populate_tile_input_queue(catmaid, roi_radius_px, workflow_id, node_infos):
 
 
 def populate_synapse_queue(catmaid, roi_radius_px, project_workflow_id, stack_info, skeleton_ids):
+    """
+    Given a set of skeleton IDs, find detected synapses near the skeletons and append them to a queue.
+
+    Parameters
+    ----------
+    catmaid : CatmaidSynapseSuggestionAPI
+    roi_radius_px : int
+    project_workflow_id : int
+    stack_info : dict
+    skeleton_ids : list of int
+
+    Returns
+    -------
+    tuple of (mp.Queue, int)
+    """
     synapse_queue = mp.Queue()
     synapse_count = 0
 
@@ -68,6 +97,25 @@ class QueueOverpopulatedException(Exception):
 
 
 def iterate_queue(queue, final_size, queue_name=None, timeout=RESULTS_TIMEOUT_SECONDS):
+    """
+    Yield items from a queue until exhausted, raising a QueueOverpopulatedException if the final index mismatches the
+    expected queue length
+
+    Parameters
+    ----------
+    queue : mp.Queue
+    final_size : int
+    queue_name : str or None
+    timeout : float
+
+    Yields
+    ------
+    object
+
+    Raises
+    ------
+    QueueOverpopulatedException
+    """
     if queue_name is None:
         queue_name = repr(queue)
     for idx in range(final_size):
@@ -88,9 +136,54 @@ def iterate_queue(queue, final_size, queue_name=None, timeout=RESULTS_TIMEOUT_SE
         )
 
 
+def commit_tilewise_result(tile_size, workflow_id, output_path, catmaid, synapse_detection_output):
+    """
+    Commit the output of detecting synapses on a single tile to CATMAID and an HDF5 file.
+
+    Parameters
+    ----------
+    tile_size : int
+    workflow_id : int
+    output_path : str or PathLike
+    catmaid : CatmaidSynapseSuggestionAPI
+    synapse_detection_output : SynapseDetectionOutput
+
+    Returns
+    -------
+    None
+    """
+    tile_idx, predictions_xyc, synapse_cc_xy = synapse_detection_output
+    bounds_xyz = tile_index_to_bounds(tile_idx, tile_size)
+
+    id_mapping = submit_synapse_slice_data(
+        bounds_xyz, predictions_xyc, synapse_cc_xy, tile_idx, catmaid, workflow_id
+    )
+
+    catmaid.agglomerate_synapses(id_mapping.values())
+
+    logger.debug('Got ID mapping from CATMAID:\n{}'.format(id_mapping))
+
+    mapped_synapse_cc_xy = remap_synapse_slices(synapse_cc_xy, id_mapping)
+    write_predictions_synapses(output_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz)
+
+
 def commit_tilewise_results_from_queue(
         tile_result_queue, output_path, total_tiles, tile_size, workflow_id, catmaid
 ):
+    """
+    Commit all results from the given synapse detection output queue as they become available.
+
+    Parameters
+    ----------
+    tile_result_queue : mp.Queue of SynapseDetectionOutput
+    output_path : str or PathLike
+    total_tiles : int
+    tile_size : int
+    workflow_id : int
+    catmaid : CatmaidSynapseSuggestionAPI
+    """
+    # raise ValueError('Reached commit_tilewise')
+    logger.debug('Entering commit_tilewise_results_from_queue')
     result_iterator = tqdm(
         iterate_queue(tile_result_queue, total_tiles, 'tile_result_queue'),
         desc='Synapse detection', unit='tiles', total=total_tiles, **TQDM_KWARGS
@@ -98,24 +191,44 @@ def commit_tilewise_results_from_queue(
 
     logger.info('Starting to commit tile classification results')
 
-    for tile_count, (tile_idx, predictions_xyc, synapse_cc_xy) in enumerate(result_iterator):
-        tilename = 'z{}-y{}-x{}'.format(*tile_idx)
+    for tile_count, synapse_detection_output in enumerate(result_iterator):
+        tilename = 'z{}-y{}-x{}'.format(*synapse_detection_output.tile_idx)
         logger.debug('Committing results from tile {}, {} of {}'.format(tilename, tile_count, total_tiles))
-        bounds_xyz = tile_index_to_bounds(tile_idx, tile_size)
 
-        id_mapping = submit_synapse_slice_data(
-            bounds_xyz, predictions_xyc, synapse_cc_xy, tile_idx, catmaid, workflow_id
-        )
+        commit_tilewise_result(tile_size, workflow_id, output_path, catmaid, synapse_detection_output)
 
-        catmaid.agglomerate_synapses(id_mapping.values())
 
-        logger.debug('Got ID mapping from CATMAID:\n{}'.format(id_mapping))
+def commit_node_association_results(project_workflow_id, catmaid, skeleton_association_output_list):
+    """
+    Commit a list of results from skeleton association to catmaid
 
-        mapped_synapse_cc_xy = remap_synapse_slices(synapse_cc_xy, id_mapping)
-        write_predictions_synapses(output_path, predictions_xyc, mapped_synapse_cc_xy, bounds_xyz)
+    Parameters
+    ----------
+    project_workflow_id : int
+    catmaid : CatmaidSynapseSuggestionAPI
+    skeleton_association_output_list : list of SkeletonAssociationOutput
+    """
+    assoc_tuples = [
+        (result.synapse_slice_id, result.node_id, result.contact_px) for result in skeleton_association_output_list
+    ]
+
+    logger.debug('Node association results are\n%s', repr(assoc_tuples))
+    logger.info('Inserting new slice:treenode mappings')
+    if assoc_tuples:
+        catmaid.add_synapse_treenode_associations(assoc_tuples, project_workflow_id)
 
 
 def commit_node_association_results_from_queue(node_result_queue, total_nodes, project_workflow_id, catmaid):
+    """
+    Commit all results from the given skeleton association output queue as they become available
+
+    Parameters
+    ----------
+    node_result_queue : mp.Queue of SkeletonAssociationOutput
+    total_nodes : int
+    project_workflow_id : int
+    catmaid : CatmaidSynapseSuggestionAPI
+    """
     logger.debug('Committing node association results')
 
     result_list_generator = tqdm(
@@ -124,14 +237,5 @@ def commit_node_association_results_from_queue(node_result_queue, total_nodes, p
     )
 
     logger.debug('Getting node association results')
-    assoc_tuples = []
     for result_list in result_list_generator:
-        for result in result_list:
-            assoc_tuple = (result.synapse_slice_id, result.node_id, result.contact_px)
-            logger.debug('Appending segmentation result to args: %s', repr(assoc_tuple))
-            assoc_tuples.append(assoc_tuple)
-
-    logger.debug('Node association results are\n%s', repr(assoc_tuples))
-    logger.info('Inserting new slice:treenode mappings')
-
-    catmaid.add_synapse_treenode_associations(assoc_tuples, project_workflow_id)
+        commit_node_association_results(project_workflow_id, catmaid, result_list)

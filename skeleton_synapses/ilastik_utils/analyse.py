@@ -8,6 +8,11 @@ from ilastik.applets.edgeTrainingWithMulticut.opEdgeTrainingWithMulticut import 
 from ilastik.applets.thresholdTwoLevels import OpThresholdTwoLevels
 from lazyflow.graph import Graph
 
+from skeleton_synapses.dto import SynapseDetectionOutput
+from skeleton_synapses.helpers.files import cached_synapses_predictions_for_roi
+from skeleton_synapses.helpers.roi import tile_index_to_bounds
+from skeleton_synapses.helpers.segmentation import get_synapse_segment_overlaps, get_node_associations
+
 from skeleton_synapses.helpers.images import are_same_xy
 from skeleton_synapses.helpers.roi import roi_around_node
 
@@ -61,7 +66,9 @@ def fetch_and_predict(roi_xyz, opPixelClassification):
     (vigra.VigraArray, vigra.VigraArray)
         raw_xy, predictions_xyc
     """
+    logger.debug('fetching raw data')
     raw_xy = raw_data_for_roi(roi_xyz, opPixelClassification)
+    logger.debug('predicting pixels')
     predictions_xyc = _predictions_for_roi(roi_xyz, opPixelClassification)
     return raw_xy, predictions_xyc
 
@@ -148,3 +155,63 @@ def segmentation_for_img(raw_xy, predictions_xyc, multicut_workflow):
     segmentation_xy = vigra.taggedView(batch_results[0], axistags='xy')
     assert are_same_xy(segmentation_xy, raw_xy, predictions_xyc)
     return segmentation_xy
+
+
+def detect_synapses(tile_size, opPixelClassification, tile_idx):
+    """
+
+    Parameters
+    ----------
+    tile_size : int
+        Side length of a square tile
+    opPixelClassification
+    tile_idx : TileIndex
+
+    Returns
+    -------
+    SynapseDetectionOutput
+    """
+    roi_xyz = tile_index_to_bounds(tile_idx, tile_size)
+    logger.debug('fetching_and_predict in {}'.format(roi_xyz))
+    raw_xy, predictions_xyc = fetch_and_predict(roi_xyz, opPixelClassification)
+    logger.debug('label_synapses in {}'.format(roi_xyz))
+    synapse_cc_xy = label_synapses(predictions_xyc)
+    return SynapseDetectionOutput(tile_idx, predictions_xyc, synapse_cc_xy)
+
+
+def associate_skeletons(hdf5_path, opPixelClassification, multicut_shell, catmaid, skeleton_association_input):
+    """
+
+    Parameters
+    ----------
+    hdf5_path : str or PathLike
+    opPixelClassification
+    multicut_shell
+    catmaid : CatmaidSynapseSuggestionAPI
+    skeleton_association_input : SkeletonAssociationInput
+
+    Returns
+    -------
+    list of SkeletonAssociationOutput
+    """
+    roi_xyz, synapse_slice_ids, synapse_object_id = skeleton_association_input
+    raw_xy = raw_data_for_roi(roi_xyz, opPixelClassification)
+    synapse_cc_xy, predictions_xyc = cached_synapses_predictions_for_roi(roi_xyz, hdf5_path)
+
+    logger.debug('Image shapes: \n\tRaw {}\n\tSynapse_cc {}\n\tPredictions {}'.format(
+        raw_xy.shape, synapse_cc_xy.shape, predictions_xyc.shape
+    ))
+
+    segmentation_xy = segmentation_for_img(raw_xy, predictions_xyc, multicut_shell.workflow)
+
+    overlapping_segments = get_synapse_segment_overlaps(synapse_cc_xy, segmentation_xy, synapse_slice_ids)
+    logger.debug('Local segment: synapse slice overlaps found: \n{}'.format(overlapping_segments))
+
+    if len(overlapping_segments) < 2:  # synapse is only in 1 segment
+        return []
+
+    node_locations = catmaid.get_nodes_in_roi(roi_xyz, catmaid.stack_id)
+    if len(node_locations) == 0:
+        logger.debug('ROI {} has no nodes'.format(roi_xyz))
+
+    return get_node_associations(synapse_cc_xy, segmentation_xy, node_locations, overlapping_segments)

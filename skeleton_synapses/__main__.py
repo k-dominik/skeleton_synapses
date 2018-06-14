@@ -15,7 +15,8 @@ from skeleton_synapses.catmaid_interface import CatmaidSynapseSuggestionAPI
 from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL, THREADS
 from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE, hash_algorithm
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
-from skeleton_synapses.parallel.process import SynapseDetectionProcess, SkeletonAssociationProcess, ProcessRunner
+from skeleton_synapses.ilastik_utils.projects import setup_classifier
+from skeleton_synapses.parallel.process import SynapseDetectionProcessNew, SkeletonAssociationProcess, ProcessRunner
 from skeleton_synapses.parallel.queues import (
     commit_tilewise_results_from_queue, commit_node_association_results_from_queue,
     populate_tile_input_queue, populate_synapse_queue
@@ -53,11 +54,12 @@ def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_r
     if tile_count:
         logger.info('Classifying pixels in {} tiles'.format(tile_count))
 
-        detector_setup_args = paths, TILE_SIZE
+        opPixelClassification = setup_classifier(paths.description_json, paths.autocontext_ilp)
+        detector_setup_args = (paths, TILE_SIZE, opPixelClassification)
 
         with ProcessRunner(
-                tile_queue, SynapseDetectionProcess, detector_setup_args, min(THREADS, tile_count),
-                {'name': "Synapse Detection", "items_total": tile_count}
+                tile_queue, SynapseDetectionProcessNew, detector_setup_args, min(THREADS, tile_count),
+                # {'name': "Synapse Detection", "items_total": tile_count}
         ) as runner:
             logger.debug('ProcessRunner instantiated successfully')
             commit_tilewise_results_from_queue(
@@ -85,7 +87,7 @@ def associate_skeletons(catmaid, workflow_id, paths, stack_info, skeleton_ids, r
 
         with ProcessRunner(
                 synapse_queue, SkeletonAssociationProcess, seg_setup_args, min(THREADS, synapse_count),
-                {'name': "Skeleton Association", "items_total": synapse_count}
+                # {'name': "Skeleton Association", "items_total": synapse_count}
         ) as runner:
             commit_node_association_results_from_queue(runner.output_queue, synapse_count, project_workflow_id, catmaid)
 
