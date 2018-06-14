@@ -17,7 +17,9 @@ import pytest
 from tests.context import skeleton_synapses
 
 from skeleton_synapses.dto import SkeletonAssociationOutput
-from skeleton_synapses.parallel.queues import iterate_queue, commit_node_association_results_from_queue, QueueOverpopulatedException
+from skeleton_synapses.parallel.queues import (
+    iterate_queue, commit_node_association_results_from_queue, QueueOverpopulatedException
+)
 
 
 @pytest.fixture
@@ -86,17 +88,19 @@ def test_iterate_queue_overpopulated():
 def test_commit_node_association_results_from_queue(catmaid):
     item_count = 10
     items = [
-        SkeletonAssociationOutput('tnid{}'.format(i), 'ssid'.format(i), 'contact{}'.format(i)) for i in range(item_count)
+        SkeletonAssociationOutput('tnid{}'.format(i), 'ssid{}'.format(i), 'contact{}'.format(i)) for i in range(item_count)
     ]
-    expected_args = [('ssid'.format(i), 'tnid{}'.format(i), 'contact{}'.format(i)) for i in range(item_count)]
+    item_chunkings = [slice(None, 3), slice(3, 5), slice(5, None)]
 
-    item_chunks = [items[:3], items[3:5], items[5:]]
+    expected_args = [('ssid{}'.format(i), 'tnid{}'.format(i), 'contact{}'.format(i)) for i in range(item_count)]
+    expected_args_chunks = [expected_args[chunk] for chunk in item_chunkings]
+
+    item_chunks = [items[chunk] for chunk in item_chunkings]
     queue = populate_queue(item_chunks)
     commit_node_association_results_from_queue(queue, len(item_chunks), None, catmaid)
 
-    catmaid.add_synapse_treenode_associations.assert_called_once_with(
-        expected_args, None
-    )
+    for arg_chunk in expected_args_chunks:
+        catmaid.add_synapse_treenode_associations.assert_any_call(arg_chunk, None)
 
 
 if __name__ == '__main__':
