@@ -7,7 +7,7 @@ import numpy as np
 from tests.context import skeleton_synapses
 
 from skeleton_synapses.helpers.files import (
-    HDF5_NAME, create_label_volume, ensure_hdf5, write_predictions_synapses
+    IMAGE_STORE_NAME, create_label_volume, ensure_image_store, write_predictions_synapses
 )
 
 from tests.fixtures import tmp_dir, pixel_pred, img_2, img_square
@@ -37,7 +37,7 @@ def stack_info():
 
 
 def get_hdf5_path(hdf5_dir):
-    return os.path.join(hdf5_dir, HDF5_NAME)
+    return os.path.join(hdf5_dir, IMAGE_STORE_NAME)
 
 
 @pytest.fixture
@@ -64,13 +64,13 @@ def test_create_label_volume_extra_dim(hdf5_file, stack_info):
 def test_ensure_hdf5_new(stack_info, tmp_dir):
     hdf5_path = get_hdf5_path(tmp_dir)
     assert not os.path.isfile(hdf5_path)
-    ensure_hdf5(stack_info, hdf5_path)
+    ensure_image_store(stack_info, hdf5_path)
     assert os.path.isfile(hdf5_path)
 
 
 def test_ensure_hdf5_datasets(stack_info, tmp_dir):
     hdf5_path = get_hdf5_path(tmp_dir)
-    ensure_hdf5(stack_info, hdf5_path)
+    ensure_image_store(stack_info, hdf5_path)
     with h5py.File(hdf5_path) as f:
         assert {'slice_labels', 'pixel_predictions'}.issubset(f)
         assert f.attrs['source_stack_id'] == stack_info['sid']
@@ -81,7 +81,7 @@ def test_ensure_hdf5_exists(stack_info, tmp_dir):
     with h5py.File(hdf5_path) as f:
         f.attrs['is_old'] = True
 
-    ensure_hdf5(stack_info, hdf5_path)
+    ensure_image_store(stack_info, hdf5_path)
 
     with h5py.File(hdf5_path) as f:
         assert f.attrs.get('is_old', False)
@@ -93,7 +93,7 @@ def test_ensure_hdf5_force(stack_info, tmp_dir):
         f.attrs['is_old'] = True
         f.flush()
 
-    ensure_hdf5(stack_info, hdf5_path, force=True)
+    ensure_image_store(stack_info, hdf5_path, force=True)
 
     with h5py.File(hdf5_path) as new_file:
         assert not new_file.attrs.get('is_old', False)
@@ -113,7 +113,7 @@ def test_write_predictions_synapses(tmp_dir, stack_info, img_2, pixel_pred):
     ])
     mapped_img = img_2 + 1
     hdf5_path = get_hdf5_path(tmp_dir)
-    ensure_hdf5(stack_info, hdf5_path)
+    ensure_image_store(stack_info, hdf5_path)
 
     write_predictions_synapses(hdf5_path, pixel_pred, mapped_img, bounds_xyz)
 
