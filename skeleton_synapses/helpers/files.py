@@ -4,9 +4,10 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
+import subprocess as sp
 from datetime import datetime
 import logging
+from abc import ABCMeta, abstractmethod
 
 import six
 import h5py
@@ -225,7 +226,7 @@ initialized_files = set()
 
 def write_output_image(output_dir, image_xyc, name, name_prefix="", mode="stacked"):
     """
-    Write the given image to an hdf5 file.
+    Write the given image to an hdf5 file for debug purposes.
 
     If mode is "slices", create a new file for the image.
     If mode is "stacked", create a new file with 'name' if it doesn't exist yet,
@@ -375,6 +376,28 @@ def write_predictions_synapses(hdf5_path, predictions_xyc, mapped_synapse_cc_xy,
         slice_labels_zyx[slicing_zyx] = mapped_synapse_cc_xy.transposeToOrder(slice_labels_zyx.attrs['order'])
 
 
+def hash_file(path, md5=None):
+    if md5 is None:
+        md5 = hashlib.md5()
+
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(128 * md5.block_size), b''):
+            md5.update(chunk)
+
+    return md5
+
+
+def hash_directory_contents(path, md5=None):
+    if md5 is None:
+        md5 = hashlib.md5()
+
+    for root, dirnames, fnames in os.walk(path):
+        for fname in fnames:
+            hash_file(os.path.join(root, fname), md5)
+
+    return md5
+
+
 def hash_algorithm(*paths):
     """
     Calculate a combined hash of the algorithm. Included for hashing are the commit hash of this repo, the hashes of
@@ -390,23 +413,21 @@ def hash_algorithm(*paths):
     str
     """
     logger.info('Hashing algorithm...')
-    commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
+    commit_hash = sp.check_output(['git', 'rev-parse', 'HEAD']).strip()
 
     md5 = hashlib.md5(commit_hash)
 
     for path in sorted(paths):
         if os.path.isdir(path):
             logger.debug('Getting git commit hash of directory %s', path)
-            try:
-                output = subprocess.check_output(['git', '-C', path, 'rev-parse', 'HEAD']).strip()
-                md5.update(output)
-            except subprocess.CalledProcessError:
-                logger.exception('Error encountered while finding git hash of directory %s', path)
+            result = sp.run(['git', '-C', path, 'rev-parse', 'HEAD'], stdout=sp.PIPE, stderr=sp.PIPE)
+            if result.returncode and "ot a git repo" in result.stderr.decode("utf-8"):
+                md5 = hash_directory_contents(path, md5)
+            else:
+                md5.update(result.stdout.decode("utf-8"))
         elif os.path.isfile(path):
             logger.debug('Getting hash of file %s', path)
-            with open(path, 'rb') as f:
-                for chunk in iter(lambda: f.read(128 * md5.block_size), b''):
-                    md5.update(chunk)
+            md5 = hash_file(path, md5)
         else:
             logger.warning('No file, symlink or directory found at %s', path)
 
