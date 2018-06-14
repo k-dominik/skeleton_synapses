@@ -10,7 +10,7 @@ before_install:
   - conda update -q conda
   - conda info -a
 install:
-  - conda create -f requirements/skelsyn-nosolvers.yml
+  - conda env create -f requirements/skelsyn-nosolvers.yml -n skelsyn
   - source activate skelsyn
   # apply opReorderAxes.patch?
   - pip install -U pip
