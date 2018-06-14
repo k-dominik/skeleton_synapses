@@ -1,3 +1,4 @@
+import json
 import logging
 from collections import OrderedDict
 
@@ -9,7 +10,7 @@ from ilastik.applets.thresholdTwoLevels import OpThresholdTwoLevels
 from lazyflow.graph import Graph
 
 from skeleton_synapses.dto import SynapseDetectionOutput
-from skeleton_synapses.helpers.files import cached_synapses_predictions_for_roi
+from skeleton_synapses.helpers.files import cached_synapses_predictions_for_roi, dump_images
 from skeleton_synapses.helpers.roi import tile_index_to_bounds
 from skeleton_synapses.helpers.segmentation import get_synapse_segment_overlaps, get_node_associations
 
@@ -74,19 +75,23 @@ def fetch_and_predict(roi_xyz, opPixelClassification):
 
 
 def raw_data_for_roi(roi_xyz, opPixelClassification):
-    raw_xyzc = opPixelClassification.InputImages[-1](list(roi_xyz[0]) + [0], list(roi_xyz[1]) + [1]).wait()
-    raw_xyzc = vigra.taggedView(raw_xyzc, 'xyzc')
-    raw_xy = raw_xyzc[:, :, 0, 0]
+    input_obj = opPixelClassification.InputImages[-1]
+
+    # takes roi as zyxc, returns data in zyxc
+    raw_zyxc = input_obj(list(roi_xyz[0][::-1]) + [0], list(roi_xyz[1][::-1]) + [1]).wait()
+    raw_zyxc = vigra.taggedView(raw_zyxc, 'zyxc')
+    raw_xy = raw_zyxc[0, :, :, 0].transposeToVigraOrder()
     return raw_xy
 
 
 def _predictions_for_roi(roi_xyz, opPixelClassification):
     """Warning: should only be called when opPixelClassification has been populated with raw data"""
     num_classes = opPixelClassification.HeadlessPredictionProbabilities[-1].meta.shape[-1]
-    roi_xyzc = np.append(roi_xyz, [[0], [num_classes]], axis=1)
-    predictions_xyzc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_xyzc).wait()
-    predictions_xyzc = vigra.taggedView(predictions_xyzc, "xyzc")
-    predictions_xyc = predictions_xyzc[:, :, 0, :]
+    roi_zyx = [item[::-1] for item in roi_xyz]
+    roi_zyxc = np.append(roi_zyx, [[0], [num_classes]], axis=1)
+    predictions_zyxc = opPixelClassification.HeadlessPredictionProbabilities[-1](*roi_zyxc).wait()
+    predictions_zyxc = vigra.taggedView(predictions_zyxc, "zyxc")
+    predictions_xyc = predictions_zyxc[0, :, :, :].transposeToVigraOrder()
 
     return predictions_xyc
 
@@ -176,6 +181,9 @@ def detect_synapses(tile_size, opPixelClassification, tile_idx):
     raw_xy, predictions_xyc = fetch_and_predict(roi_xyz, opPixelClassification)
     logger.debug('label_synapses in {}'.format(roi_xyz))
     synapse_cc_xy = label_synapses(predictions_xyc)
+
+    dump_images("ims_" + json.dumps(roi_xyz.tolist()), raw=raw_xy, predictions=predictions_xyc, synapse_cc=synapse_cc_xy)
+
     return SynapseDetectionOutput(tile_idx, predictions_xyc, synapse_cc_xy)
 
 
