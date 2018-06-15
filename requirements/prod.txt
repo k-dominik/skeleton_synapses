@@ -3,4 +3,3 @@
 catpy
 tqdm
 geojson
-logutils
