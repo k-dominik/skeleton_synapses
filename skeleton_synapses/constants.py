@@ -33,5 +33,5 @@ MONITOR_INTERVAL = 10
 ILP_RETRAIN = bool(int(os.getenv('SYNAPSE_DETECTION_RETRAIN', 0)))
 ILP_READONLY = bool(int(os.getenv('SYNAPSE_DETECTION_READONLY_ILP', 1)))
 if ILP_RETRAIN and ILP_READONLY:
-    warn('ILP must be writable of it is to retrain. Disabling read-only mode')
+    warn('ILP must be writable if it is to retrain. Disabling read-only mode')
     ILP_READONLY = False
