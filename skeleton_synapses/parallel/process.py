@@ -84,7 +84,7 @@ class SynapseDetectionProcess(LeakyProcess):
     def setup(self):
         super(SynapseDetectionProcess, self).setup()
         self.opPixelClassification = setup_classifier(*self.setup_args)
-        Request.reset_thread_pool(1)  # todo: set to 0?
+        Request.reset_thread_pool(0)  # todo: set to 0?
 
     def execute(self):
         super(SynapseDetectionProcess, self).execute()

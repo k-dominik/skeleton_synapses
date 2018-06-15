@@ -16,7 +16,8 @@ from skeleton_synapses.constants import DEFAULT_ROI_RADIUS_PX, DEBUG, LOG_LEVEL,
 from skeleton_synapses.helpers.files import ensure_list, Paths, get_algo_notes, TILE_SIZE, hash_algorithm
 from skeleton_synapses.helpers.logging_ss import setup_logging, Timestamper
 from skeleton_synapses.ilastik_utils.projects import setup_classifier
-from skeleton_synapses.parallel.process import SynapseDetectionProcessNew, SkeletonAssociationProcess, ProcessRunner
+from skeleton_synapses.parallel.process import SynapseDetectionProcessNew, SkeletonAssociationProcess, ProcessRunner, \
+    SynapseDetectionProcess
 from skeleton_synapses.parallel.queues import (
     commit_tilewise_results_from_queue, commit_node_association_results_from_queue,
     populate_tile_input_queue, populate_synapse_queue
@@ -71,10 +72,13 @@ def detect_synapses(catmaid, workflow_id, paths, stack_info, skeleton_ids, roi_r
         logger.info('Classifying pixels in {} tiles'.format(tile_count))
 
         opPixelClassification = setup_classifier(paths.description_json, paths.autocontext_ilp)
+        constructor = SynapseDetectionProcessNew
         detector_setup_args = (paths, TILE_SIZE, opPixelClassification)
+        # constructor = SynapseDetectionProcess
+        # detector_setup_args = (paths, TILE_SIZE)
 
         with ProcessRunner(
-                tile_queue, SynapseDetectionProcessNew, detector_setup_args, min(THREADS, tile_count),
+                tile_queue, constructor, detector_setup_args, min(THREADS, tile_count),
                 # {'name': "Synapse Detection", "items_total": tile_count}
         ) as runner:
             logger.debug('ProcessRunner instantiated successfully')

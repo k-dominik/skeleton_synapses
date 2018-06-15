@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import QueueHandler, QueueListener
 from logging.config import dictConfig
 import os
 import subprocess
@@ -8,15 +9,33 @@ from datetime import datetime
 import time
 import warnings
 
-from logutils.queue import QueueHandler, QueueListener
-
 from skeleton_synapses.constants import PROJECT_ROOT
 from skeleton_synapses.helpers.files import mkdir_p
 
 LOGGER_FORMAT = '%(levelname)s %(processName)s %(name)s: %(message)s'
 
 
-def setup_logging(output_file_dir, args, kwargs, level=logging.NOTSET):
+def setup_logging(output_file_dir, args=None, kwargs=None, level=logging.NOTSET):
+    """
+
+    Parameters
+    ----------
+    output_file_dir
+        Path of directory which will contain "logs" directory,
+        which will contain a timestamped directory containing the log output
+    args
+        List of arguments given to original script, to be logged
+    kwargs
+        Dict of keyword arguments given to original script, to be logged
+    level
+
+    Returns
+    -------
+    logging.handlers.QueueListener
+    """
+    args = args or ()
+    kwargs = kwargs or dict()
+
     # Don't warn about duplicate python bindings for opengm
     # (We import opengm twice, as 'opengm' 'opengm_with_cplex'.)
     warnings.filterwarnings("ignore", message='.*second conversion method ignored.', category=RuntimeWarning)
