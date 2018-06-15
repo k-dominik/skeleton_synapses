@@ -30,8 +30,8 @@ MONITOR_HOST = 'localhost'
 MONITOR_PORT = int(os.getenv('MONITOR_PORT', 8088))
 MONITOR_INTERVAL = 10
 
-ILP_RETRAIN = False
-ILP_READONLY = True
+ILP_RETRAIN = bool(int(os.getenv('SYNAPSE_DETECTION_RETRAIN', 0)))
+ILP_READONLY = bool(int(os.getenv('SYNAPSE_DETECTION_READONLY_ILP', 1)))
 if ILP_RETRAIN and ILP_READONLY:
     warn('ILP must be writable of it is to retrain. Disabling read-only mode')
     ILP_READONLY = False
