@@ -136,3 +136,5 @@ def _append_lane(workflow, input_filepath, axisorder=None):
     # Configure it.
     role_index = 0 # raw data
     opDataSelection.DatasetGroup[-1][role_index].setValue( info )
+
+    workflow.handleNewLanesAdded()
