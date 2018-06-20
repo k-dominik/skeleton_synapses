@@ -1,18 +1,34 @@
 #!/usr/bin/env python
 import os
 import sys
-
+import logging
 from tqdm import tqdm
 import numpy as np
 from matplotlib import pyplot as plt
 import psutil
 
+# setup logging
+logger = logging.getLogger()
+logging.basicConfig(level=logging.INFO)
+
+# enforce ram limit:
+from lazyflow.utility import Memory
 RAM_LIMIT_MB = 2000
+ram = RAM_LIMIT_MB * 1024**2
+fmt = Memory.format(ram)
+logger.info("Configuring lazyflow RAM limit to {}".format(fmt))
+Memory.setAvailableRam(ram)
+
+# Trigger refresh of MemoryManager more often
+from lazyflow.operators.cacheMemoryManager import CacheMemoryManager
+memory_logger = logging.getLogger('lazyflow.operators.cacheMemoryManager')
+memory_logger.setLevel(logging.DEBUG)
+status_interval_secs = 1
+CacheMemoryManager().setRefreshInterval(status_interval_secs)
 
 # hack to make skeleton_synapses importable
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, root_dir)
-os.putenv("LAZYFLOW_TOTAL_RAM_MB", str(RAM_LIMIT_MB))
 
 # imports need to be in this order
 from skeleton_synapses.ilastik_utils import projects
@@ -21,7 +37,8 @@ from skeleton_synapses.ilastik_utils import analyse
 # should contain:
 # L1-CNS-description-NO-OFFSET.json
 # full-vol-autocontext.ilp
-INPUT_DIR = os.path.expanduser('~/work/synapse_detection/projects-2018')
+# INPUT_DIR = os.path.expanduser('/export/home/dkutra_local/sources/chris_barnes_debug/autocontext')
+INPUT_DIR = os.path.abspath('../../autocontext-files')
 
 # ROI
 OFFSET_XYZ = np.array([13489, 20513, 2215])
@@ -43,6 +60,7 @@ for idx in tqdm(range(COUNT_Z)):
     RAM.append(proc.memory_info().rss / 1e6)
     tqdm.write("Latest memory use: {}MB".format(int(RAM[-1])))
 
+
 # fig, ax_arr = plt.subplots(1, 3)
 # raw_ax, pred_ax, ram_ax = ax_arr.flatten()
 #
@@ -55,6 +73,6 @@ ram_ax.set_xlabel("iteration")
 ram_ax.set_ylabel("RAM usage (MB)")
 
 if RAM_LIMIT_MB:
-    ram_ax.plot([0, COUNT_Z], [RAM_LIMIT_MB, RAM_LIMIT_MB], label="RAM limit")
+   ram_ax.plot([0, COUNT_Z], [RAM_LIMIT_MB, RAM_LIMIT_MB], label="RAM limit")
 
 plt.show()
